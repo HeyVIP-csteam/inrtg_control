@@ -109,6 +109,46 @@ export const MODULE_META = {
 };
 
 /**
+ * Optional per-module Telegram message template — just the field rows, no
+ * "New X — Brand" header line. `key` works the same as in SHEET_LAYOUT
+ * above — a field key, "brand"/"pic"/"screenshotLink", or a
+ * { details: [fallbackKeys...] } object for first-non-empty-wins fields.
+ *
+ * A module's value here can be either:
+ *   - a plain array → one fixed template for every submission
+ *   - { selectorField, templates: { <value>: [...], default: [...] } } →
+ *     picks a template based on that field's submitted value (falls back
+ *     to `default` if no exact match), e.g. QA's Domain Issue motive uses
+ *     a completely different set of rows than the other 5 motives.
+ * Add an entry here per module once you know the exact wording wanted.
+ */
+export const MESSAGE_TEMPLATE = {
+  qa: {
+    selectorField: "motive",
+    templates: {
+      "Domain Issue": [
+        { emoji: "🎮", label: "Brand / Platform", key: "brand" },
+        { emoji: "📅", label: "Date", key: "date" },
+        { emoji: "🆔", label: "UID", key: "uid" },
+        { emoji: "📝", label: "Issue Details", key: "issueDetails" },
+        { emoji: "🌐", label: "Domain Link", key: "domainLink" },
+        { emoji: "👤", label: "PIC", key: "pic" },
+      ],
+      default: [
+        { emoji: "📅", label: "Date", key: "date" },
+        { emoji: "🆔", label: "UID", key: "uid" },
+        { emoji: "📱", label: "Number", key: "number" },
+        { emoji: "📧", label: "Email", key: "email" },
+        { emoji: "🎯", label: "Motive", key: "motive" },
+        { emoji: "🔗", label: "Screenshot Link", key: "screenshotLink" },
+        { emoji: "📝", label: "Remark", key: "remark" },
+        { emoji: "👤", label: "PIC", key: "pic" },
+      ],
+    },
+  },
+};
+
+/**
  * Maps a module to an EXISTING tab in the brand's sheet with its own fixed
  * column layout (used instead of the generic auto-create-headers path).
  * `startColumn` is the sheet's first data column (e.g. "B" when column A is
