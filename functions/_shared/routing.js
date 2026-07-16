@@ -101,7 +101,7 @@ export const RECORD_TO_SHEET = {
 
 // Emoji + display name per module, used to build the Telegram message header.
 export const MODULE_META = {
-  qa: { emoji: "🔍", name: "QA" },
+  qa: { emoji: "🔐", name: "QA" },
   account_issue: { emoji: "🔑", name: "Account Issue" },
   promotion_request: { emoji: "🎟️", name: "Promotion Request" },
   daily_report: { emoji: "📊", name: "Daily Report" },
