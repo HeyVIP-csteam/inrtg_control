@@ -94,6 +94,7 @@ export const BRANDS = {
 export const RECORD_TO_SHEET = {
   qa: true,
   account_issue: true,
+  risk_issue: false, // not decided yet — flip to true once SHEET_LAYOUT.risk_issue is set
   promotion_request: true,
   daily_report: true,
   genie_issue: true,
@@ -103,6 +104,7 @@ export const RECORD_TO_SHEET = {
 export const MODULE_META = {
   qa: { emoji: "🔐", name: "QA" },
   account_issue: { emoji: "🔑", name: "Account Issue" },
+  risk_issue: { emoji: "⚠️", name: "Risk Issue" },
   promotion_request: { emoji: "🎟️", name: "Promotion Request" },
   daily_report: { emoji: "📊", name: "Daily Report" },
   genie_issue: { emoji: "🤖", name: "Genie Issue" },
