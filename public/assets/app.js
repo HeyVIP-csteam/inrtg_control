@@ -79,8 +79,9 @@
 
   // ---- Attachments dropzone (click / drag&drop / paste, max N files) ----
   const maxFiles = (module.attachments && module.attachments.max) || 3;
+  const maxSizeMB = (module.attachments && module.attachments.maxSizeMB) || 20;
   document.getElementById("attachLabel").textContent = `Supporting Screenshots (Max ${maxFiles})`;
-  document.getElementById("dzSub").textContent = `JPG, PNG, PDF — Max ${maxFiles} files`;
+  document.getElementById("dzSub").textContent = `JPG, PNG, PDF — Max ${maxFiles} files, ${maxSizeMB}MB each`;
 
   const dropzone = document.getElementById("dropzone");
   const fileInput = document.getElementById("fileInput");
@@ -102,11 +103,21 @@
   }
 
   function addFiles(list) {
+    const rejected = [];
     for (const f of list) {
       if (files.length >= maxFiles) break;
+      if (f.size > maxSizeMB * 1024 * 1024) {
+        rejected.push(f.name);
+        continue;
+      }
       files.push(f);
     }
     renderFileList();
+    const status = document.getElementById("statusMsg");
+    if (rejected.length) {
+      status.textContent = `Skipped (over ${maxSizeMB}MB): ${rejected.join(", ")}`;
+      status.className = "status-msg err";
+    }
   }
 
   dropzone.addEventListener("click", () => fileInput.click());
