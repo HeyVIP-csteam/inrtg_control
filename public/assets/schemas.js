@@ -35,9 +35,10 @@ const MODULES = [
   {
     id: "qa",
     name: "QA",
-    icon: "🔍",
+    icon: "🔐",
+    formTitle: "QA Check",
     accent: "#60A5FA",
-    description: "Select brand and motive",
+    description: "Email Verify, Number Verify, Forget Password SMS, Forget Password Email, Add Secondary Number, Domain Issue — check with QA",
     reporterLabel: "PIC",
     attachments: DEFAULT_ATTACHMENTS,
     fields: [
