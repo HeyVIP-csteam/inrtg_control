@@ -1,5 +1,5 @@
 import { BRANDS, RECORD_TO_SHEET, MODULE_META, SHEET_LAYOUT, MESSAGE_TEMPLATE, SCREENSHOT_R2_ENABLED } from "../_shared/routing.js";
-import { appendRowToSheet, appendRowByColumns } from "../_shared/googleSheets.js";
+import { appendRowToSheet, appendRowByColumns, writeRowForDate } from "../_shared/googleSheets.js";
 import { uploadAttachmentToR2, screenshotUrl } from "../_shared/r2.js";
 
 const VALID_MODULES = Object.keys(MODULE_META);
@@ -82,33 +82,34 @@ export async function onRequestPost({ request, env }) {
   const sheetAttempted = !!(RECORD_TO_SHEET[moduleId] && brand.sheetId);
   if (sheetAttempted) {
     try {
-      const layout = resolveSheetLayout(SHEET_LAYOUT[moduleId], fieldMap);
-      if (layout) {
-        const values = layout.columns.map((col) => {
-          if (typeof col === "string") {
-            if (col === "brand") return brand.name || "-";
-            if (col === "pic") return reporter || "-";
-            if (col === "screenshotLink") return (screenshotLink || attachmentLinks.join(", ")) || "-";
-            if (col === "dateFormatted") return formatDateDDMMYYYY(fieldMap.reportDate || fieldMap.date) || "-";
-            return fieldMap[col] || "-";
-          }
-          // { details: ["remark", "issueDetails"] } — first non-empty field wins
-          const [, fallbackKeys] = Object.entries(col)[0];
-          for (const key of fallbackKeys) {
-            if (fieldMap[key]) return fieldMap[key];
-          }
-          return "-";
+      const layoutEntry = SHEET_LAYOUT[moduleId];
+      if (layoutEntry && layoutEntry.pairByDate) {
+        const values = resolveColumnValues(layoutEntry.columns, { fieldMap, brand, reporter, screenshotLink, attachmentLinks });
+        const dateValue = formatDateDDMMYYYY(fieldMap.reportDate || fieldMap.date);
+        const shiftValue = fieldMap[layoutEntry.selectorField];
+        const activeSide = shiftValue === layoutEntry.rightBlock.shiftValue ? "right" : "left";
+        await writeRowForDate(env, brand.sheetId, layoutEntry.tab, {
+          leftBlock: layoutEntry.leftBlock,
+          rightBlock: layoutEntry.rightBlock,
+          activeSide,
+          dateValue,
+          values,
         });
-        await appendRowByColumns(env, brand.sheetId, layout.tab, layout.startColumn, values);
       } else {
-        const row = {
-          timestamp,
-          brand: brand.name,
-          reporter,
-          ...Object.fromEntries(fields.map((f) => [f.key, f.value])),
-          attachments: (attachments || []).map((a) => a.name).join(", "),
-        };
-        await appendRowToSheet(env, brand.sheetId, moduleId, row);
+        const layout = resolveSheetLayout(layoutEntry, fieldMap);
+        if (layout) {
+          const values = resolveColumnValues(layout.columns, { fieldMap, brand, reporter, screenshotLink, attachmentLinks });
+          await appendRowByColumns(env, brand.sheetId, layout.tab, layout.startColumn, values);
+        } else {
+          const row = {
+            timestamp,
+            brand: brand.name,
+            reporter,
+            ...Object.fromEntries(fields.map((f) => [f.key, f.value])),
+            attachments: (attachments || []).map((a) => a.name).join(", "),
+          };
+          await appendRowToSheet(env, brand.sheetId, moduleId, row);
+        }
       }
       sheetLogged = true;
     } catch (e) {
@@ -124,6 +125,24 @@ export async function onRequestPost({ request, env }) {
     sheetError,
     attachmentErrors: attachmentErrors.length ? attachmentErrors : undefined,
     r2Errors: r2Errors.length ? r2Errors : undefined,
+  });
+}
+
+function resolveColumnValues(columns, { fieldMap, brand, reporter, screenshotLink, attachmentLinks }) {
+  return columns.map((col) => {
+    if (typeof col === "string") {
+      if (col === "brand") return brand.name || "-";
+      if (col === "pic") return reporter || "-";
+      if (col === "screenshotLink") return (screenshotLink || attachmentLinks.join(", ")) || "-";
+      if (col === "dateFormatted") return formatDateDDMMYYYY(fieldMap.reportDate || fieldMap.date) || "-";
+      return fieldMap[col] || "-";
+    }
+    // { details: ["remark", "issueDetails"] } — first non-empty field wins
+    const [, fallbackKeys] = Object.entries(col)[0];
+    for (const key of fallbackKeys) {
+      if (fieldMap[key]) return fieldMap[key];
+    }
+    return "-";
   });
 }
 
