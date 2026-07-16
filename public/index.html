@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Issue Submission</title>
+<link rel="stylesheet" href="/assets/style.css" />
+</head>
+<body>
+  <div class="page">
+    <div class="eyebrow"><span class="dot"></span> ISSUE SUBMISSION</div>
+    <h1>What do you need to submit?</h1>
+    <p class="subtitle">Pick a form. It posts straight to the right Telegram group and topic.</p>
+    <div id="grid" class="grid"></div>
+  </div>
+
+  <script src="/assets/schemas.js"></script>
+  <script>
+    const grid = document.getElementById("grid");
+    window.MODULES.forEach((m) => {
+      const a = document.createElement("a");
+      a.href = `/form.html?module=${m.id}`;
+      a.className = "card";
+      a.innerHTML = `
+        <div class="card-icon" style="background:${m.accent}22;">${m.icon}</div>
+        <p class="card-title">${m.name}</p>
+        <p class="card-desc">${m.description}</p>
+        <span class="card-arrow">&rarr;</span>
+      `;
+      grid.appendChild(a);
+    });
+  </script>
+</body>
+</html>
