@@ -13,31 +13,35 @@
  *   3. chat.id is the group's chatId (looks like -100xxxxxxxxxx).
  *      message_thread_id (present when a topic is used) is the topicId.
  *
- * How to get a Sheet webhook URL:
- *   Use a Google Apps Script bound to each brand's sheet, deployed as a
- *   Web App (Execute as: Me, Who has access: Anyone with the link).
- *   The script should read e.doc.postData.contents (JSON), then append a
- *   row. See README.md "Google Sheets logging" section for a ready script.
+ * Sheet logging uses a Google Cloud service account (see
+ * functions/_shared/googleSheets.js) — no Apps Script needed. Per brand:
+ *   1. Set `sheetId` below to the ID in the sheet's URL
+ *      (https://docs.google.com/spreadsheets/d/<sheetId>/edit).
+ *   2. Open that sheet → Share → add the service account's email
+ *      (GOOGLE_SERVICE_ACCOUNT_EMAIL) as an Editor.
+ * The service account credentials themselves are Cloudflare secrets, set
+ * once for the whole project — see README.md.
  */
 
 export const BRANDS = {
   betvisa: {
     name: "BetVisa",
-    // Apps Script Web App URL for this brand's sheet. Leave "" to disable sheet logging entirely for this brand.
-    sheetWebhookUrl: "",
+    // The long ID in the sheet's URL: https://docs.google.com/spreadsheets/d/<THIS PART>/edit
+    // Leave "" to disable sheet logging entirely for this brand.
+    sheetId: "17wXVfUS8QywtiT8AiHxBr3iycKnWCR5vAJbCcboLJUs",
     telegram: {
       // Used when a module has no specific entry below.
-      default: { chatId: "-100XXXXXXXXXX", topicId: null },
-      qa: { chatId: "-100XXXXXXXXXX", topicId: null },
-      account_issue: { chatId: "-100XXXXXXXXXX", topicId: null },
-      promotion_request: { chatId: "-100XXXXXXXXXX", topicId: null },
-      daily_report: { chatId: "-100XXXXXXXXXX", topicId: null },
-      genie_issue: { chatId: "-100XXXXXXXXXX", topicId: null },
+      default: { chatId: "-1004488354399", topicId: null },
+      qa: { chatId: "-1004488354399", topicId: 3 },
+      account_issue: { chatId: "-1004488354399", topicId: 10 },
+      promotion_request: { chatId: "-1004488354399", topicId: 17 },
+      daily_report: { chatId: "-1004488354399", topicId: 22 },
+      genie_issue: { chatId: "-1004488354399", topicId: 24 },
     },
   },
-  brand2: {
-    name: "Brand 2",
-    sheetWebhookUrl: "",
+  betjili: {
+    name: "Betjili",
+    sheetId: "",
     telegram: {
       default: { chatId: "-100XXXXXXXXXX", topicId: null },
       qa: { chatId: "-100XXXXXXXXXX", topicId: null },
@@ -47,9 +51,9 @@ export const BRANDS = {
       genie_issue: { chatId: "-100XXXXXXXXXX", topicId: null },
     },
   },
-  brand3: {
-    name: "Brand 3",
-    sheetWebhookUrl: "",
+  crickex: {
+    name: "Crickex",
+    sheetId: "",
     telegram: {
       default: { chatId: "-100XXXXXXXXXX", topicId: null },
       qa: { chatId: "-100XXXXXXXXXX", topicId: null },
@@ -59,9 +63,9 @@ export const BRANDS = {
       genie_issue: { chatId: "-100XXXXXXXXXX", topicId: null },
     },
   },
-  brand4: {
-    name: "Brand 4",
-    sheetWebhookUrl: "",
+  jeetway: {
+    name: "Jeetway",
+    sheetId: "",
     telegram: {
       default: { chatId: "-100XXXXXXXXXX", topicId: null },
       qa: { chatId: "-100XXXXXXXXXX", topicId: null },
@@ -71,9 +75,9 @@ export const BRANDS = {
       genie_issue: { chatId: "-100XXXXXXXXXX", topicId: null },
     },
   },
-  brand5: {
-    name: "Brand 5",
-    sheetWebhookUrl: "",
+  mostplay: {
+    name: "Mostplay",
+    sheetId: "",
     telegram: {
       default: { chatId: "-100XXXXXXXXXX", topicId: null },
       qa: { chatId: "-100XXXXXXXXXX", topicId: null },
@@ -88,11 +92,11 @@ export const BRANDS = {
 // Only these modules get written to the brand's Google Sheet.
 // Flip any of these to change what gets recorded, independent of Telegram routing.
 export const RECORD_TO_SHEET = {
-  qa: false,
+  qa: true,
   account_issue: true,
   promotion_request: true,
   daily_report: true,
-  genie_issue: false,
+  genie_issue: true,
 };
 
 // Emoji + display name per module, used to build the Telegram message header.
