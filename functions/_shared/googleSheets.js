@@ -93,6 +93,57 @@ export async function appendRowByColumns(env, sheetId, tabName, startColumn, val
   }
 }
 
+/**
+ * For sheets with two side-by-side blocks sharing rows by date (e.g. Daily
+ * Report: Day Shift in columns B–M, Night Shift in O–Z, same date should
+ * land on the same row on both sides). Scans the first column of each block
+ * for a matching `dateValue`; reuses that row if found, otherwise uses the
+ * first row where BOTH blocks are still empty, otherwise appends past the
+ * last used row. Only writes into the active block's own columns — never
+ * touches the other side.
+ */
+export async function writeRowForDate(env, sheetId, tab, { leftBlock, rightBlock, activeSide, dateValue, values }) {
+  const token = await getAccessToken(env);
+
+  const scanEndColumn = columnLetter(columnIndex(rightBlock.startColumn) + rightBlock.width - 1);
+  const scanRange = `${tab}!${leftBlock.startColumn}2:${scanEndColumn}1000`;
+  const getUrl = `https://sheets.googleapis.com/v4/spreadsheets/${sheetId}/values/${encodeURIComponent(scanRange)}`;
+  const getRes = await fetch(getUrl, { headers: { Authorization: `Bearer ${token}` } });
+  if (!getRes.ok) throw new Error(`Sheets read failed (${getRes.status}): ${await getRes.text()}`);
+  const data = await getRes.json();
+  const rows = data.values || [];
+
+  const rightDateOffset = columnIndex(rightBlock.startColumn) - columnIndex(leftBlock.startColumn);
+
+  let targetRow = null;
+  let firstBlankRow = null;
+  for (let i = 0; i < rows.length; i++) {
+    const row = rows[i];
+    const leftDate = row[0] || "";
+    const rightDate = row[rightDateOffset] || "";
+    if (leftDate === dateValue || rightDate === dateValue) {
+      targetRow = i + 2;
+      break;
+    }
+    if (!leftDate && !rightDate && firstBlankRow === null) {
+      firstBlankRow = i + 2;
+    }
+  }
+  if (!targetRow) targetRow = firstBlankRow || rows.length + 2;
+
+  const activeBlock = activeSide === "right" ? rightBlock : leftBlock;
+  const endColumn = columnLetter(columnIndex(activeBlock.startColumn) + values.length - 1);
+  const writeRange = `${tab}!${activeBlock.startColumn}${targetRow}:${endColumn}${targetRow}`;
+
+  const putUrl = `https://sheets.googleapis.com/v4/spreadsheets/${sheetId}/values/${encodeURIComponent(writeRange)}?valueInputOption=RAW`;
+  const putRes = await fetch(putUrl, {
+    method: "PUT",
+    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ values: [values] }),
+  });
+  if (!putRes.ok) throw new Error(`Sheets update failed (${putRes.status}): ${await putRes.text()}`);
+}
+
 function columnIndex(letter) {
   let n = 0;
   for (const ch of letter.toUpperCase()) n = n * 26 + (ch.charCodeAt(0) - 64);
