@@ -34,6 +34,7 @@ export const BRANDS = {
       default: { chatId: "-1004488354399", topicId: null },
       qa: { chatId: "-1004488354399", topicId: 3 },
       account_issue: { chatId: "-1004488354399", topicId: 10 },
+      risk_issue: { chatId: "-1004488354399", topicId: 26 },
       promotion_request: { chatId: "-1004488354399", topicId: 17 },
       daily_report: { chatId: "-1004488354399", topicId: 22 },
       genie_issue: { chatId: "-1004488354399", topicId: 24 },
@@ -94,7 +95,7 @@ export const BRANDS = {
 export const RECORD_TO_SHEET = {
   qa: true,
   account_issue: true,
-  risk_issue: false, // not decided yet — flip to true once SHEET_LAYOUT.risk_issue is set
+  risk_issue: true,
   promotion_request: true,
   daily_report: true,
   genie_issue: true,
@@ -181,6 +182,7 @@ export const MESSAGE_TEMPLATE = {
  *   "pic"            → the reporter/agent name
  *   "screenshotLink" → clickable Telegram links to the uploaded attachments
  *   "details"        → falls back through a list of field keys, first non-empty wins
+ *   null             → no field mapped yet — always writes "-" as a placeholder
  * Add an entry here per module once you know that module's tab name + columns.
  */
 export const SHEET_LAYOUT = {
@@ -188,6 +190,22 @@ export const SHEET_LAYOUT = {
     tab: "QA OTP & Domain",
     startColumn: "B",
     columns: ["date", "uid", "number", "email", "brand", "motive", "domainLink", "screenshotLink", { details: ["remark", "issueDetails"] }, "pic"],
+  },
+  risk_issue: {
+    tab: "Risk Issue",
+    startColumn: "B",
+    // `null` = no field maps here yet (e.g. Cancel Type) — always writes "-".
+    columns: [
+      "brand",
+      "uid",
+      "issueType",
+      "bonusCode",
+      "aadharPan",
+      null, // Cancel Type — not wired up yet
+      "accountStatus",
+      { details: ["remark", "issueDescription"] },
+      "pic",
+    ],
   },
   // Daily Report's sheet has two side-by-side blocks on the same tab — Day
   // Shift entries fill columns B–M, Night Shift entries fill columns O–Z
