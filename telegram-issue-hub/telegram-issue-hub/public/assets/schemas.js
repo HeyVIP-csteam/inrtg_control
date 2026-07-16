@@ -47,9 +47,26 @@ const MODULES = [
       },
       { key: "date", label: "Date", type: "date", required: true },
       { key: "uid", label: "UID", type: "text", required: true, placeholder: "Player UID..." },
-      { key: "number", label: "Number", type: "text", required: false, placeholder: "Phone number..." },
-      { key: "email", label: "Email", type: "text", required: false, placeholder: "Email address..." },
-      { key: "remark", label: "Remark", type: "textarea", required: true, placeholder: "Additional remarks..." },
+      {
+        key: "number", label: "Number", type: "text", required: false, placeholder: "Phone number...",
+        showIf: { field: "motive", oneOf: ["Email Verify", "Number Verify", "Forget Password SMS", "Forget Password Email", "Add Secondary Number"] },
+      },
+      {
+        key: "email", label: "Email", type: "text", required: false, placeholder: "Email address...",
+        showIf: { field: "motive", oneOf: ["Email Verify", "Number Verify", "Forget Password SMS", "Forget Password Email", "Add Secondary Number"] },
+      },
+      {
+        key: "domainLink", label: "Domain Link", type: "text", required: true, placeholder: "https://...",
+        showIf: { field: "motive", oneOf: ["Domain Issue"] },
+      },
+      {
+        key: "remark", label: "Remark", type: "textarea", required: true, placeholder: "Additional remarks...",
+        showIf: { field: "motive", oneOf: ["Email Verify", "Number Verify", "Forget Password SMS", "Forget Password Email", "Add Secondary Number"] },
+      },
+      {
+        key: "issueDetails", label: "Issue Details", type: "textarea", required: true, placeholder: "Describe the domain issue...",
+        showIf: { field: "motive", oneOf: ["Domain Issue"] },
+      },
     ],
   },
   {
