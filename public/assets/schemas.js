@@ -19,7 +19,7 @@ const BRANDS = [
 // Every module gets the same attachment slot (screenshots/PDFs, shown as a
 // drag-and-drop + paste dropzone under its fields). Change `max` per module
 // if one of them shouldn't allow attachments.
-const DEFAULT_ATTACHMENTS = { max: 3, accept: "image/png,image/jpeg,application/pdf" };
+const DEFAULT_ATTACHMENTS = { max: 3, accept: "image/png,image/jpeg,application/pdf", maxSizeMB: 20 };
 
 // A field can declare `showIf: { field: "<otherFieldKey>", oneOf: [...values] }`
 // to only appear when that other field currently holds one of those values —
@@ -101,6 +101,89 @@ const MODULES = [
       },
       { key: "nid", label: "NID", type: "text", required: false, placeholder: "NID number..." },
       { key: "remark", label: "Issue & Remark", type: "textarea", required: false, placeholder: "Additional remarks..." },
+    ],
+  },
+  {
+    id: "risk_issue",
+    name: "Risk Issue",
+    icon: "⚠️",
+    formTitle: "Risk Issue Report",
+    accent: "#F87171",
+    description: "Select brand and issue type",
+    reporterLabel: "PIC",
+    attachments: DEFAULT_ATTACHMENTS,
+    fields: [
+      {
+        key: "issueType", label: "Issue Type", type: "select", required: true, emphasize: true,
+        options: [
+          "Bonus Auto Force",
+          "Bonus Manual Force",
+          "Return To Main",
+          "Others Bonus Related Issue",
+          "Account Suspend / Inactive",
+          "Bonus Cancel Related Issue",
+          "VIP Level Update Issue",
+          "KYC Issues",
+          "Remove Back Account",
+          "Verify Bank Detail",
+          "Others Issues",
+        ],
+      },
+      { key: "uid", label: "UID", type: "text", required: true, placeholder: "Player UID..." },
+      {
+        key: "bonusCode", label: "Bonus Code", type: "text", required: false,
+        showIf: { field: "issueType", oneOf: ["Bonus Auto Force", "Bonus Manual Force", "Return To Main", "Others Bonus Related Issue", "Bonus Cancel Related Issue"] },
+      },
+      {
+        key: "recycleAmount", label: "Recycle Amount (Rs.)", type: "number", required: false,
+        showIf: { field: "issueType", oneOf: ["Bonus Auto Force", "Return To Main"] },
+      },
+      {
+        key: "turnoverRequirement", label: "Turnover Requirement", type: "text", required: false,
+        showIf: { field: "issueType", oneOf: ["Bonus Auto Force"] },
+      },
+      {
+        key: "turnoverCompleted", label: "Turnover Completed", type: "text", required: false,
+        showIf: { field: "issueType", oneOf: ["Bonus Auto Force"] },
+      },
+      {
+        key: "accountStatus", label: "Account Status", type: "select", required: false,
+        options: ["Suspended -- player wants to deposit", "Account Inactive", "Suspended -- Player has been warned"],
+        showIf: { field: "issueType", oneOf: ["Account Suspend / Inactive"] },
+      },
+      {
+        key: "vipLevel", label: "VIP Level", type: "text", required: false,
+        showIf: { field: "issueType", oneOf: ["VIP Level Update Issue"] },
+      },
+      {
+        key: "registeredNumber", label: "Registered Number", type: "text", required: false,
+        showIf: { field: "issueType", oneOf: ["KYC Issues"] },
+      },
+      {
+        key: "kycEmail", label: "E-mail", type: "text", required: false,
+        showIf: { field: "issueType", oneOf: ["KYC Issues"] },
+      },
+      {
+        key: "updateRequest", label: "Update Request", type: "text", required: false,
+        showIf: { field: "issueType", oneOf: ["KYC Issues"] },
+      },
+      {
+        key: "fullName", label: "Full Name", type: "text", required: false,
+        showIf: { field: "issueType", oneOf: ["KYC Issues"] },
+      },
+      {
+        key: "aadharPan", label: "Aadhar / Pan Card Number", type: "text", required: false,
+        placeholder: "Type the number, or upload a screenshot below instead",
+        showIf: { field: "issueType", oneOf: ["KYC Issues"] },
+      },
+      {
+        key: "remark", label: "Remark", type: "textarea", required: false,
+        showIf: { field: "issueType", oneOf: ["Bonus Auto Force", "Bonus Manual Force", "Return To Main", "Account Suspend / Inactive", "Bonus Cancel Related Issue"] },
+      },
+      {
+        key: "issueDescription", label: "Issue Description", type: "textarea", required: false,
+        showIf: { field: "issueType", oneOf: ["Others Bonus Related Issue", "VIP Level Update Issue", "KYC Issues", "Remove Back Account", "Verify Bank Detail", "Others Issues"] },
+      },
     ],
   },
   {
