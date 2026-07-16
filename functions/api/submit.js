@@ -1,5 +1,6 @@
 import { BRANDS, RECORD_TO_SHEET, MODULE_META, SHEET_LAYOUT } from "../_shared/routing.js";
 import { appendRowToSheet, appendRowByColumns } from "../_shared/googleSheets.js";
+import { uploadAttachmentToR2, screenshotUrl } from "../_shared/r2.js";
 
 const VALID_MODULES = Object.keys(MODULE_META);
 
@@ -53,6 +54,23 @@ export async function onRequestPost({ request, env }) {
   }
   const attachmentLinks = tgResult.attachmentLinks;
 
+  // 1c. Also upload attachments to R2 so the sheet gets a real, directly-openable
+  //     image link instead of a Telegram-only one. Independent of the Telegram
+  //     send — a failure here doesn't block the ticket.
+  const r2Links = [];
+  const r2Errors = [];
+  if (env.SCREENSHOTS_BUCKET && Array.isArray(attachments) && attachments.length) {
+    const origin = new URL(request.url).origin;
+    for (const att of attachments) {
+      try {
+        const key = await uploadAttachmentToR2(env, { moduleId, brandId, attachment: att });
+        r2Links.push(screenshotUrl(origin, key));
+      } catch (e) {
+        r2Errors.push(`${att.name}: ${e.message || e}`);
+      }
+    }
+  }
+
   // 2. Optionally log to the brand's Google Sheet (fire-and-await, but don't
   //    fail the whole request if the sheet write fails — Telegram already has it).
   let sheetLogged = false;
@@ -63,7 +81,7 @@ export async function onRequestPost({ request, env }) {
       const layout = SHEET_LAYOUT[moduleId];
       if (layout) {
         const fieldMap = Object.fromEntries(fields.map((f) => [f.key, f.value]));
-        const screenshotLink = attachmentLinks.join(", ");
+        const screenshotLink = (r2Links.length ? r2Links : attachmentLinks).join(", ");
         const values = layout.columns.map((col) => {
           if (typeof col === "string") {
             if (col === "brand") return brand.name || "-";
@@ -102,6 +120,7 @@ export async function onRequestPost({ request, env }) {
     sheetLogged,
     sheetError,
     attachmentErrors: attachmentErrors.length ? attachmentErrors : undefined,
+    r2Errors: r2Errors.length ? r2Errors : undefined,
   });
 }
 
