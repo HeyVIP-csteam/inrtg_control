@@ -17,7 +17,7 @@
 
   document.title = `${module.name} — Issue Submission`;
   iconEl.textContent = module.icon;
-  titleEl.textContent = `${module.name} Request`;
+  titleEl.textContent = module.formTitle || `${module.name} Request`;
   hintEl.textContent = module.description;
   document.getElementById("submitLabel").textContent = `Submit ${module.name}`;
   document.getElementById("reporterLabelText").textContent = module.reporterLabel || "Agent Name";
