@@ -1,0 +1,7 @@
+name = "telegram-issue-hub"
+pages_build_output_dir = "public"
+
+[vars]
+# Non-secret local defaults for `wrangler pages dev`. Real deployments set
+# TELEGRAM_BOT_TOKEN as an encrypted secret in the Cloudflare dashboard —
+# do NOT put the real token here or commit it.
