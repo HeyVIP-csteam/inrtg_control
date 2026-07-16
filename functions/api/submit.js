@@ -1,4 +1,4 @@
-import { BRANDS, RECORD_TO_SHEET, MODULE_META, SHEET_LAYOUT, MESSAGE_TEMPLATE } from "../_shared/routing.js";
+import { BRANDS, RECORD_TO_SHEET, MODULE_META, SHEET_LAYOUT, MESSAGE_TEMPLATE, SCREENSHOT_R2_ENABLED } from "../_shared/routing.js";
 import { appendRowToSheet, appendRowByColumns } from "../_shared/googleSheets.js";
 import { uploadAttachmentToR2, screenshotUrl } from "../_shared/r2.js";
 
@@ -39,7 +39,7 @@ export async function onRequestPost({ request, env }) {
   //    can include a real, directly-openable screenshot link.
   const r2Links = [];
   const r2Errors = [];
-  if (env.SCREENSHOTS_BUCKET && Array.isArray(attachments) && attachments.length) {
+  if (env.SCREENSHOTS_BUCKET && SCREENSHOT_R2_ENABLED[moduleId] && Array.isArray(attachments) && attachments.length) {
     const origin = new URL(request.url).origin;
     for (const att of attachments) {
       try {
@@ -82,13 +82,14 @@ export async function onRequestPost({ request, env }) {
   const sheetAttempted = !!(RECORD_TO_SHEET[moduleId] && brand.sheetId);
   if (sheetAttempted) {
     try {
-      const layout = SHEET_LAYOUT[moduleId];
+      const layout = resolveSheetLayout(SHEET_LAYOUT[moduleId], fieldMap);
       if (layout) {
         const values = layout.columns.map((col) => {
           if (typeof col === "string") {
             if (col === "brand") return brand.name || "-";
             if (col === "pic") return reporter || "-";
             if (col === "screenshotLink") return (screenshotLink || attachmentLinks.join(", ")) || "-";
+            if (col === "dateFormatted") return formatDateDDMMYYYY(fieldMap.reportDate || fieldMap.date) || "-";
             return fieldMap[col] || "-";
           }
           // { details: ["remark", "issueDetails"] } — first non-empty field wins
@@ -126,28 +127,63 @@ export async function onRequestPost({ request, env }) {
   });
 }
 
+function resolveSheetLayout(entry, fieldMap) {
+  if (!entry) return null;
+  if (entry.selectorField) {
+    const selectorValue = fieldMap[entry.selectorField];
+    return entry.layouts[selectorValue] || entry.layouts.default || null;
+  }
+  return entry;
+}
+
 function resolveTemplate(entry, fieldMap) {
   if (!entry) return null;
-  if (Array.isArray(entry)) return entry;
-  const selectorValue = fieldMap[entry.selectorField];
-  return entry.templates[selectorValue] || entry.templates.default || null;
+  if (Array.isArray(entry)) return { rows: entry, spacing: "tight", emptyPlaceholder: "-" };
+  if (entry.selectorField) {
+    const selectorValue = fieldMap[entry.selectorField];
+    const chosen = entry.templates[selectorValue] || entry.templates.default;
+    return resolveTemplate(chosen, fieldMap);
+  }
+  return { rows: entry.rows, spacing: entry.spacing || "tight", emptyPlaceholder: entry.emptyPlaceholder ?? "-" };
+}
+
+function resolveFieldValue(item, { brandName, fieldMap, reporter, screenshotLink }) {
+  if (typeof item.key !== "string") {
+    const [, fallbackKeys] = Object.entries(item.key)[0];
+    return fallbackKeys.map((k) => fieldMap[k]).find((v) => v);
+  }
+  if (item.key === "brand") return brandName;
+  if (item.key === "screenshotLink") return screenshotLink;
+  if (item.key === "pic") return reporter;
+  if (item.key === "dateShift") return formatDateShift(fieldMap.reportDate, fieldMap.shift);
+  return fieldMap[item.key];
 }
 
 function buildMessageFromTemplate({ template, brandName, fieldMap, reporter, screenshotLink }) {
-  const lines = template.map((item) => {
-    let value;
-    if (typeof item.key === "string") {
-      if (item.key === "brand") value = brandName;
-      else if (item.key === "screenshotLink") value = screenshotLink;
-      else if (item.key === "pic") value = reporter;
-      else value = fieldMap[item.key];
-    } else {
-      const [, fallbackKeys] = Object.entries(item.key)[0];
-      value = fallbackKeys.map((k) => fieldMap[k]).find((v) => v);
-    }
-    return `${item.emoji} <b>${escapeHtml(item.label)}:</b> ${escapeHtml(value || "-")}`;
+  const { rows, spacing, emptyPlaceholder } = template;
+  const lines = [];
+  rows.forEach((item, i) => {
+    const value = resolveFieldValue(item, { brandName, fieldMap, reporter, screenshotLink });
+    lines.push(`${item.emoji} <b>${escapeHtml(item.label)}:</b> ${escapeHtml(value || emptyPlaceholder)}`);
+    if (spacing === "loose" && i < rows.length - 1 && !item.tight) lines.push("");
   });
   return lines.join("\n");
+}
+
+// "15/07/2026 ( Day Shift Report )☀️" — DD/MM/YYYY from the <input type=date>
+// value (YYYY-MM-DD), plus the shift name and a sun/moon emoji.
+function formatDateShift(isoDate, shift) {
+  const formatted = formatDateDDMMYYYY(isoDate);
+  if (!formatted) return "-";
+  const emoji = shift === "Night Shift" ? "🌙" : "☀️";
+  return `${formatted} ( ${shift || "Day Shift"} Report )${emoji}`;
+}
+
+function formatDateDDMMYYYY(isoDate) {
+  if (!isoDate) return "";
+  const [y, m, d] = isoDate.split("-");
+  if (!y || !m || !d) return isoDate;
+  return `${d}/${m}/${y}`;
 }
 
 function buildMessage({ meta, brandName, reporter, fields, timestamp }) {
