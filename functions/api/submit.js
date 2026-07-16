@@ -1,4 +1,4 @@
-import { BRANDS, RECORD_TO_SHEET, MODULE_META, SHEET_LAYOUT } from "../_shared/routing.js";
+import { BRANDS, RECORD_TO_SHEET, MODULE_META, SHEET_LAYOUT, MESSAGE_TEMPLATE } from "../_shared/routing.js";
 import { appendRowToSheet, appendRowByColumns } from "../_shared/googleSheets.js";
 import { uploadAttachmentToR2, screenshotUrl } from "../_shared/r2.js";
 
@@ -33,10 +33,31 @@ export async function onRequestPost({ request, env }) {
   const meta = MODULE_META[moduleId];
   const route = brand.telegram[moduleId] || brand.telegram.default;
   const timestamp = new Date().toISOString().replace("T", " ").slice(0, 19) + " UTC";
+  const fieldMap = Object.fromEntries(fields.map((f) => [f.key, f.value]));
 
-  const text = buildMessage({ meta, brandName: brand.name, reporter, fields, timestamp });
+  // 1. Upload attachments to R2 first (if configured) so the message text
+  //    can include a real, directly-openable screenshot link.
+  const r2Links = [];
+  const r2Errors = [];
+  if (env.SCREENSHOTS_BUCKET && Array.isArray(attachments) && attachments.length) {
+    const origin = new URL(request.url).origin;
+    for (const att of attachments) {
+      try {
+        const key = await uploadAttachmentToR2(env, { moduleId, brandId, attachment: att });
+        r2Links.push(screenshotUrl(origin, key));
+      } catch (e) {
+        r2Errors.push(`${att.name}: ${e.message || e}`);
+      }
+    }
+  }
+  const screenshotLink = r2Links.join(", ");
 
-  // 1. Send to Telegram — photo(s)/document(s) with the info as the caption,
+  const template = resolveTemplate(MESSAGE_TEMPLATE[moduleId], fieldMap);
+  const text = template
+    ? buildMessageFromTemplate({ template, brandName: brand.name, fieldMap, reporter, screenshotLink })
+    : buildMessage({ meta, brandName: brand.name, reporter, fields, timestamp });
+
+  // 2. Send to Telegram — photo(s)/document(s) with the info as the caption,
   //    so it shows as one message instead of text + separate photo.
   let tgResult;
   const attachmentErrors = [];
@@ -54,23 +75,6 @@ export async function onRequestPost({ request, env }) {
   }
   const attachmentLinks = tgResult.attachmentLinks;
 
-  // 1c. Also upload attachments to R2 so the sheet gets a real, directly-openable
-  //     image link instead of a Telegram-only one. Independent of the Telegram
-  //     send — a failure here doesn't block the ticket.
-  const r2Links = [];
-  const r2Errors = [];
-  if (env.SCREENSHOTS_BUCKET && Array.isArray(attachments) && attachments.length) {
-    const origin = new URL(request.url).origin;
-    for (const att of attachments) {
-      try {
-        const key = await uploadAttachmentToR2(env, { moduleId, brandId, attachment: att });
-        r2Links.push(screenshotUrl(origin, key));
-      } catch (e) {
-        r2Errors.push(`${att.name}: ${e.message || e}`);
-      }
-    }
-  }
-
   // 2. Optionally log to the brand's Google Sheet (fire-and-await, but don't
   //    fail the whole request if the sheet write fails — Telegram already has it).
   let sheetLogged = false;
@@ -80,13 +84,11 @@ export async function onRequestPost({ request, env }) {
     try {
       const layout = SHEET_LAYOUT[moduleId];
       if (layout) {
-        const fieldMap = Object.fromEntries(fields.map((f) => [f.key, f.value]));
-        const screenshotLink = (r2Links.length ? r2Links : attachmentLinks).join(", ");
         const values = layout.columns.map((col) => {
           if (typeof col === "string") {
             if (col === "brand") return brand.name || "-";
             if (col === "pic") return reporter || "-";
-            if (col === "screenshotLink") return screenshotLink || "-";
+            if (col === "screenshotLink") return (screenshotLink || attachmentLinks.join(", ")) || "-";
             return fieldMap[col] || "-";
           }
           // { details: ["remark", "issueDetails"] } — first non-empty field wins
@@ -122,6 +124,30 @@ export async function onRequestPost({ request, env }) {
     attachmentErrors: attachmentErrors.length ? attachmentErrors : undefined,
     r2Errors: r2Errors.length ? r2Errors : undefined,
   });
+}
+
+function resolveTemplate(entry, fieldMap) {
+  if (!entry) return null;
+  if (Array.isArray(entry)) return entry;
+  const selectorValue = fieldMap[entry.selectorField];
+  return entry.templates[selectorValue] || entry.templates.default || null;
+}
+
+function buildMessageFromTemplate({ template, brandName, fieldMap, reporter, screenshotLink }) {
+  const lines = template.map((item) => {
+    let value;
+    if (typeof item.key === "string") {
+      if (item.key === "brand") value = brandName;
+      else if (item.key === "screenshotLink") value = screenshotLink;
+      else if (item.key === "pic") value = reporter;
+      else value = fieldMap[item.key];
+    } else {
+      const [, fallbackKeys] = Object.entries(item.key)[0];
+      value = fallbackKeys.map((k) => fieldMap[k]).find((v) => v);
+    }
+    return `${item.emoji} <b>${escapeHtml(item.label)}:</b> ${escapeHtml(value || "-")}`;
+  });
+  return lines.join("\n");
 }
 
 function buildMessage({ meta, brandName, reporter, fields, timestamp }) {
