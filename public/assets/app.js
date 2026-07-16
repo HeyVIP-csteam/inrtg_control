@@ -68,7 +68,7 @@
       const visible = driver && f.showIf.oneOf.includes(driver.control.value);
       const { wrap, control } = fieldEls[f.key];
       wrap.classList.toggle("is-visible", visible);
-      control.required = visible && !!f.def.required;
+      control.required = visible && !!f.required;
       if (!visible) control.value = "";
     });
   }
