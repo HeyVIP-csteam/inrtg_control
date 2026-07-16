@@ -140,7 +140,6 @@ export const MESSAGE_TEMPLATE = {
         { emoji: "📱", label: "Number", key: "number" },
         { emoji: "📧", label: "Email", key: "email" },
         { emoji: "🎯", label: "Motive", key: "motive" },
-        { emoji: "🔗", label: "Screenshot Link", key: "screenshotLink" },
         { emoji: "📝", label: "Remark", key: "remark" },
         { emoji: "👤", label: "PIC", key: "pic" },
       ],
