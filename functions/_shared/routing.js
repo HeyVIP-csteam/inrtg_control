@@ -188,24 +188,17 @@ export const SHEET_LAYOUT = {
     columns: ["date", "uid", "number", "email", "brand", "motive", "domainLink", "screenshotLink", { details: ["remark", "issueDetails"] }, "pic"],
   },
   // Daily Report's sheet has two side-by-side blocks on the same tab — Day
-  // Shift entries fill down columns B–M, Night Shift entries fill down
-  // columns O–Z (column N is a blank spacer in the sheet). Same column
-  // order in both blocks: Date, Brand, Shift, Major/CS/Payment/Minor/Domain/
-  // Provider/Promotion/Others Issues, Reported by.
+  // Shift entries fill columns B–M, Night Shift entries fill columns O–Z
+  // (column N is a blank spacer). Same date on both shifts should land on
+  // the SAME row, so this uses pairByDate instead of a plain append —
+  // see writeRowForDate() in googleSheets.js.
   daily_report: {
+    pairByDate: true,
     selectorField: "shift",
-    layouts: {
-      "Day Shift": {
-        tab: "Daily Report",
-        startColumn: "B",
-        columns: dailyReportColumns(),
-      },
-      "Night Shift": {
-        tab: "Daily Report",
-        startColumn: "O",
-        columns: dailyReportColumns(),
-      },
-    },
+    tab: "Daily Report",
+    leftBlock: { startColumn: "B", width: 12, shiftValue: "Day Shift" },
+    rightBlock: { startColumn: "O", width: 12, shiftValue: "Night Shift" },
+    columns: dailyReportColumns(),
   },
 };
 
