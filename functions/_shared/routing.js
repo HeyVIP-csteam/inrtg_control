@@ -145,6 +145,26 @@ export const MESSAGE_TEMPLATE = {
       ],
     },
   },
+  // "dateShift" is a computed value: "15/07/2026 ( Day Shift Report )☀️" /
+  // "🌙" for Night Shift — built from the reportDate + shift fields, see
+  // resolveFieldValue() in submit.js.
+  daily_report: {
+    spacing: "loose", // blank line between every row (except where `tight: true`)
+    emptyPlaceholder: "Nil",
+    rows: [
+      { emoji: "🏷️", label: "Brand", key: "brand", tight: true },
+      { emoji: "📅", label: "Date", key: "dateShift" },
+      { emoji: "🔴", label: "Major Issues", key: "majorIssues" },
+      { emoji: "💬", label: "CS Issues", key: "csIssues" },
+      { emoji: "💳", label: "Payment Issues", key: "paymentIssues" },
+      { emoji: "🐛", label: "Minor System Bugs", key: "minorSystemBugs" },
+      { emoji: "🌐", label: "Domain Control", key: "domainControl" },
+      { emoji: "⚙️", label: "Provider Issues", key: "providerIssues" },
+      { emoji: "🎁", label: "Promotion Quests", key: "promotionQuests" },
+      { emoji: "📌", label: "Others Issues", key: "othersIssues" },
+      { emoji: "👤", label: "Reported by", key: "pic" },
+    ],
+  },
 };
 
 /**
@@ -167,4 +187,50 @@ export const SHEET_LAYOUT = {
     startColumn: "B",
     columns: ["date", "uid", "number", "email", "brand", "motive", "domainLink", "screenshotLink", { details: ["remark", "issueDetails"] }, "pic"],
   },
+  // Daily Report's sheet has two side-by-side blocks on the same tab — Day
+  // Shift entries fill down columns B–M, Night Shift entries fill down
+  // columns O–Z (column N is a blank spacer in the sheet). Same column
+  // order in both blocks: Date, Brand, Shift, Major/CS/Payment/Minor/Domain/
+  // Provider/Promotion/Others Issues, Reported by.
+  daily_report: {
+    selectorField: "shift",
+    layouts: {
+      "Day Shift": {
+        tab: "Daily Report",
+        startColumn: "B",
+        columns: dailyReportColumns(),
+      },
+      "Night Shift": {
+        tab: "Daily Report",
+        startColumn: "O",
+        columns: dailyReportColumns(),
+      },
+    },
+  },
+};
+
+function dailyReportColumns() {
+  return [
+    "dateFormatted",
+    "brand",
+    "shift",
+    "majorIssues",
+    "csIssues",
+    "paymentIssues",
+    "minorSystemBugs",
+    "domainControl",
+    "providerIssues",
+    "promotionQuests",
+    "othersIssues",
+    "pic",
+  ];
+}
+
+// Only these modules upload attachments to R2 / generate a screenshot link
+// (for the sheet's Screenshot link column and anywhere else). Everything
+// else just attaches the photo straight to the Telegram message and skips
+// R2 entirely — cheaper, and some modules (e.g. Daily Report) don't want a
+// separate link at all since the photo is already in the message.
+export const SCREENSHOT_R2_ENABLED = {
+  qa: true,
 };
