@@ -1,4 +1,5 @@
 import { BRANDS, RECORD_TO_SHEET, MODULE_META } from "../_shared/routing.js";
+import { appendRowToSheet } from "../_shared/googleSheets.js";
 
 const VALID_MODULES = Object.keys(MODULE_META);
 
@@ -44,9 +45,15 @@ export async function onRequestPost({ request, env }) {
   //    fail the whole request if the sheet write fails — Telegram already has it).
   let sheetLogged = false;
   let sheetError = null;
-  if (RECORD_TO_SHEET[moduleId] && brand.sheetWebhookUrl) {
+  if (RECORD_TO_SHEET[moduleId] && brand.sheetId) {
     try {
-      await logToSheet({ webhookUrl: brand.sheetWebhookUrl, moduleId, brandName: brand.name, reporter, fields, timestamp });
+      const row = {
+        timestamp,
+        brand: brand.name,
+        reporter,
+        ...Object.fromEntries(fields.map((f) => [f.key, f.value])),
+      };
+      await appendRowToSheet(env, brand.sheetId, moduleId, row);
       sheetLogged = true;
     } catch (e) {
       sheetError = String(e.message || e);
@@ -88,24 +95,6 @@ async function sendTelegramMessage({ botToken, route, text }) {
     return { ok: false, error: data.description || "unknown Telegram error" };
   }
   return { ok: true, messageId: data.result.message_id };
-}
-
-async function logToSheet({ webhookUrl, moduleId, brandName, reporter, fields, timestamp }) {
-  const row = {
-    module: moduleId,
-    brand: brandName,
-    reporter,
-    timestamp,
-    ...Object.fromEntries(fields.map((f) => [f.key, f.value])),
-  };
-  const res = await fetch(webhookUrl, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(row),
-  });
-  if (!res.ok) {
-    throw new Error(`Sheet webhook returned ${res.status}`);
-  }
 }
 
 function escapeHtml(str) {
