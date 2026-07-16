@@ -65,22 +65,39 @@ Brand keys must match in two places:
 Rename `brand2`…`brand5` to your real 5 INR brands (keep `betvisa` or
 rename it too) — just make sure both files agree on the key.
 
-## 5. Turn on Google Sheet logging (only for selected modules)
+## 5. Turn on Google Sheet logging
 
-Only `account_issue`, `promotion_request`, and `daily_report` are logged
-to sheets by default — `qa` and `genie_issue` are Telegram-only. Change
-this any time in `RECORD_TO_SHEET` in `routing.js`.
+Which modules get logged is controlled by `RECORD_TO_SHEET` in
+`routing.js` — change it any time, independent of Telegram routing.
 
-For each brand's sheet:
-1. Open the sheet → **Extensions → Apps Script**.
-2. Paste in `google-apps-script/sheet-logger.gs`.
-3. **Deploy → New deployment → Web app**, Execute as **Me**, Access
-   **Anyone with the link**. Copy the `/exec` URL.
-4. Paste that URL into the brand's `sheetWebhookUrl` in `routing.js`.
+Logging goes straight to the Sheets API via a Google Cloud **service
+account** (no Apps Script deployment, no per-brand webhook).
 
-Each module writes to its own tab (created automatically on first
-submission), so Account Issue / Promotion Request / Daily Report rows
-never mix.
+**One-time setup (shared by all brands):**
+1. In Google Cloud Console, create (or reuse) a service account and
+   download its JSON key.
+2. In Cloudflare Pages → **Settings → Environment variables**, add two
+   secrets for Production and Preview:
+   - `GOOGLE_SERVICE_ACCOUNT_EMAIL` — the `client_email` field from the JSON key
+   - `GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY` — the full `private_key` field
+     from the JSON key, including the `-----BEGIN PRIVATE KEY-----` /
+     `-----END PRIVATE KEY-----` lines
+
+**Per brand:**
+1. Set that brand's `sheetId` in `routing.js` — the long ID in the
+   sheet's URL: `https://docs.google.com/spreadsheets/d/<sheetId>/edit`.
+2. Open that sheet → **Share** → add the service account's email
+   (the same one as `GOOGLE_SERVICE_ACCOUNT_EMAIL`) as an **Editor**.
+   Without this share step, writes fail with a 403.
+
+Each module writes to its own tab, created automatically (with a header
+row) the first time a submission for that module comes in — Account
+Issue / Promotion Request / Daily Report / QA / Genie Issue rows never
+mix.
+
+`google-apps-script/sheet-logger.gs` is kept in the repo as a fallback —
+only needed if you ever want a brand's sheet to work without sharing it
+to the service account.
 
 ## 6. Test it
 

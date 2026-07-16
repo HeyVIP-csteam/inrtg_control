@@ -7,25 +7,43 @@
 <link rel="stylesheet" href="/assets/style.css" />
 </head>
 <body>
-  <div class="page">
-    <a href="/" class="back-link">&larr; All forms</a>
-    <div class="eyebrow"><span class="dot"></span> ISSUE SUBMISSION</div>
-    <h1 id="title">Loading…</h1>
-    <p class="subtitle" id="desc"></p>
+  <a href="/" class="back-pill">&larr; Back to Home</a>
 
+  <div class="form-page">
     <div class="form-card">
+      <div class="form-header"><span class="icon" id="formIcon"></span><span id="formTitle">Loading…</span></div>
+      <p class="form-hint" id="formHint"></p>
+      <hr class="form-divider" />
+
       <form id="issueForm">
         <div class="field">
           <label>Brand / Platform <span class="required">*</span></label>
           <select name="brand" required></select>
         </div>
-        <div class="field">
-          <label>Your Name / Agent ID <span class="required">*</span></label>
-          <input type="text" name="reporter" required placeholder="e.g. Nadia (CS-04)" />
-        </div>
+
         <div id="dynamicFields"></div>
+
+        <div class="field">
+          <span class="attach-label" id="attachLabel">Supporting Screenshots</span>
+          <div class="dropzone" id="dropzone" tabindex="0">
+            <div class="dz-icon">📎</div>
+            <p class="dz-main">Click or drag files here</p>
+            <p class="dz-sub" id="dzSub">JPG, PNG, PDF — Max 3 files</p>
+            <p class="dz-paste">📋 Ctrl+V / ⌘V to paste screenshot</p>
+          </div>
+          <div class="file-list" id="fileList"></div>
+          <input type="file" id="fileInput" multiple hidden />
+        </div>
+
+        <div class="field">
+          <label>Agent Name <span class="required">*</span></label>
+          <input type="text" name="reporter" required placeholder="Your agent name..." />
+        </div>
+
         <div class="form-actions">
-          <button type="submit" class="btn-submit" id="submitBtn">Submit</button>
+          <button type="submit" class="btn-submit" id="submitBtn">
+            <span>📨</span><span id="submitLabel">Submit</span>
+          </button>
           <span id="statusMsg" class="status-msg"></span>
         </div>
       </form>

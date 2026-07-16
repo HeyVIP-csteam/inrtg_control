@@ -10,44 +10,56 @@
 // used in functions/_shared/routing.js on the server.
 const BRANDS = [
   { id: "betvisa", name: "BetVisa" },
-  { id: "brand2", name: "Brand 2" },
-  { id: "brand3", name: "Brand 3" },
-  { id: "brand4", name: "Brand 4" },
-  { id: "brand5", name: "Brand 5" },
+  { id: "betjili", name: "Betjili" },
+  { id: "crickex", name: "Crickex" },
+  { id: "jeetway", name: "Jeetway" },
+  { id: "mostplay", name: "Mostplay" },
 ];
 
+// Every module gets the same attachment slot (screenshots/PDFs, shown as a
+// drag-and-drop + paste dropzone under its fields). Change `max` per module
+// if one of them shouldn't allow attachments.
+const DEFAULT_ATTACHMENTS = { max: 3, accept: "image/png,image/jpeg,application/pdf" };
+
+// A field can declare `showIf: { field: "<otherFieldKey>", oneOf: [...values] }`
+// to only appear when that other field currently holds one of those values —
+// e.g. "Add Number" only shows up when Issue Type is "Add Mobile Number Verify".
+// It stays in the DOM (kept in field order) but is hidden + not required
+// until its condition is met, so add each issue type's extra fields inline
+// at the position they should appear.
+
 // Each module = one card on the hub + one generic form page (form.html?module=<id>)
+// `emphasize: true` on a field draws the highlighted box style (used for the
+// main "what kind of issue is this" selector, matching the reference design).
 const MODULES = [
   {
     id: "qa",
     name: "QA",
     icon: "🔍",
-    accent: "#60A5FA", // blue
+    accent: "#60A5FA",
     description: "Quality checks and bug reports for agents to flag before they reach production.",
+    attachments: DEFAULT_ATTACHMENTS,
     fields: [
-      { key: "ticketId", label: "Ticket / Case ID", type: "text", required: false, placeholder: "e.g. CS-10234" },
       {
-        key: "category", label: "Category", type: "select", required: true,
+        key: "category", label: "Category", type: "select", required: true, emphasize: true,
         options: ["Deposit", "Withdraw", "Account", "Bonus / Promotion", "Game / Provider", "Website / App", "Other"],
       },
-      {
-        key: "priority", label: "Priority", type: "select", required: true,
-        options: ["Low", "Medium", "High", "Urgent"],
-      },
+      { key: "priority", label: "Priority", type: "select", required: true, options: ["Low", "Medium", "High", "Urgent"] },
+      { key: "ticketId", label: "Ticket / Case ID", type: "text", required: false, placeholder: "e.g. CS-10234" },
       { key: "userId", label: "User ID", type: "text", required: false, placeholder: "Player ID (if applicable)" },
-      { key: "description", label: "Description", type: "textarea", required: true, placeholder: "What's wrong, steps to reproduce, expected vs actual..." },
-      { key: "attachmentUrl", label: "Screenshot / Video Link", type: "text", required: false, placeholder: "https://..." },
+      { key: "remark", label: "Issue & Remark", type: "textarea", required: true, placeholder: "What's wrong, steps to reproduce, expected vs actual..." },
     ],
   },
   {
     id: "account_issue",
     name: "Account Issue",
     icon: "🔑",
-    accent: "#FBBF24", // amber
-    description: "Registration, verification, KYC and login issues tied to a player account.",
+    accent: "#FBBF24",
+    description: "Select brand and issue type",
+    attachments: DEFAULT_ATTACHMENTS,
     fields: [
       {
-        key: "issueType", label: "Issue Type", type: "select", required: true,
+        key: "issueType", label: "Issue Type", type: "select", required: true, emphasize: true,
         options: [
           "Register Number Verification",
           "Add Mobile Number Verify",
@@ -61,58 +73,63 @@ const MODULES = [
           "KYC Issues",
         ],
       },
-      { key: "userId", label: "User ID", type: "text", required: true, placeholder: "Player ID" },
-      { key: "registeredContact", label: "Registered Mobile / Email", type: "text", required: false },
-      { key: "description", label: "Description", type: "textarea", required: true },
-      { key: "attachmentUrl", label: "Screenshot Link", type: "text", required: false, placeholder: "https://..." },
+      { key: "username", label: "Username", type: "text", required: true, placeholder: "Player username..." },
+      { key: "registerNumber", label: "Register Number", type: "text", required: true, placeholder: "Register number..." },
+      {
+        key: "addNumber", label: "Add Number", type: "text", required: false, placeholder: "Number to add...",
+        showIf: { field: "issueType", oneOf: ["Add Mobile Number Verify"] },
+      },
+      { key: "nid", label: "NID", type: "text", required: false, placeholder: "NID number..." },
+      { key: "remark", label: "Issue & Remark", type: "textarea", required: false, placeholder: "Additional remarks..." },
     ],
   },
   {
     id: "promotion_request",
     name: "Promotion Request",
     icon: "🎟️",
-    accent: "#F472B6", // pink
+    accent: "#F472B6",
     description: "Bonus, cashback and promo code requests that need manual review.",
+    attachments: DEFAULT_ATTACHMENTS,
     fields: [
-      { key: "promoCode", label: "Promo Code", type: "text", required: false },
-      { key: "userId", label: "User ID", type: "text", required: true, placeholder: "Player ID" },
       {
-        key: "bonusType", label: "Bonus Type", type: "select", required: true,
+        key: "bonusType", label: "Bonus Type", type: "select", required: true, emphasize: true,
         options: ["Deposit Bonus", "Cashback", "Free Bet", "Birthday Bonus", "Referral Bonus", "Other"],
       },
+      { key: "userId", label: "User ID", type: "text", required: true, placeholder: "Player ID" },
+      { key: "promoCode", label: "Promo Code", type: "text", required: false },
       { key: "amount", label: "Amount", type: "number", required: false, placeholder: "0.00" },
-      { key: "reason", label: "Reason / Notes", type: "textarea", required: true },
-      { key: "attachmentUrl", label: "Screenshot Link", type: "text", required: false, placeholder: "https://..." },
+      { key: "remark", label: "Issue & Remark", type: "textarea", required: true, placeholder: "Reason / notes..." },
     ],
   },
   {
     id: "daily_report",
     name: "Daily Report",
     icon: "📊",
-    accent: "#34D399", // green
+    accent: "#34D399",
     description: "End-of-shift summary that gets logged straight to the tracking sheet.",
+    attachments: DEFAULT_ATTACHMENTS,
     fields: [
+      { key: "shift", label: "Shift", type: "select", required: true, emphasize: true, options: ["Morning", "Afternoon", "Night"] },
       { key: "reportDate", label: "Date", type: "date", required: true },
-      {
-        key: "shift", label: "Shift", type: "select", required: true,
-        options: ["Morning", "Afternoon", "Night"],
-      },
-      { key: "reporter", label: "Reporter", type: "text", required: true, placeholder: "Your name" },
       { key: "totalIssues", label: "Total Issues Handled", type: "number", required: false, placeholder: "0" },
-      { key: "summary", label: "Summary", type: "textarea", required: true, placeholder: "Notable issues, escalations, pending items..." },
+      { key: "remark", label: "Summary", type: "textarea", required: true, placeholder: "Notable issues, escalations, pending items..." },
     ],
   },
   {
     id: "genie_issue",
     name: "Genie Issue",
     icon: "🤖",
-    accent: "#A78BFA", // purple
+    accent: "#A78BFA",
     description: "Problems with Genie chat sessions — stuck replies, wrong answers, escalations.",
+    attachments: DEFAULT_ATTACHMENTS,
     fields: [
+      {
+        key: "issueType", label: "Issue Type", type: "select", required: true, emphasize: true,
+        options: ["Stuck Reply", "Wrong Answer", "Escalation Needed", "Session Not Loading", "Other"],
+      },
       { key: "sessionId", label: "Chat / Session ID", type: "text", required: false },
       { key: "userId", label: "User ID", type: "text", required: false, placeholder: "Player ID (if applicable)" },
-      { key: "description", label: "Issue Description", type: "textarea", required: true },
-      { key: "attachmentUrl", label: "Screenshot Link", type: "text", required: false, placeholder: "https://..." },
+      { key: "remark", label: "Issue & Remark", type: "textarea", required: true },
     ],
   },
 ];

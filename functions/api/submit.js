@@ -11,7 +11,7 @@ export async function onRequestPost({ request, env }) {
     return json({ ok: false, error: "Invalid JSON body." }, 400);
   }
 
-  const { module: moduleId, brand: brandId, reporter, fields } = body || {};
+  const { module: moduleId, brand: brandId, reporter, fields, attachments } = body || {};
 
   if (!VALID_MODULES.includes(moduleId)) {
     return json({ ok: false, error: `Unknown module "${moduleId}".` }, 400);
@@ -41,6 +41,18 @@ export async function onRequestPost({ request, env }) {
     return json({ ok: false, error: `Telegram send failed: ${tgResult.error}` }, 502);
   }
 
+  // 1b. Send any attachments as follow-up photos/documents in the same chat/topic.
+  const attachmentErrors = [];
+  if (Array.isArray(attachments) && attachments.length) {
+    for (const att of attachments.slice(0, 10)) {
+      try {
+        await sendTelegramAttachment({ botToken, route, attachment: att });
+      } catch (e) {
+        attachmentErrors.push(`${att.name}: ${e.message || e}`);
+      }
+    }
+  }
+
   // 2. Optionally log to the brand's Google Sheet (fire-and-await, but don't
   //    fail the whole request if the sheet write fails — Telegram already has it).
   let sheetLogged = false;
@@ -52,6 +64,7 @@ export async function onRequestPost({ request, env }) {
         brand: brand.name,
         reporter,
         ...Object.fromEntries(fields.map((f) => [f.key, f.value])),
+        attachments: (attachments || []).map((a) => a.name).join(", "),
       };
       await appendRowToSheet(env, brand.sheetId, moduleId, row);
       sheetLogged = true;
@@ -60,7 +73,13 @@ export async function onRequestPost({ request, env }) {
     }
   }
 
-  return json({ ok: true, telegramMessageId: tgResult.messageId, sheetLogged, sheetError });
+  return json({
+    ok: true,
+    telegramMessageId: tgResult.messageId,
+    sheetLogged,
+    sheetError,
+    attachmentErrors: attachmentErrors.length ? attachmentErrors : undefined,
+  });
 }
 
 function buildMessage({ meta, brandName, reporter, fields, timestamp }) {
@@ -95,6 +114,39 @@ async function sendTelegramMessage({ botToken, route, text }) {
     return { ok: false, error: data.description || "unknown Telegram error" };
   }
   return { ok: true, messageId: data.result.message_id };
+}
+
+async function sendTelegramAttachment({ botToken, route, attachment }) {
+  const { name, type, dataUrl } = attachment;
+  const commaIdx = dataUrl.indexOf(",");
+  const base64 = commaIdx >= 0 ? dataUrl.slice(commaIdx + 1) : dataUrl;
+  const bytes = base64ToBytes(base64);
+  const blob = new Blob([bytes], { type: type || "application/octet-stream" });
+
+  const isImage = (type || "").startsWith("image/");
+  const method = isImage ? "sendPhoto" : "sendDocument";
+  const field = isImage ? "photo" : "document";
+
+  const form = new FormData();
+  form.append("chat_id", route.chatId);
+  if (route.topicId) form.append("message_thread_id", String(route.topicId));
+  form.append(field, blob, name || "attachment");
+
+  const res = await fetch(`https://api.telegram.org/bot${botToken}/${method}`, {
+    method: "POST",
+    body: form,
+  });
+  const data = await res.json();
+  if (!data.ok) {
+    throw new Error(data.description || "unknown Telegram error");
+  }
+}
+
+function base64ToBytes(base64) {
+  const binary = atob(base64);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  return bytes;
 }
 
 function escapeHtml(str) {
