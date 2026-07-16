@@ -130,6 +130,7 @@ export async function onRequestPost({ request, env }) {
 
 function resolveColumnValues(columns, { fieldMap, brand, reporter, screenshotLink, attachmentLinks }) {
   return columns.map((col) => {
+    if (col === null) return "-";
     if (typeof col === "string") {
       if (col === "brand") return brand.name || "-";
       if (col === "pic") return reporter || "-";
