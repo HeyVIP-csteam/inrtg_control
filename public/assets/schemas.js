@@ -249,6 +249,14 @@ const MODULES = [
     description: "Select brand and promotion",
     reporterLabel: "Processed by",
     attachments: DEFAULT_ATTACHMENTS,
+    // Brand+Promotion combos with a single fixed amount (no Tier/Deposits
+    // selector needed) — Amount auto-locks to this the moment both are
+    // picked. Keyed by "<brandId>|<promotion value>".
+    fixedAmounts: {
+      "crickex|Birthday Bonus": 1000,
+      "betjili|Review Bonus": 150,
+      "mostplay|Facebook Review Free Bonus": 200,
+    },
     fields: [
       {
         key: "promotion", label: "Promotion", type: "select", required: true, emphasize: true,
@@ -295,6 +303,29 @@ const MODULES = [
             { value: "Platinum", amount: 3000 },
             { value: "Diamond", amount: 4000 },
             { value: "Legend", amount: 5000 },
+          ],
+        },
+      },
+      {
+        key: "deposits", label: "Number of Deposits", type: "select", required: false,
+        showIf: [
+          { field: "promotion", oneOf: ["Birthday Bonus"] },
+          { field: "brand", oneOf: ["betjili", "mostplay"] },
+        ],
+        // Selecting a deposit count auto-fills + locks the Amount field below.
+        autoFillsInto: "amount",
+        optionsByBrand: {
+          betjili: [
+            { value: "10 Deposits", amount: 1000 },
+            { value: "20 Deposits", amount: 2000 },
+            { value: "30 Deposits", amount: 3000 },
+            { value: "40 Deposits", amount: 4000 },
+            { value: "50 Deposits", amount: 5000 },
+          ],
+          mostplay: [
+            { value: "10 Deposits", amount: 1000 },
+            { value: "20 Deposits", amount: 1500 },
+            { value: "30 Deposits", amount: 2000 },
           ],
         },
       },
