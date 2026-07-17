@@ -1,4 +1,4 @@
-import { BRANDS, RECORD_TO_SHEET, MODULE_META, SHEET_LAYOUT, MESSAGE_TEMPLATE, SCREENSHOT_R2_ENABLED, RISK_ISSUE_AUTO_REMARKS, RISK_ISSUE_FIELD_EMOJI } from "../_shared/routing.js";
+import { BRANDS, RECORD_TO_SHEET, MODULE_META, SHEET_LAYOUT, MESSAGE_TEMPLATE, SCREENSHOT_R2_ENABLED, RISK_ISSUE_AUTO_REMARKS, RISK_ISSUE_FIELD_EMOJI, ACCOUNT_ISSUE_FIELD_STYLE } from "../_shared/routing.js";
 import { appendRowToSheet, appendRowByColumns, writeRowForDate } from "../_shared/googleSheets.js";
 import { uploadAttachmentToR2, screenshotUrl } from "../_shared/r2.js";
 
@@ -58,6 +58,8 @@ export async function onRequestPost({ request, env }) {
     text = buildMessageFromTemplate({ template, meta, brandName: brand.name, fieldMap, reporter, screenshotLink });
   } else if (moduleId === "risk_issue") {
     text = buildRiskIssueDynamicMessage({ brandName: brand.name, fields, fieldMap, reporter });
+  } else if (moduleId === "account_issue") {
+    text = buildAccountIssueDynamicMessage({ brandName: brand.name, fields, fieldMap, reporter });
   } else {
     text = buildMessage({ meta, brandName: brand.name, reporter, fields, moduleId, fieldMap });
   }
@@ -253,6 +255,28 @@ function buildRiskIssueDynamicMessage({ brandName, fields, fieldMap, reporter })
   const autoNote = resolveAutoRemark(fieldMap);
   if (autoNote) lines.push("", `💬 ${escapeHtml(autoNote)}`);
 
+  lines.push("", `👷 <b>PIC:</b> ${escapeHtml(reporter)}`);
+  return lines.join("\n");
+}
+
+// Account Issue: header shows Issue Type, Brand/Username/type-specific
+// fields are all grouped together (no blank lines between them), then one
+// blank line before Remark and another before PIC.
+function buildAccountIssueDynamicMessage({ brandName, fields, fieldMap, reporter }) {
+  const lines = [`🔑 <b>Account Issue — ${escapeHtml(fieldMap.issueType || "-")}</b>`, ""];
+  lines.push(`🎮 <b>Brand/Platform:</b> ${escapeHtml(brandName)}`);
+  lines.push(`👤 <b>Username:</b> ${escapeHtml(fieldMap.uid || "-")}`);
+
+  fields
+    .filter((f) => !["issueType", "uid", "remark"].includes(f.key) && f.value)
+    .forEach((f) => {
+      const style = ACCOUNT_ISSUE_FIELD_STYLE[f.key];
+      const emoji = style ? style.emoji : "🔸";
+      const label = style ? style.label : f.label;
+      lines.push(`${emoji} <b>${escapeHtml(label)}:</b> ${escapeHtml(f.value)}`);
+    });
+
+  lines.push("", `📝 <b>Remark:</b> ${escapeHtml(fieldMap.remark || "-")}`);
   lines.push("", `👷 <b>PIC:</b> ${escapeHtml(reporter)}`);
   return lines.join("\n");
 }
