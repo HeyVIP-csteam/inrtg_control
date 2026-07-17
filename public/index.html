@@ -5,29 +5,41 @@
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Issue Submission</title>
 <link rel="stylesheet" href="/assets/style.css" />
+<script src="/assets/theme.js"></script>
 </head>
 <body>
-  <div class="page">
-    <div class="eyebrow"><span class="dot"></span> ISSUE SUBMISSION</div>
-    <h1>What do you need to submit?</h1>
-    <p class="subtitle">Pick a form. It posts straight to the right Telegram group and topic.</p>
-    <div id="grid" class="grid"></div>
+  <button class="theme-toggle" id="themeToggle" title="Toggle light/dark"></button>
+
+  <div class="hub-layout">
+    <aside class="sidebar">
+      <div class="sidebar-header"><span class="dot"></span> ISSUE SUBMISSION</div>
+      <div id="sidebarList"></div>
+    </aside>
+    <main class="hub-main">
+      <div>
+        <h1>What do you need to submit?</h1>
+        <p>Pick a form on the left. It posts straight to the right Telegram group and topic.</p>
+      </div>
+    </main>
   </div>
 
   <script src="/assets/schemas.js"></script>
   <script>
-    const grid = document.getElementById("grid");
+    window.initThemeToggle();
+    const list = document.getElementById("sidebarList");
     window.MODULES.forEach((m) => {
       const a = document.createElement("a");
       a.href = `/form.html?module=${m.id}`;
-      a.className = "card";
+      a.className = "sidebar-item";
       a.innerHTML = `
-        <div class="card-icon" style="background:${m.accent}22;">${m.icon}</div>
-        <p class="card-title">${m.name}</p>
-        <p class="card-desc">${m.description}</p>
-        <span class="card-arrow">&rarr;</span>
+        <div class="icon" style="background:${m.accent}22;">${m.icon}</div>
+        <div class="text">
+          <div class="name">${m.name}</div>
+          <div class="desc">${m.description}</div>
+        </div>
+        <span class="arrow">&rarr;</span>
       `;
-      grid.appendChild(a);
+      list.appendChild(a);
     });
   </script>
 </body>
