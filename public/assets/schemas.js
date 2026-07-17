@@ -135,6 +135,11 @@ const MODULES = [
         showIf: { field: "issueType", oneOf: ["Bonus Auto Force", "Bonus Manual Force", "Return To Main", "Others Bonus Related Issue", "Bonus Cancel Related Issue"] },
       },
       {
+        key: "cancelType", label: "Cancel Type", type: "select", required: false,
+        options: ["Cancel with 10% Penalty", "Cancel without Penalty"],
+        showIf: { field: "issueType", oneOf: ["Bonus Cancel Related Issue"] },
+      },
+      {
         key: "recycleAmount", label: "Recycle Amount (Rs.)", type: "number", required: false,
         showIf: { field: "issueType", oneOf: ["Bonus Auto Force", "Return To Main"] },
       },
