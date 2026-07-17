@@ -219,6 +219,7 @@ function resolveFieldValue(item, { brandName, fieldMap, reporter, screenshotLink
   if (item.key === "pic") return reporter;
   if (item.key === "dateShift") return formatDateShift(fieldMap.reportDate, fieldMap.shift);
   if (item.key === "autoRemark") return resolveAutoRemark(fieldMap);
+  if (item.key === "submittedBy") return reporter ? `Submitted by ${reporter}` : null;
   return fieldMap[item.key];
 }
 
@@ -227,7 +228,11 @@ function buildMessageFromTemplate({ template, meta, brandName, fieldMap, reporte
   const lines = [];
   if (header) {
     const headerValue = header.source === "brand" ? brandName : fieldMap[header.source];
-    lines.push(`${meta.emoji} <b>${escapeHtml(meta.name)} — ${escapeHtml(headerValue || "-")}</b>`, "");
+    const titleLine = header.hideValue
+      ? `${meta.emoji} <b>${escapeHtml(meta.name)}</b>`
+      : `${meta.emoji} <b>${escapeHtml(meta.name)} — ${escapeHtml(headerValue || "-")}</b>`;
+    lines.push(titleLine);
+    if (!header.noBlankAfter) lines.push("");
   }
   rows.forEach((item, i) => {
     const value = resolveFieldValue(item, { brandName, fieldMap, reporter, screenshotLink });
