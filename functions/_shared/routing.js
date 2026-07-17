@@ -203,6 +203,55 @@ export const PROMOTION_SHEET_CONFIG = {
     tidColumn: "A",
     columns: ["tid", "date", "username", "promotion", "nid", "tier", "amount", "brand", "pic"],
   },
+  "crickex|Birthday Bonus": {
+    sheetId: "1dAtM3Q5eSR2lmtlEs33fl1sq5d5H9AC-938_Ky5C9c4",
+    tab: "Birthday Bonus 2026",
+    startColumn: "A",
+    tidColumn: "A",
+    columns: ["tid", "date", "username", "amount", "promotion", "brand", "nid", "pic"],
+  },
+  "betjili|Birthday Bonus": {
+    sheetId: "1O6LeDa1Gs7EiAfqGF_lY6hpCieREOzc9L8x33bbBW1Y",
+    tab: "BJ Birthday Bonus",
+    startColumn: "A",
+    tidColumn: "A",
+    columns: ["tid", "date", "username", "amount", "promotion", "brand", "nid", "pic"],
+  },
+  "betjili|Review Bonus": {
+    sheetId: "1O6LeDa1Gs7EiAfqGF_lY6hpCieREOzc9L8x33bbBW1Y",
+    tab: "FB Review Bonus",
+    startColumn: "A",
+    tidColumn: "A",
+    columns: ["tid", "username", "date", "amount", "promotion", "brand", "pic"],
+  },
+  "mostplay|Birthday Bonus": {
+    sheetId: "1loAloFiu55xkhIm_77uBvLPPWBX8fw6UbVLcNdXdDx0",
+    tab: "MP Birthday Bonus",
+    startColumn: "A",
+    tidColumn: "A",
+    columns: ["tid", "date", "username", "amount", "promotion", "brand", "nid", "pic"],
+  },
+  "mostplay|Facebook Review Free Bonus": {
+    sheetId: "1loAloFiu55xkhIm_77uBvLPPWBX8fw6UbVLcNdXdDx0",
+    tab: "Facebook Review Free Bonus",
+    startColumn: "A",
+    tidColumn: "A",
+    columns: ["tid", "username", "date", "amount", "promotion", "brand", "pic"],
+  },
+  "jeetway|Birthday Bonus": {
+    sheetId: "1ouR19qfDPfr580BjfH52mrTKLUqeq1r_2tdm1ueoi3w",
+    tab: "JW Birthday Bonus",
+    startColumn: "A",
+    tidColumn: "A",
+    columns: ["tid", "date", "username", "promotion", "nid", "tier", "amount", "brand", "pic"],
+  },
+  "jeetway|Review Bonus": {
+    sheetId: "1ouR19qfDPfr580BjfH52mrTKLUqeq1r_2tdm1ueoi3w",
+    tab: "FB Review Bonus",
+    startColumn: "A",
+    tidColumn: "A",
+    columns: ["tid", "username", "date", "amount", "promotion", "brand", "pic"],
+  },
 };
 
 /**
