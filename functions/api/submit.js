@@ -272,7 +272,7 @@ function buildAccountIssueDynamicMessage({ brandName, fields, fieldMap, reporter
     .forEach((f) => {
       const style = ACCOUNT_ISSUE_FIELD_STYLE[f.key];
       const emoji = style ? style.emoji : "🔸";
-      const label = style ? style.label : f.label;
+      const label = style && style.label ? style.label : f.label;
       lines.push(`${emoji} <b>${escapeHtml(label)}:</b> ${escapeHtml(f.value)}`);
     });
 
