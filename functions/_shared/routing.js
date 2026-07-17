@@ -161,30 +161,6 @@ export const RISK_ISSUE_FIELD_EMOJI = {
 };
 
 /**
- * Account Issue only: same idea as RISK_ISSUE_FIELD_EMOJI, but each entry
- * can also override the label shown in Telegram (independent of the web
- * form's label) — e.g. the form says "Register Wrong Number" but Telegram
- * just shows "Wrong Number". Falls back to the form's own label if a field
- * isn't listed here.
- */
-export const ACCOUNT_ISSUE_FIELD_STYLE = {
-  registerNumber: { emoji: "📱", label: "Register Number" },
-  registerWrongNumber: { emoji: "❌", label: "Wrong Number" },
-  playerCorrectNumber: { emoji: "✅", label: "Correct Number" },
-  addNumber: { emoji: "➕", label: "Add Number" },
-  nid: { emoji: "🆔", label: "Aadhar / Pan Card Number" },
-  removeNumber: { emoji: "➖", label: "Remove Number" },
-  gmail: { emoji: "📧", label: "Gmail" },
-  removeGmail: { emoji: "🗑", label: "Remove Gmail" },
-  previousGmail: { emoji: "📧", label: "Previous Gmail (Remove)" },
-  updateNewGmail: { emoji: "📧", label: "Update New Gmail" },
-  messageType: { emoji: "💬", label: "Message Type" },
-  updateRequest: { emoji: "📝", label: "Update Request" },
-  fullName: { emoji: "🧾", label: "Full Name" },
-  aadharPan: { emoji: "🆔", label: "Aadhar / Pan Card Number" },
-};
-
-/**
  * Account Issue only: same idea as RISK_ISSUE_FIELD_EMOJI above — emoji
  * (and, for a couple of fields, a shorter label than the web form uses)
  * shown for each field when the message is built dynamically (every
