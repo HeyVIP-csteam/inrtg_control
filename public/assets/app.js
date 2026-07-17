@@ -124,6 +124,7 @@
   function conditionMet(showIf) {
     const conditions = Array.isArray(showIf) ? showIf : [showIf];
     return conditions.every((c) => {
+      if (c.field === "brand") return c.oneOf.includes(brandSelect.value);
       const driver = fieldEls[c.field];
       return driver && c.oneOf.includes(driver.control.value);
     });
