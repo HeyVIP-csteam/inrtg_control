@@ -55,6 +55,7 @@
         <h1>What do you need to submit?</h1>
         <p>Pick a form on the left. It posts straight to the right Telegram group and topic, and logs to the right sheet automatically.</p>
         <span class="status-badge"><span class="pulse"></span> Connected · Telegram + Sheets</span>
+        <div class="hub-stats" id="hubStats"></div>
       </div>
     </main>
   </div>
@@ -176,11 +177,19 @@
       }
     });
 
+    const hubStats = document.getElementById("hubStats");
+    hubStats.innerHTML = `
+      <div class="stat"><b>${window.BRANDS.length}</b><span>Brands</span></div>
+      <div class="stat"><b>${window.MODULES.length}</b><span>Modules</span></div>
+      <div class="stat"><b>24/7</b><span>Live routing</span></div>
+    `;
+
     const list = document.getElementById("sidebarList");
     window.MODULES.forEach((m) => {
       const a = document.createElement("a");
       a.href = `/form.html?module=${m.id}`;
       a.className = "sidebar-item";
+      a.style.setProperty("--item-accent", m.accent);
       a.innerHTML = `
         <div class="icon" style="background:${m.accent}33;">${m.icon}</div>
         <div class="text">
