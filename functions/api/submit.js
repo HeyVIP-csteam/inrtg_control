@@ -34,18 +34,6 @@ export async function onRequestPost({ request, env }) {
   const route = brand.telegram[moduleId] || brand.telegram.default;
   const timestamp = new Date().toISOString().replace("T", " ").slice(0, 19) + " UTC";
   const fieldMap = Object.fromEntries(fields.map((f) => [f.key, f.value]));
-  if (moduleId === "risk_issue") {
-    const autoRemark = resolveAutoRemark(fieldMap);
-    if (autoRemark) {
-      fieldMap.remark = autoRemark;
-      // Keep the raw `fields` array in sync too — buildMessage() (used for
-      // issue types without a custom MESSAGE_TEMPLATE yet) reads from this
-      // array directly, not from fieldMap.
-      const remarkField = fields.find((f) => f.key === "remark");
-      if (remarkField) remarkField.value = autoRemark;
-      else fields.push({ key: "remark", label: "Remark", value: autoRemark });
-    }
-  }
 
   // 1. Upload attachments to R2 first (if configured) so the message text
   //    can include a real, directly-openable screenshot link.
@@ -67,7 +55,7 @@ export async function onRequestPost({ request, env }) {
   const template = resolveTemplate(MESSAGE_TEMPLATE[moduleId], fieldMap);
   const text = template
     ? buildMessageFromTemplate({ template, meta, brandName: brand.name, fieldMap, reporter, screenshotLink })
-    : buildMessage({ meta, brandName: brand.name, reporter, fields, timestamp });
+    : buildMessage({ meta, brandName: brand.name, reporter, fields, moduleId, fieldMap });
 
   // 2. Send to Telegram — photo(s)/document(s) with the info as the caption,
   //    so it shows as one message instead of text + separate photo.
@@ -197,6 +185,7 @@ function resolveFieldValue(item, { brandName, fieldMap, reporter, screenshotLink
   if (item.key === "screenshotLink") return screenshotLink;
   if (item.key === "pic") return reporter;
   if (item.key === "dateShift") return formatDateShift(fieldMap.reportDate, fieldMap.shift);
+  if (item.key === "autoRemark") return resolveAutoRemark(fieldMap);
   return fieldMap[item.key];
 }
 
@@ -209,7 +198,12 @@ function buildMessageFromTemplate({ template, meta, brandName, fieldMap, reporte
   }
   rows.forEach((item, i) => {
     const value = resolveFieldValue(item, { brandName, fieldMap, reporter, screenshotLink });
-    lines.push(`${item.emoji} <b>${escapeHtml(item.label)}:</b> ${escapeHtml(value || emptyPlaceholder)}`);
+    if (item.raw) {
+      if (!value) return; // skip entirely — no placeholder line for optional raw notes
+      lines.push(`${item.emoji} ${escapeHtml(value)}`);
+    } else {
+      lines.push(`${item.emoji} <b>${escapeHtml(item.label)}:</b> ${escapeHtml(value || emptyPlaceholder)}`);
+    }
     if (spacing === "loose" && i < rows.length - 1 && !item.tight) lines.push("");
   });
   return lines.join("\n");
@@ -231,13 +225,15 @@ function formatDateDDMMYYYY(isoDate) {
   return `${d}/${m}/${y}`;
 }
 
-function buildMessage({ meta, brandName, reporter, fields, timestamp }) {
+function buildMessage({ meta, brandName, reporter, fields, moduleId, fieldMap }) {
+  const autoNote = moduleId === "risk_issue" ? resolveAutoRemark(fieldMap) : null;
   const lines = [
     `${meta.emoji} <b>New ${escapeHtml(meta.name)} — ${escapeHtml(brandName)}</b>`,
     "",
     ...fields
       .filter((f) => f.value)
       .map((f) => `<b>${escapeHtml(f.label)}:</b> ${escapeHtml(f.value)}`),
+    ...(autoNote ? ["", `💬 ${escapeHtml(autoNote)}`] : []),
     "",
     `🧑‍💼 Submitted by ${escapeHtml(reporter)}`,
   ];
