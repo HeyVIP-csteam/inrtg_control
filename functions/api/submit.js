@@ -1,4 +1,4 @@
-import { BRANDS, RECORD_TO_SHEET, MODULE_META, SHEET_LAYOUT, MESSAGE_TEMPLATE, SCREENSHOT_R2_ENABLED, RISK_ISSUE_AUTO_REMARKS } from "../_shared/routing.js";
+import { BRANDS, RECORD_TO_SHEET, MODULE_META, SHEET_LAYOUT, MESSAGE_TEMPLATE, SCREENSHOT_R2_ENABLED, RISK_ISSUE_AUTO_REMARKS, RISK_ISSUE_FIELD_EMOJI } from "../_shared/routing.js";
 import { appendRowToSheet, appendRowByColumns, writeRowForDate } from "../_shared/googleSheets.js";
 import { uploadAttachmentToR2, screenshotUrl } from "../_shared/r2.js";
 
@@ -53,9 +53,14 @@ export async function onRequestPost({ request, env }) {
   const screenshotLink = r2Links.join(", ");
 
   const template = resolveTemplate(MESSAGE_TEMPLATE[moduleId], fieldMap);
-  const text = template
-    ? buildMessageFromTemplate({ template, meta, brandName: brand.name, fieldMap, reporter, screenshotLink })
-    : buildMessage({ meta, brandName: brand.name, reporter, fields, moduleId, fieldMap });
+  let text;
+  if (template) {
+    text = buildMessageFromTemplate({ template, meta, brandName: brand.name, fieldMap, reporter, screenshotLink });
+  } else if (moduleId === "risk_issue") {
+    text = buildRiskIssueDynamicMessage({ brandName: brand.name, fields, fieldMap, reporter });
+  } else {
+    text = buildMessage({ meta, brandName: brand.name, reporter, fields, moduleId, fieldMap });
+  }
 
   // 2. Send to Telegram — photo(s)/document(s) with the info as the caption,
   //    so it shows as one message instead of text + separate photo.
@@ -223,6 +228,33 @@ function formatDateDDMMYYYY(isoDate) {
   const [y, m, d] = isoDate.split("-");
   if (!y || !m || !d) return isoDate;
   return `${d}/${m}/${y}`;
+}
+
+// Used for any Risk Issue type that doesn't have its own row list in
+// MESSAGE_TEMPLATE.risk_issue.templates — keeps the same visual style
+// (emoji-labeled bold rows, header showing the Issue Type) without needing
+// a hand-written template for all 11 issue types up front.
+function buildRiskIssueDynamicMessage({ brandName, fields, fieldMap, reporter }) {
+  const lines = [`⚠️ <b>Risk Issue — ${escapeHtml(fieldMap.issueType || "-")}</b>`, ""];
+  lines.push(`🎮 <b>Brand/Platform:</b> ${escapeHtml(brandName)}`);
+  lines.push(`👤 <b>Username:</b> ${escapeHtml(fieldMap.uid || "-")}`);
+
+  const middleFields = fields.filter((f) => !["issueType", "uid", "remark"].includes(f.key) && f.value);
+  if (middleFields.length) {
+    lines.push("");
+    middleFields.forEach((f) => {
+      const emoji = RISK_ISSUE_FIELD_EMOJI[f.key] || "🔸";
+      lines.push(`${emoji} <b>${escapeHtml(f.label)}:</b> ${escapeHtml(f.value)}`);
+    });
+  }
+
+  lines.push("", `📝 <b>Remark:</b> ${escapeHtml(fieldMap.remark || "-")}`);
+
+  const autoNote = resolveAutoRemark(fieldMap);
+  if (autoNote) lines.push("", `💬 ${escapeHtml(autoNote)}`);
+
+  lines.push("", `👷 <b>PIC:</b> ${escapeHtml(reporter)}`);
+  return lines.join("\n");
 }
 
 function buildMessage({ meta, brandName, reporter, fields, moduleId, fieldMap }) {
