@@ -184,7 +184,48 @@ export const ACCOUNT_ISSUE_FIELD_STYLE = {
 };
 
 /**
- * Optional per-module Telegram message template — just the field rows, no
+ * Promotion Request only: each (brand + promotion) combination has its OWN
+ * spreadsheet (not the brand's main "Record Issue" sheet used elsewhere),
+ * its own tab, and its own TID prefix/sequence. Keyed by
+ * "<brandId>|<promotion value>". Add an entry here as each combination is
+ * confirmed — combinations not listed here just show "not configured yet"
+ * on the TID button and skip sheet logging (Telegram still sends fine).
+ *
+ * `columns` follow the same convention as SHEET_LAYOUT above; `tidColumn`
+ * is which column the generate-next-TID button reads (usually same as
+ * startColumn, since TID is column A on these sheets).
+ */
+export const PROMOTION_SHEET_CONFIG = {
+  "betvisa|Birthday Bonus": {
+    sheetId: "1_aLEvpJoVqyFAHMhYfzIQMvAv_TxaLx55MsxLHiby0w",
+    tab: "BV Birthday Bonus",
+    startColumn: "A",
+    tidColumn: "A",
+    columns: ["tid", "date", "username", "promotion", "nid", "tier", "amount", "brand", "pic"],
+  },
+};
+
+/**
+ * Promotion Request only: the Telegram message rows per (brand + promotion)
+ * combination — same key format as PROMOTION_SHEET_CONFIG. No emoji/header,
+ * just "Particular information" + labeled rows, matching the reference
+ * format. `key` can be a field key, "brand", "pic", or { fixed: "..." } for
+ * a literal value (e.g. "To be added" is always "Manually").
+ */
+export const PROMOTION_MESSAGE_TEMPLATE = {
+  "betvisa|Birthday Bonus": [
+    { label: "TID", key: "tid" },
+    { label: "Date", key: "date" },
+    { label: "Username", key: "username" },
+    { label: "Remarks", key: "promotion" },
+    { label: "NID No", key: "nid" },
+    { label: "Tier Level", key: "tier" },
+    { label: "Amount to be Added", key: "amount" },
+    { label: "Platform", key: "brand" },
+    { label: "To be added", key: { fixed: "Manually" } },
+    { label: "Processed by", key: "pic" },
+  ],
+};
  * "New X — Brand" header line. `key` works the same as in SHEET_LAYOUT
  * above — a field key, "brand"/"pic"/"screenshotLink", or a
  * { details: [fallbackKeys...] } object for first-non-empty-wins fields.

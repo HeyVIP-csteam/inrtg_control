@@ -235,6 +235,28 @@ h1 {
   border: none; background: none; color: #ef4a72; cursor: pointer; font-size: 14px; font-weight: 700; padding: 0 2px;
 }
 
+.field-with-btn { display: flex; gap: 8px; align-items: stretch; }
+.field-with-btn input { flex: 1; }
+.btn-generate {
+  flex-shrink: 0;
+  width: 42px;
+  border: 1.5px solid var(--border);
+  background: linear-gradient(135deg, #6366f1, #0ea5e9);
+  color: #fff;
+  border-radius: 12px;
+  font-size: 16px;
+  cursor: pointer;
+  transition: transform 0.12s ease;
+}
+.btn-generate:hover { transform: translateY(-1px); }
+.btn-generate:disabled { opacity: 0.6; cursor: not-allowed; transform: none; }
+
+.field-note { margin: 6px 0 0; font-size: 12px; font-weight: 600; color: var(--ink-soft); }
+.field-note.ok { color: #1a9c6e; }
+.field-note.err { color: #e0577a; }
+
+.field input[readonly] { background: #eef0f7; color: var(--ink-soft); }
+
 /* ---- Submit ---- */
 .form-actions { margin-top: 26px; }
 

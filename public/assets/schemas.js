@@ -244,18 +244,61 @@ const MODULES = [
     id: "promotion_request",
     name: "Promotion Request",
     icon: "🎟️",
+    formTitle: "Promotion Request",
     accent: "#F472B6",
-    description: "Bonus, cashback and promo code requests that need manual review.",
+    description: "Select brand and promotion",
+    reporterLabel: "Processed by",
     attachments: DEFAULT_ATTACHMENTS,
     fields: [
       {
-        key: "bonusType", label: "Bonus Type", type: "select", required: true, emphasize: true,
-        options: ["Deposit Bonus", "Cashback", "Free Bet", "Birthday Bonus", "Referral Bonus", "Other"],
+        key: "promotion", label: "Promotion", type: "select", required: true, emphasize: true,
+        // Options depend on the selected Brand — see optionsByBrand below.
+        // Brands/promotions not listed here yet just show no options until added.
+        optionsByBrand: {
+          crickex: ["Birthday Bonus"],
+          betjili: ["Birthday Bonus", "Review Bonus"],
+          mostplay: ["Birthday Bonus", "Facebook Review Free Bonus"],
+          betvisa: ["Birthday Bonus"],
+          jeetway: ["Birthday Bonus", "Review Bonus"],
+        },
       },
-      { key: "userId", label: "User ID", type: "text", required: true, placeholder: "Player ID" },
-      { key: "promoCode", label: "Promo Code", type: "text", required: false },
-      { key: "amount", label: "Amount", type: "number", required: false, placeholder: "0.00" },
-      { key: "remark", label: "Issue & Remark", type: "textarea", required: true, placeholder: "Reason / notes..." },
+      { key: "date", label: "Date", type: "date", required: true, defaultToday: true },
+      { key: "username", label: "Username", type: "text", required: true, placeholder: "Player username..." },
+      {
+        key: "tid", label: "TID", type: "text", required: true, placeholder: "e.g. BVINRBB1020",
+        generate: true, // shows a button that fetches the next TID from the sheet
+      },
+      {
+        key: "nid", label: "NID No", type: "text", required: false,
+        showIf: { field: "promotion", oneOf: ["Birthday Bonus"] },
+      },
+      {
+        key: "tier", label: "Tier Level", type: "select", required: false,
+        showIf: [
+          { field: "promotion", oneOf: ["Birthday Bonus"] },
+          { field: "brand", oneOf: ["betvisa", "jeetway"] },
+        ],
+        // Selecting a tier auto-fills + locks the Amount field below.
+        autoFillsInto: "amount",
+        optionsByBrand: {
+          betvisa: [
+            { value: "Bronze", amount: 300 },
+            { value: "Silver", amount: 1000 },
+            { value: "Gold", amount: 2000 },
+            { value: "Platinum", amount: 3000 },
+            { value: "Diamond", amount: 4000 },
+            { value: "Legend", amount: 5000 },
+          ],
+          jeetway: [
+            { value: "Silver", amount: 1000 },
+            { value: "Gold", amount: 2000 },
+            { value: "Platinum", amount: 3000 },
+            { value: "Diamond", amount: 4000 },
+            { value: "Legend", amount: 5000 },
+          ],
+        },
+      },
+      { key: "amount", label: "Amount", type: "number", required: true, placeholder: "e.g. 200.00" },
     ],
   },
   {

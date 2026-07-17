@@ -161,6 +161,39 @@ function columnLetter(index) {
 }
 
 /**
+ * Reads the last non-empty value in a column (e.g. TID) and increments its
+ * trailing number, keeping the same prefix and zero-padding width.
+ * "BVINRBB1019" -> "BVINRBB1020". Used for the TID "generate next" button.
+ */
+export async function getNextSequenceValue(env, sheetId, tab, column) {
+  const token = await getAccessToken(env);
+  const range = `${tab}!${column}2:${column}100000`;
+  const url = `https://sheets.googleapis.com/v4/spreadsheets/${sheetId}/values/${encodeURIComponent(range)}`;
+  const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+  if (!res.ok) throw new Error(`Sheets read failed (${res.status}): ${await res.text()}`);
+  const data = await res.json();
+  const rows = data.values || [];
+
+  let lastValue = null;
+  let lastRowNumber = 1; // header row
+  rows.forEach((row, i) => {
+    if (row[0]) {
+      lastValue = row[0];
+      lastRowNumber = i + 2; // range starts at row 2
+    }
+  });
+
+  if (!lastValue) return { next: null, lastRowNumber, error: "No existing rows found to base the next value on." };
+
+  const match = lastValue.match(/^(.*?)(\d+)$/);
+  if (!match) return { next: null, lastRowNumber, error: `Could not find a trailing number in "${lastValue}".` };
+
+  const [, prefix, numStr] = match;
+  const nextNum = (parseInt(numStr, 10) + 1).toString().padStart(numStr.length, "0");
+  return { next: `${prefix}${nextNum}`, lastRowNumber, previous: lastValue };
+}
+
+/**
  * Appends `row` (a flat object) to the given tab of a spreadsheet, creating
  * the tab with a header row on first use if it doesn't exist yet. Used for
  * modules that don't have a pre-made sheet layout yet.

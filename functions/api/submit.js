@@ -1,4 +1,4 @@
-import { BRANDS, RECORD_TO_SHEET, MODULE_META, SHEET_LAYOUT, MESSAGE_TEMPLATE, SCREENSHOT_R2_ENABLED, RISK_ISSUE_AUTO_REMARKS, RISK_ISSUE_FIELD_EMOJI, ACCOUNT_ISSUE_FIELD_STYLE } from "../_shared/routing.js";
+import { BRANDS, RECORD_TO_SHEET, MODULE_META, SHEET_LAYOUT, MESSAGE_TEMPLATE, SCREENSHOT_R2_ENABLED, RISK_ISSUE_AUTO_REMARKS, RISK_ISSUE_FIELD_EMOJI, ACCOUNT_ISSUE_FIELD_STYLE, PROMOTION_SHEET_CONFIG, PROMOTION_MESSAGE_TEMPLATE } from "../_shared/routing.js";
 import { appendRowToSheet, appendRowByColumns, writeRowForDate } from "../_shared/googleSheets.js";
 import { uploadAttachmentToR2, screenshotUrl } from "../_shared/r2.js";
 
@@ -60,6 +60,8 @@ export async function onRequestPost({ request, env }) {
     text = buildRiskIssueDynamicMessage({ brandName: brand.name, fields, fieldMap, reporter });
   } else if (moduleId === "account_issue") {
     text = buildAccountIssueDynamicMessage({ brandName: brand.name, fields, fieldMap, reporter });
+  } else if (moduleId === "promotion_request" && PROMOTION_MESSAGE_TEMPLATE[`${brandId}|${fieldMap.promotion}`]) {
+    text = buildPromotionRequestMessage(PROMOTION_MESSAGE_TEMPLATE[`${brandId}|${fieldMap.promotion}`], { brandName: brand.name, fieldMap, reporter });
   } else {
     text = buildMessage({ meta, brandName: brand.name, reporter, fields, moduleId, fieldMap });
   }
@@ -86,36 +88,44 @@ export async function onRequestPost({ request, env }) {
   //    fail the whole request if the sheet write fails — Telegram already has it).
   let sheetLogged = false;
   let sheetError = null;
-  const sheetAttempted = !!(RECORD_TO_SHEET[moduleId] && brand.sheetId);
+  const promoConfig = moduleId === "promotion_request" ? PROMOTION_SHEET_CONFIG[`${brandId}|${fieldMap.promotion}`] : null;
+  const sheetAttempted = moduleId === "promotion_request"
+    ? !!(RECORD_TO_SHEET[moduleId] && promoConfig)
+    : !!(RECORD_TO_SHEET[moduleId] && brand.sheetId);
   if (sheetAttempted) {
     try {
-      const layoutEntry = SHEET_LAYOUT[moduleId];
-      if (layoutEntry && layoutEntry.pairByDate) {
-        const values = resolveColumnValues(layoutEntry.columns, { fieldMap, brand, reporter, screenshotLink, attachmentLinks });
-        const dateValue = formatDateDDMMYYYY(fieldMap.reportDate || fieldMap.date);
-        const shiftValue = fieldMap[layoutEntry.selectorField];
-        const activeSide = shiftValue === layoutEntry.rightBlock.shiftValue ? "right" : "left";
-        await writeRowForDate(env, brand.sheetId, layoutEntry.tab, {
-          leftBlock: layoutEntry.leftBlock,
-          rightBlock: layoutEntry.rightBlock,
-          activeSide,
-          dateValue,
-          values,
-        });
+      if (moduleId === "promotion_request") {
+        const values = resolveColumnValues(promoConfig.columns, { fieldMap, brand, reporter, screenshotLink, attachmentLinks });
+        await appendRowByColumns(env, promoConfig.sheetId, promoConfig.tab, promoConfig.startColumn, values);
       } else {
-        const layout = resolveSheetLayout(layoutEntry, fieldMap);
-        if (layout) {
-          const values = resolveColumnValues(layout.columns, { fieldMap, brand, reporter, screenshotLink, attachmentLinks });
-          await appendRowByColumns(env, brand.sheetId, layout.tab, layout.startColumn, values);
+        const layoutEntry = SHEET_LAYOUT[moduleId];
+        if (layoutEntry && layoutEntry.pairByDate) {
+          const values = resolveColumnValues(layoutEntry.columns, { fieldMap, brand, reporter, screenshotLink, attachmentLinks });
+          const dateValue = formatDateDDMMYYYY(fieldMap.reportDate || fieldMap.date);
+          const shiftValue = fieldMap[layoutEntry.selectorField];
+          const activeSide = shiftValue === layoutEntry.rightBlock.shiftValue ? "right" : "left";
+          await writeRowForDate(env, brand.sheetId, layoutEntry.tab, {
+            leftBlock: layoutEntry.leftBlock,
+            rightBlock: layoutEntry.rightBlock,
+            activeSide,
+            dateValue,
+            values,
+          });
         } else {
-          const row = {
-            timestamp,
-            brand: brand.name,
-            reporter,
-            ...Object.fromEntries(fields.map((f) => [f.key, f.value])),
-            attachments: (attachments || []).map((a) => a.name).join(", "),
-          };
-          await appendRowToSheet(env, brand.sheetId, moduleId, row);
+          const layout = resolveSheetLayout(layoutEntry, fieldMap);
+          if (layout) {
+            const values = resolveColumnValues(layout.columns, { fieldMap, brand, reporter, screenshotLink, attachmentLinks });
+            await appendRowByColumns(env, brand.sheetId, layout.tab, layout.startColumn, values);
+          } else {
+            const row = {
+              timestamp,
+              brand: brand.name,
+              reporter,
+              ...Object.fromEntries(fields.map((f) => [f.key, f.value])),
+              attachments: (attachments || []).map((a) => a.name).join(", "),
+            };
+            await appendRowToSheet(env, brand.sheetId, moduleId, row);
+          }
         }
       }
       sheetLogged = true;
@@ -133,6 +143,22 @@ export async function onRequestPost({ request, env }) {
     attachmentErrors: attachmentErrors.length ? attachmentErrors : undefined,
     r2Errors: r2Errors.length ? r2Errors : undefined,
   });
+}
+
+// Promotion Request: plain "Particular information" list (no emoji/header
+// styling, matches the reference format exactly). `key` can be a field key,
+// "brand", "pic", or { fixed: "..." } for an always-the-same value.
+function buildPromotionRequestMessage(rows, { brandName, fieldMap, reporter }) {
+  const lines = ["<b>Particular information</b>", ""];
+  rows.forEach((item) => {
+    let value;
+    if (typeof item.key === "object") value = item.key.fixed;
+    else if (item.key === "brand") value = brandName;
+    else if (item.key === "pic") value = reporter;
+    else value = fieldMap[item.key];
+    lines.push(`<b>${escapeHtml(item.label)}:</b> ${escapeHtml(value || "-")}`);
+  });
+  return lines.join("\n");
 }
 
 function resolveColumnValues(columns, { fieldMap, brand, reporter, screenshotLink, attachmentLinks }) {
