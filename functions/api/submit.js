@@ -149,7 +149,7 @@ export async function onRequestPost({ request, env }) {
 // styling, matches the reference format exactly). `key` can be a field key,
 // "brand", "pic", or { fixed: "..." } for an always-the-same value.
 function buildPromotionRequestMessage(rows, { brandName, fieldMap, reporter }) {
-  const lines = ["<b>Particular information</b>", ""];
+  const lines = ["<b>Particular information</b>"];
   rows.forEach((item) => {
     let value;
     if (typeof item.key === "object") value = item.key.fixed;
