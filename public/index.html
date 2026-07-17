@@ -8,7 +8,18 @@
 <script src="/assets/theme.js"></script>
 </head>
 <body>
-  <button class="theme-toggle" id="themeToggle" title="Toggle light/dark"></button>
+  <header class="topbar">
+    <div class="topbar-left">
+      <div class="logo-badge">IC</div>
+      <span class="wordmark">INRTG Control</span>
+    </div>
+    <div class="topbar-right">
+      <span class="clock" id="liveClock"></span>
+      <button class="theme-pill" id="themeToggle"></button>
+    </div>
+  </header>
+
+  <nav class="brand-row" id="brandRow"></nav>
 
   <div class="hub-layout">
     <aside class="sidebar">
@@ -16,9 +27,10 @@
       <div id="sidebarList"></div>
     </aside>
     <main class="hub-main">
-      <div>
+      <div class="inner">
         <h1>What do you need to submit?</h1>
-        <p>Pick a form on the left. It posts straight to the right Telegram group and topic.</p>
+        <p>Pick a form on the left. It posts straight to the right Telegram group and topic, and logs to the right sheet automatically.</p>
+        <span class="status-badge"><span class="pulse"></span> Connected · Telegram + Sheets</span>
       </div>
     </main>
   </div>
@@ -26,13 +38,25 @@
   <script src="/assets/schemas.js"></script>
   <script>
     window.initThemeToggle();
+    window.initClock();
+
+    const BRAND_COLORS = ["#4fc3f7", "#f6ad55", "#f4718a", "#8b5cf6", "#34d399"];
+    const brandRow = document.getElementById("brandRow");
+    window.BRANDS.forEach((b, i) => {
+      const el = document.createElement("div");
+      el.className = "brand-pill";
+      const initials = b.name.slice(0, 2).toUpperCase();
+      el.innerHTML = `<span class="avatar" style="background:${BRAND_COLORS[i % BRAND_COLORS.length]};">${initials}</span>${b.name}`;
+      brandRow.appendChild(el);
+    });
+
     const list = document.getElementById("sidebarList");
     window.MODULES.forEach((m) => {
       const a = document.createElement("a");
       a.href = `/form.html?module=${m.id}`;
       a.className = "sidebar-item";
       a.innerHTML = `
-        <div class="icon" style="background:${m.accent}22;">${m.icon}</div>
+        <div class="icon" style="background:${m.accent}33;">${m.icon}</div>
         <div class="text">
           <div class="name">${m.name}</div>
           <div class="desc">${m.description}</div>
