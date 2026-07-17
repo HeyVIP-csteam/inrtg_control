@@ -358,17 +358,14 @@ const MODULES = [
     id: "genie_issue",
     name: "Genie Issue",
     icon: "🤖",
+    formTitle: "Genie Issues",
     accent: "#A78BFA",
-    description: "Problems with Genie chat sessions — stuck replies, wrong answers, escalations.",
+    description: "Fill in all required fields and submit to Telegram",
+    reporterLabel: "PIC",
     attachments: DEFAULT_ATTACHMENTS,
     fields: [
-      {
-        key: "issueType", label: "Issue Type", type: "select", required: true, emphasize: true,
-        options: ["Stuck Reply", "Wrong Answer", "Escalation Needed", "Session Not Loading", "Other"],
-      },
-      { key: "sessionId", label: "Chat / Session ID", type: "text", required: false },
-      { key: "userId", label: "User ID", type: "text", required: false, placeholder: "Player ID (if applicable)" },
-      { key: "remark", label: "Issue & Remark", type: "textarea", required: true },
+      { key: "issueDetails", label: "Issue Details", type: "textarea", required: true, placeholder: "Describe the Genie issue..." },
+      { key: "chatLinks", label: "Chat Link(s)", type: "textarea", required: true, placeholder: "Chat links (multiple allowed, one per line)..." },
     ],
   },
 ];
