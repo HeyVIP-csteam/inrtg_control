@@ -36,7 +36,15 @@ export async function onRequestPost({ request, env }) {
   const fieldMap = Object.fromEntries(fields.map((f) => [f.key, f.value]));
   if (moduleId === "risk_issue") {
     const autoRemark = resolveAutoRemark(fieldMap);
-    if (autoRemark) fieldMap.remark = autoRemark;
+    if (autoRemark) {
+      fieldMap.remark = autoRemark;
+      // Keep the raw `fields` array in sync too — buildMessage() (used for
+      // issue types without a custom MESSAGE_TEMPLATE yet) reads from this
+      // array directly, not from fieldMap.
+      const remarkField = fields.find((f) => f.key === "remark");
+      if (remarkField) remarkField.value = autoRemark;
+      else fields.push({ key: "remark", label: "Remark", value: autoRemark });
+    }
   }
 
   // 1. Upload attachments to R2 first (if configured) so the message text
