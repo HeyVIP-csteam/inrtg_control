@@ -94,10 +94,26 @@
     });
   }
 
-  // Whenever a field with autoFillsInto (e.g. Tier Level -> Amount) is
-  // visible and has a value with a matching data-amount, lock the target
-  // field to that amount; otherwise unlock + clear it.
+  // Locks the Amount field in priority order: (1) a fixed brand+promotion
+  // combo with no selector needed (e.g. Crickex Birthday Bonus), then (2)
+  // whichever visible field has autoFillsInto set (Tier Level / Number of
+  // Deposits) and a value with a matching data-amount. Falls back to
+  // unlocked + cleared if neither applies.
   function refreshAutoFilledAmounts() {
+    const amountField = fieldEls.amount;
+    if (!amountField) return;
+
+    if (module.fixedAmounts) {
+      const promotionValue = fieldEls.promotion ? fieldEls.promotion.control.value : "";
+      const fixed = module.fixedAmounts[`${brandSelect.value}|${promotionValue}`];
+      if (fixed !== undefined) {
+        amountField.control.value = fixed;
+        amountField.control.readOnly = true;
+        return;
+      }
+    }
+
+    let locked = false;
     module.fields.forEach((f) => {
       if (!f.autoFillsInto) return;
       const source = fieldEls[f.key];
@@ -111,11 +127,14 @@
       if (amount) {
         target.control.value = amount;
         target.control.readOnly = true;
-      } else {
-        target.control.readOnly = false;
-        target.control.value = "";
+        locked = true;
       }
     });
+
+    if (!locked) {
+      amountField.control.readOnly = false;
+      amountField.control.value = "";
+    }
   }
 
   // Wire up conditional visibility: whenever a field that something depends
