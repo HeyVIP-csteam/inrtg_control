@@ -137,6 +137,30 @@ export const RISK_ISSUE_AUTO_REMARKS = {
 };
 
 /**
+ * Risk Issue only: emoji shown next to each field when building the message
+ * dynamically for an issue type that doesn't have its own row list in
+ * MESSAGE_TEMPLATE.risk_issue.templates yet (everything except "Bonus Cancel
+ * Related Issue" today). Add an entry here whenever a new field is added to
+ * the risk_issue schema so it doesn't fall back to the generic 🔸.
+ */
+export const RISK_ISSUE_FIELD_EMOJI = {
+  uid: "👤",
+  bonusCode: "🎁",
+  recycleAmount: "💰",
+  turnoverRequirement: "🔄",
+  turnoverCompleted: "✅",
+  accountStatus: "📛",
+  vipLevel: "👑",
+  registeredNumber: "📱",
+  kycEmail: "📧",
+  updateRequest: "📝",
+  fullName: "🧾",
+  aadharPan: "🪪",
+  cancelType: "📌",
+  issueDescription: "📝",
+};
+
+/**
  * Optional per-module Telegram message template — just the field rows, no
  * "New X — Brand" header line. `key` works the same as in SHEET_LAYOUT
  * above — a field key, "brand"/"pic"/"screenshotLink", or a
