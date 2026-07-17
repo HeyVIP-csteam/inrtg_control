@@ -412,6 +412,11 @@ export const SHEET_LAYOUT = {
     startColumn: "B",
     columns: ["date", "uid", "number", "email", "brand", "motive", "domainLink", "screenshotLink", { details: ["remark", "issueDetails"] }, "pic"],
   },
+  genie_issue: {
+    tab: "Genie Issues",
+    startColumn: "B",
+    columns: ["brand", "issueDetails", "chatLinks", "pic"],
+  },
   account_issue: {
     tab: "Account Issue",
     startColumn: "B",
