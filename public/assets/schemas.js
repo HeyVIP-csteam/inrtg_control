@@ -114,7 +114,7 @@ const MODULES = [
         key: "addNumber", label: "Add Number", type: "text", required: false, placeholder: "Number to add...",
         showIf: { field: "issueType", oneOf: ["Add Mobile Number Verify"] },
       },
-      { key: "nid", label: "NID", type: "text", required: false, placeholder: "NID number...",
+      { key: "nid", label: "Aadhar-Pan Card Number", type: "text", required: false, placeholder: "Aadhar or Pan card number...",
         showIf: { field: "issueType", oneOf: ["Add Mobile Number Verify"] },
       },
       { key: "removeNumber", label: "Remove Number", type: "text", required: false,
