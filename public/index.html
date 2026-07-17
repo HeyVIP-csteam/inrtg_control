@@ -21,6 +21,29 @@
 
   <nav class="brand-row" id="brandRow"></nav>
 
+  <div class="edit-modal-backdrop" id="editModalBackdrop">
+    <div class="edit-modal">
+      <p class="edit-modal-title" id="editModalTitle">Edit brand</p>
+      <div class="field">
+        <label>Password</label>
+        <input type="password" id="editPassword" placeholder="Edit password..." />
+      </div>
+      <div class="field">
+        <label>Logo image</label>
+        <input type="file" id="editLogo" accept="image/*" />
+      </div>
+      <div class="field">
+        <label>Link (opens when the pill is clicked)</label>
+        <input type="text" id="editLink" placeholder="https://..." />
+      </div>
+      <p class="edit-modal-note" id="editModalNote"></p>
+      <div class="edit-modal-actions">
+        <button type="button" class="btn-secondary" id="editCancel">Cancel</button>
+        <button type="button" class="btn-submit" id="editSave">Save</button>
+      </div>
+    </div>
+  </div>
+
   <div class="hub-layout">
     <aside class="sidebar">
       <div class="sidebar-header"><span class="dot"></span> ISSUE SUBMISSION</div>
@@ -42,12 +65,101 @@
 
     const BRAND_COLORS = ["#4fc3f7", "#f6ad55", "#f4718a", "#8b5cf6", "#34d399"];
     const brandRow = document.getElementById("brandRow");
-    window.BRANDS.forEach((b, i) => {
-      const el = document.createElement("div");
-      el.className = "brand-pill";
-      const initials = b.name.slice(0, 2).toUpperCase();
-      el.innerHTML = `<span class="avatar" style="background:${BRAND_COLORS[i % BRAND_COLORS.length]};">${initials}</span>${b.name}`;
-      brandRow.appendChild(el);
+    let brandConfig = {};
+    let editingBrand = null;
+    let unlockedPassword = sessionStorage.getItem("brandEditPassword") || "";
+
+    function renderBrandRow() {
+      brandRow.innerHTML = "";
+      window.BRANDS.forEach((b, i) => {
+        const entry = brandConfig[b.id] || {};
+        const el = document.createElement("div");
+        el.className = "brand-pill";
+        const initials = b.name.slice(0, 2).toUpperCase();
+        const avatar = entry.logoUrl
+          ? `<img class="avatar" src="${entry.logoUrl}" alt="${b.name}" />`
+          : `<span class="avatar" style="background:${BRAND_COLORS[i % BRAND_COLORS.length]};">${initials}</span>`;
+        el.innerHTML = `${avatar}<span class="pill-name">${b.name}</span><button type="button" class="pill-edit" title="Edit ${b.name}" data-brand="${b.id}">✏️</button>`;
+        el.querySelector(".pill-name").addEventListener("click", () => {
+          if (entry.link) window.open(entry.link, "_blank", "noopener");
+        });
+        el.querySelector(".pill-edit").addEventListener("click", (e) => {
+          e.stopPropagation();
+          openEditModal(b);
+        });
+        brandRow.appendChild(el);
+      });
+    }
+
+    async function loadBrandConfig() {
+      try {
+        const res = await fetch("/api/brand-config");
+        const data = await res.json();
+        if (data.ok) brandConfig = data.config || {};
+      } catch {
+        // Non-fatal — pills just fall back to colored initials.
+      }
+      renderBrandRow();
+    }
+    loadBrandConfig();
+
+    // ---- Edit modal ----
+    const backdrop = document.getElementById("editModalBackdrop");
+    const modalTitle = document.getElementById("editModalTitle");
+    const modalNote = document.getElementById("editModalNote");
+    const passwordInput = document.getElementById("editPassword");
+    const logoInput = document.getElementById("editLogo");
+    const linkInput = document.getElementById("editLink");
+
+    function openEditModal(brand) {
+      editingBrand = brand;
+      modalTitle.textContent = `Edit ${brand.name}`;
+      modalNote.textContent = "";
+      modalNote.className = "edit-modal-note";
+      passwordInput.value = unlockedPassword;
+      logoInput.value = "";
+      linkInput.value = (brandConfig[brand.id] && brandConfig[brand.id].link) || "";
+      backdrop.classList.add("is-open");
+    }
+    function closeEditModal() {
+      backdrop.classList.remove("is-open");
+      editingBrand = null;
+    }
+    document.getElementById("editCancel").addEventListener("click", closeEditModal);
+    backdrop.addEventListener("click", (e) => { if (e.target === backdrop) closeEditModal(); });
+
+    document.getElementById("editSave").addEventListener("click", async () => {
+      if (!editingBrand) return;
+      const password = passwordInput.value;
+      if (!password) {
+        modalNote.textContent = "Enter the edit password.";
+        modalNote.className = "edit-modal-note err";
+        return;
+      }
+      modalNote.textContent = "Saving…";
+      modalNote.className = "edit-modal-note";
+
+      const form = new FormData();
+      form.append("password", password);
+      form.append("brand", editingBrand.id);
+      form.append("link", linkInput.value || "");
+      if (logoInput.files[0]) form.append("logo", logoInput.files[0]);
+
+      try {
+        const res = await fetch("/api/brand-config", { method: "POST", body: form });
+        const data = await res.json();
+        if (!res.ok || !data.ok) throw new Error(data.error || "Save failed.");
+        brandConfig = data.config;
+        unlockedPassword = password;
+        sessionStorage.setItem("brandEditPassword", password);
+        renderBrandRow();
+        modalNote.textContent = "Saved.";
+        modalNote.className = "edit-modal-note ok";
+        setTimeout(closeEditModal, 600);
+      } catch (err) {
+        modalNote.textContent = err.message || "Save failed.";
+        modalNote.className = "edit-modal-note err";
+      }
     });
 
     const list = document.getElementById("sidebarList");
