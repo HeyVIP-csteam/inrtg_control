@@ -1,4 +1,4 @@
-import { BRANDS, RECORD_TO_SHEET, MODULE_META, SHEET_LAYOUT, MESSAGE_TEMPLATE, SCREENSHOT_R2_ENABLED } from "../_shared/routing.js";
+import { BRANDS, RECORD_TO_SHEET, MODULE_META, SHEET_LAYOUT, MESSAGE_TEMPLATE, SCREENSHOT_R2_ENABLED, RISK_ISSUE_AUTO_REMARKS } from "../_shared/routing.js";
 import { appendRowToSheet, appendRowByColumns, writeRowForDate } from "../_shared/googleSheets.js";
 import { uploadAttachmentToR2, screenshotUrl } from "../_shared/r2.js";
 
@@ -34,6 +34,10 @@ export async function onRequestPost({ request, env }) {
   const route = brand.telegram[moduleId] || brand.telegram.default;
   const timestamp = new Date().toISOString().replace("T", " ").slice(0, 19) + " UTC";
   const fieldMap = Object.fromEntries(fields.map((f) => [f.key, f.value]));
+  if (moduleId === "risk_issue") {
+    const autoRemark = resolveAutoRemark(fieldMap);
+    if (autoRemark) fieldMap.remark = autoRemark;
+  }
 
   // 1. Upload attachments to R2 first (if configured) so the message text
   //    can include a real, directly-openable screenshot link.
@@ -54,7 +58,7 @@ export async function onRequestPost({ request, env }) {
 
   const template = resolveTemplate(MESSAGE_TEMPLATE[moduleId], fieldMap);
   const text = template
-    ? buildMessageFromTemplate({ template, brandName: brand.name, fieldMap, reporter, screenshotLink })
+    ? buildMessageFromTemplate({ template, meta, brandName: brand.name, fieldMap, reporter, screenshotLink })
     : buildMessage({ meta, brandName: brand.name, reporter, fields, timestamp });
 
   // 2. Send to Telegram — photo(s)/document(s) with the info as the caption,
@@ -147,6 +151,15 @@ function resolveColumnValues(columns, { fieldMap, brand, reporter, screenshotLin
   });
 }
 
+function resolveAutoRemark(fieldMap) {
+  for (const triggerField of ["issueType", "accountStatus", "cancelType"]) {
+    const table = RISK_ISSUE_AUTO_REMARKS[triggerField];
+    const match = table && table[fieldMap[triggerField]];
+    if (match) return match;
+  }
+  return null;
+}
+
 function resolveSheetLayout(entry, fieldMap) {
   if (!entry) return null;
   if (entry.selectorField) {
@@ -164,7 +177,7 @@ function resolveTemplate(entry, fieldMap) {
     const chosen = entry.templates[selectorValue] || entry.templates.default;
     return resolveTemplate(chosen, fieldMap);
   }
-  return { rows: entry.rows, spacing: entry.spacing || "tight", emptyPlaceholder: entry.emptyPlaceholder ?? "-" };
+  return { rows: entry.rows, spacing: entry.spacing || "tight", emptyPlaceholder: entry.emptyPlaceholder ?? "-", header: entry.header || null };
 }
 
 function resolveFieldValue(item, { brandName, fieldMap, reporter, screenshotLink }) {
@@ -179,9 +192,13 @@ function resolveFieldValue(item, { brandName, fieldMap, reporter, screenshotLink
   return fieldMap[item.key];
 }
 
-function buildMessageFromTemplate({ template, brandName, fieldMap, reporter, screenshotLink }) {
-  const { rows, spacing, emptyPlaceholder } = template;
+function buildMessageFromTemplate({ template, meta, brandName, fieldMap, reporter, screenshotLink }) {
+  const { rows, spacing, emptyPlaceholder, header } = template;
   const lines = [];
+  if (header) {
+    const headerValue = header.source === "brand" ? brandName : fieldMap[header.source];
+    lines.push(`${meta.emoji} <b>${escapeHtml(meta.name)} — ${escapeHtml(headerValue || "-")}</b>`, "");
+  }
   rows.forEach((item, i) => {
     const value = resolveFieldValue(item, { brandName, fieldMap, reporter, screenshotLink });
     lines.push(`${item.emoji} <b>${escapeHtml(item.label)}:</b> ${escapeHtml(value || emptyPlaceholder)}`);
@@ -215,7 +232,6 @@ function buildMessage({ meta, brandName, reporter, fields, timestamp }) {
       .map((f) => `<b>${escapeHtml(f.label)}:</b> ${escapeHtml(f.value)}`),
     "",
     `🧑‍💼 Submitted by ${escapeHtml(reporter)}`,
-    `🕒 ${timestamp}`,
   ];
   return lines.join("\n");
 }
