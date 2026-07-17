@@ -201,7 +201,7 @@ export const SHEET_LAYOUT = {
       "issueType",
       "bonusCode",
       "aadharPan",
-      null, // Cancel Type — not wired up yet
+      "cancelType",
       "accountStatus",
       { details: ["remark", "issueDescription"] },
       "pic",
