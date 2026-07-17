@@ -1,196 +1,498 @@
-<!doctype html>
-<html lang="en">
-<head>
-<meta charset="utf-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>INR CS Team - TBC</title>
-<link rel="stylesheet" href="/assets/style.css" />
-<script src="/assets/theme.js"></script>
-</head>
-<body>
-  <header class="topbar">
-    <div class="topbar-left">
-      <img src="/assets/img/logo.webp" alt="HeyVIP" class="logo-img" />
-      <span class="wordmark">INR CS TEAM - TBC</span>
-    </div>
-    <div class="topbar-right">
-      <span class="clock" id="liveClock"></span>
-      <button class="theme-pill" id="themeToggle"></button>
-    </div>
-  </header>
+:root {
+  --ink: #1b2559;
+  --ink-soft: #6b7290;
+  --label-blue: #1e3a8a;
+  --border: #e3e8f7;
+  --field-bg: #f6f7fc;
+  --card-bg: #ffffff;
+  --shadow: 0 20px 45px -20px rgba(60, 50, 130, 0.28);
+  --radius: 22px;
+  --required: #ef4a72;
+  --page-bg:
+    radial-gradient(900px 500px at 90% 0%, #eaf1ff 0%, transparent 55%),
+    linear-gradient(160deg, #dbe7fb 0%, #d9ceF4 45%, #cdbdf2 75%, #c4b2ee 100%);
+  --panel: rgba(255, 255, 255, 0.35);
+  --panel-border: rgba(255, 255, 255, 0.6);
+  --wordmark: #4338ca;
+  --sidebar-bg: rgba(255, 255, 255, 0.18);
+  --sidebar-item-bg: rgba(255, 255, 255, 0.45);
+  --sidebar-item-hover: rgba(255, 255, 255, 0.75);
+  --pill-bg: rgba(255, 255, 255, 0.55);
+  --pill-border: rgba(255, 255, 255, 0.7);
+  --brand-row-bg: rgba(255, 255, 255, 0.22);
+  font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+}
 
-  <nav class="brand-row" id="brandRow"></nav>
+[data-theme="dark"] {
+  --ink: #eef1fb;
+  --ink-soft: #9aa3c4;
+  --label-blue: #a9c1ff;
+  --border: #262c50;
+  --field-bg: #1a2040;
+  --card-bg: #141a33;
+  --shadow: 0 20px 45px -20px rgba(0, 0, 0, 0.6);
+  --page-bg:
+    radial-gradient(650px 320px at 18% 100%, rgba(124, 108, 240, 0.28), transparent 70%),
+    radial-gradient(650px 320px at 82% 100%, rgba(56, 130, 240, 0.24), transparent 70%),
+    radial-gradient(1.5px 1.5px at 8% 12%, rgba(255, 255, 255, 0.55), transparent),
+    radial-gradient(1.5px 1.5px at 22% 6%, rgba(255, 255, 255, 0.45), transparent),
+    radial-gradient(1.5px 1.5px at 38% 18%, rgba(255, 255, 255, 0.35), transparent),
+    radial-gradient(1.5px 1.5px at 58% 9%, rgba(255, 255, 255, 0.45), transparent),
+    radial-gradient(1.5px 1.5px at 73% 22%, rgba(255, 255, 255, 0.3), transparent),
+    radial-gradient(1.5px 1.5px at 88% 14%, rgba(255, 255, 255, 0.4), transparent),
+    radial-gradient(1.5px 1.5px at 13% 35%, rgba(255, 255, 255, 0.28), transparent),
+    radial-gradient(1.5px 1.5px at 52% 40%, rgba(255, 255, 255, 0.26), transparent),
+    radial-gradient(1.5px 1.5px at 95% 45%, rgba(255, 255, 255, 0.22), transparent),
+    linear-gradient(160deg, #090c1c 0%, #10143a 45%, #191c4a 75%, #221a45 100%);
+  --panel: rgba(18, 22, 46, 0.92);
+  --panel-border: rgba(255, 255, 255, 0.08);
+  --wordmark: #f3c463;
+  --sidebar-bg: rgba(15, 19, 40, 0.75);
+  --sidebar-item-bg: rgba(255, 255, 255, 0.03);
+  --sidebar-item-hover: rgba(255, 255, 255, 0.07);
+  --pill-bg: rgba(255, 255, 255, 0.04);
+  --pill-border: rgba(255, 255, 255, 0.1);
+  --brand-row-bg: rgba(255, 255, 255, 0.03);
+}
 
-  <div class="edit-modal-backdrop" id="editModalBackdrop">
-    <div class="edit-modal">
-      <p class="edit-modal-title" id="editModalTitle">Edit brand</p>
-      <div class="field">
-        <label>Password</label>
-        <input type="password" id="editPassword" placeholder="Edit password..." />
-      </div>
-      <div class="field">
-        <label>Logo image</label>
-        <input type="file" id="editLogo" accept="image/*" />
-        <p class="edit-modal-note" id="editLogoFilename">No file selected yet.</p>
-      </div>
-      <div class="field">
-        <label>Link (opens when the pill is clicked)</label>
-        <input type="text" id="editLink" placeholder="https://..." />
-      </div>
-      <p class="edit-modal-note" id="editModalNote"></p>
-      <div class="edit-modal-actions">
-        <button type="button" class="btn-secondary" id="editCancel">Cancel</button>
-        <button type="button" class="btn-submit" id="editSave">Save</button>
-      </div>
-    </div>
-  </div>
+* { box-sizing: border-box; }
 
-  <div class="hub-layout">
-    <aside class="sidebar">
-      <div class="sidebar-header"><span class="dot"></span> ISSUE SUBMISSION</div>
-      <div id="sidebarList"></div>
-    </aside>
-    <main class="hub-main">
-      <div class="inner">
-        <h1>What do you need to submit?</h1>
-        <p>Pick a form on the left. It posts straight to the right Telegram group and topic, and logs to the right sheet automatically.</p>
-        <span class="status-badge"><span class="pulse"></span> Connected · Telegram + Sheets</span>
-      </div>
-    </main>
-  </div>
+body {
+  margin: 0;
+  min-height: 100vh;
+  color: var(--ink);
+  background: var(--page-bg);
+  background-attachment: fixed;
+  transition: background 0.2s ease, color 0.2s ease;
+}
 
-  <script src="/assets/schemas.js"></script>
-  <script>
-    window.initThemeToggle();
-    window.initClock();
+a { color: inherit; text-decoration: none; }
 
-    const BRAND_COLORS = ["#4fc3f7", "#f6ad55", "#f4718a", "#8b5cf6", "#34d399"];
-    const brandRow = document.getElementById("brandRow");
-    let brandConfig = {};
-    let editingBrand = null;
-    let unlockedPassword = sessionStorage.getItem("brandEditPassword") || "";
+.page {
+  max-width: 980px;
+  margin: 0 auto;
+  padding: 48px 24px 96px;
+}
 
-    function renderBrandRow() {
-      brandRow.innerHTML = "";
-      window.BRANDS.forEach((b, i) => {
-        const entry = brandConfig[b.id] || {};
-        const el = document.createElement("div");
-        el.className = "brand-pill";
-        const initials = b.name.slice(0, 2).toUpperCase();
-        const avatar = entry.logoUrl
-          ? `<img class="avatar" src="${entry.logoUrl}" alt="${b.name}" />`
-          : `<span class="avatar" style="background:${BRAND_COLORS[i % BRAND_COLORS.length]};">${initials}</span>`;
-        el.innerHTML = `${avatar}<span class="pill-name">${b.name}</span><button type="button" class="pill-edit" title="Edit ${b.name}" data-brand="${b.id}">✏️</button>`;
-        el.querySelector(".pill-name").addEventListener("click", () => {
-          if (entry.link) window.open(entry.link, "_blank", "noopener");
-        });
-        el.querySelector(".pill-edit").addEventListener("click", (e) => {
-          e.stopPropagation();
-          openEditModal(b);
-        });
-        brandRow.appendChild(el);
-      });
-    }
+/* ---- Top bar (shared across pages) ---- */
+.topbar {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 12px 24px;
+  background: var(--panel);
+  border-bottom: 1px solid var(--panel-border);
+  backdrop-filter: blur(16px) saturate(160%);
+  -webkit-backdrop-filter: blur(16px) saturate(160%);
+}
+.topbar-left { display: flex; align-items: center; gap: 10px; }
+.logo-badge {
+  width: 34px; height: 34px; border-radius: 10px;
+  background: linear-gradient(135deg, #6366f1, #38bdf8);
+  color: #fff; font-weight: 800; font-size: 13px;
+  display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0;
+}
+.logo-img { height: 32px; width: auto; flex-shrink: 0; }
+.wordmark { font-weight: 800; font-size: 16px; color: var(--wordmark); letter-spacing: -0.01em; }
 
-    async function loadBrandConfig() {
-      try {
-        const res = await fetch("/api/brand-config");
-        const data = await res.json();
-        if (data.ok) brandConfig = data.config || {};
-      } catch {
-        // Non-fatal — pills just fall back to colored initials.
-      }
-      renderBrandRow();
-    }
-    loadBrandConfig();
+.topbar-right { display: flex; align-items: center; gap: 10px; }
+.clock {
+  font-family: "SFMono-Regular", Consolas, monospace;
+  font-size: 12.5px; font-weight: 600; color: var(--ink-soft);
+  background: var(--pill-bg); border: 1px solid var(--pill-border);
+  padding: 7px 12px; border-radius: 999px;
+  white-space: nowrap;
+}
+.theme-pill {
+  display: flex; align-items: center; gap: 6px;
+  background: var(--pill-bg); border: 1px solid var(--pill-border);
+  color: var(--ink); font-size: 12.5px; font-weight: 700;
+  padding: 7px 14px; border-radius: 999px; cursor: pointer;
+  transition: transform 0.12s ease;
+}
+.theme-pill:hover { transform: translateY(-1px); }
 
-    // ---- Edit modal ----
-    const backdrop = document.getElementById("editModalBackdrop");
-    const modalTitle = document.getElementById("editModalTitle");
-    const modalNote = document.getElementById("editModalNote");
-    const passwordInput = document.getElementById("editPassword");
-    const logoInput = document.getElementById("editLogo");
-    const logoFilename = document.getElementById("editLogoFilename");
-    const linkInput = document.getElementById("editLink");
+/* ---- Brand row (decorative, hub page only) ---- */
+.brand-row {
+  display: flex;
+  gap: 10px;
+  overflow-x: auto;
+  padding: 14px 24px;
+  border-bottom: 1px solid var(--panel-border);
+  background: var(--brand-row-bg);
+  backdrop-filter: blur(16px) saturate(160%);
+  -webkit-backdrop-filter: blur(16px) saturate(160%);
+}
+.brand-row::-webkit-scrollbar { height: 6px; }
+.brand-pill {
+  display: flex; align-items: center; gap: 8px;
+  background: var(--pill-bg); border: 1px solid var(--pill-border);
+  padding: 6px 10px 6px 6px; border-radius: 999px;
+  font-size: 12.5px; font-weight: 700; color: var(--ink);
+  flex-shrink: 0;
+  position: relative;
+}
+.brand-pill .avatar {
+  width: 24px; height: 24px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 10.5px; font-weight: 800; color: #10131f;
+  flex-shrink: 0;
+  object-fit: cover;
+}
+.brand-pill .pill-name { cursor: default; }
+.brand-pill .pill-edit {
+  border: none; background: none; cursor: pointer; font-size: 11px;
+  opacity: 0; transition: opacity 0.15s ease;
+  padding: 2px 4px; margin-left: 2px; border-radius: 6px;
+}
+.brand-pill:hover .pill-edit { opacity: 0.7; }
+.brand-pill .pill-edit:hover { opacity: 1; background: rgba(0, 0, 0, 0.08); }
 
-    logoInput.addEventListener("change", () => {
-      if (logoInput.files[0]) {
-        logoFilename.textContent = `Selected: ${logoInput.files[0].name} (${Math.round(logoInput.files[0].size / 1024)} KB)`;
-        logoFilename.className = "edit-modal-note ok";
-      } else {
-        logoFilename.textContent = "No file selected yet.";
-        logoFilename.className = "edit-modal-note";
-      }
-    });
+/* ---- Brand logo/link edit modal ---- */
+.edit-modal-backdrop {
+  display: none;
+  position: fixed; inset: 0; z-index: 50;
+  background: rgba(10, 12, 25, 0.55);
+  align-items: center; justify-content: center;
+}
+.edit-modal-backdrop.is-open { display: flex; }
+.edit-modal {
+  width: 100%; max-width: 360px;
+  background: var(--card-bg); border: 1px solid var(--panel-border);
+  border-radius: 18px; padding: 22px 24px 24px;
+  box-shadow: var(--shadow);
+}
+.edit-modal-title { font-weight: 800; font-size: 15px; margin: 0 0 14px; }
+.edit-modal-note { min-height: 16px; font-size: 12px; font-weight: 600; color: var(--ink-soft); margin: 0 0 10px; }
+.edit-modal-note.ok { color: #1a9c6e; }
+.edit-modal-note.err { color: #e0577a; }
+.edit-modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 6px; }
+.btn-secondary {
+  border: 1.5px solid var(--border); background: none; color: var(--ink);
+  border-radius: 10px; padding: 9px 16px; font-size: 13px; font-weight: 700; cursor: pointer;
+}
+.edit-modal .btn-submit { width: auto; padding: 9px 18px; }
 
-    function openEditModal(brand) {
-      editingBrand = brand;
-      modalTitle.textContent = `Edit ${brand.name}`;
-      modalNote.textContent = "";
-      modalNote.className = "edit-modal-note";
-      passwordInput.value = unlockedPassword;
-      logoInput.value = "";
-      logoFilename.textContent = "No file selected yet.";
-      logoFilename.className = "edit-modal-note";
-      linkInput.value = (brandConfig[brand.id] && brandConfig[brand.id].link) || "";
-      backdrop.classList.add("is-open");
-    }
-    function closeEditModal() {
-      backdrop.classList.remove("is-open");
-      editingBrand = null;
-    }
-    document.getElementById("editCancel").addEventListener("click", closeEditModal);
-    backdrop.addEventListener("click", (e) => { if (e.target === backdrop) closeEditModal(); });
+/* ---- Theme toggle (legacy floating button, kept for old pages) ---- */
+.theme-toggle {
+  position: fixed;
+  top: 20px;
+  right: 20px;
+  z-index: 10;
+  width: 42px;
+  height: 42px;
+  border-radius: 50%;
+  border: 1.5px solid var(--border);
+  background: var(--card-bg);
+  color: var(--ink);
+  font-size: 18px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: var(--shadow);
+}
+.theme-toggle:hover { transform: translateY(-1px); }
 
-    document.getElementById("editSave").addEventListener("click", async () => {
-      if (!editingBrand) return;
-      const password = passwordInput.value;
-      if (!password) {
-        modalNote.textContent = "Enter the edit password.";
-        modalNote.className = "edit-modal-note err";
-        return;
-      }
-      modalNote.textContent = "Saving…";
-      modalNote.className = "edit-modal-note";
+/* ---- Sidebar hub layout ---- */
+.hub-layout {
+  display: flex;
+  min-height: calc(100vh - 60px);
+}
+.sidebar {
+  width: 290px;
+  flex-shrink: 0;
+  background: var(--sidebar-bg);
+  border-right: 1px solid var(--panel-border);
+  padding: 24px 16px 40px;
+  overflow-y: auto;
+  backdrop-filter: blur(16px) saturate(160%);
+  -webkit-backdrop-filter: blur(16px) saturate(160%);
+}
+.sidebar-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+  padding: 0 10px 16px;
+}
+.sidebar-header .dot { width: 6px; height: 6px; border-radius: 50%; background: #7c6cf0; }
 
-      const form = new FormData();
-      form.append("password", password);
-      form.append("brand", editingBrand.id);
-      form.append("link", linkInput.value || "");
-      if (logoInput.files[0]) form.append("logo", logoInput.files[0]);
+.sidebar-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 12px;
+  border-radius: 14px;
+  background: var(--sidebar-item-bg);
+  border: 1px solid transparent;
+  margin-bottom: 8px;
+  transition: background 0.15s ease, transform 0.12s ease, border-color 0.15s ease;
+}
+.sidebar-item:hover { background: var(--sidebar-item-hover); border-color: var(--panel-border); transform: translateX(2px); }
+.sidebar-item .icon {
+  width: 38px; height: 38px;
+  border-radius: 11px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 17px;
+  flex-shrink: 0;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08);
+}
+.sidebar-item .text { flex: 1; min-width: 0; }
+.sidebar-item .name { font-weight: 700; font-size: 13.5px; color: var(--ink); }
+.sidebar-item .desc {
+  font-size: 11.5px; color: var(--ink-soft);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.sidebar-item .arrow { color: var(--ink-soft); font-size: 14px; }
 
-      try {
-        const res = await fetch("/api/brand-config", { method: "POST", body: form });
-        const data = await res.json();
-        if (!res.ok || !data.ok) throw new Error(data.error || "Save failed.");
-        brandConfig = data.config;
-        unlockedPassword = password;
-        sessionStorage.setItem("brandEditPassword", password);
-        renderBrandRow();
-        modalNote.textContent = "Saved.";
-        modalNote.className = "edit-modal-note ok";
-        setTimeout(closeEditModal, 600);
-      } catch (err) {
-        modalNote.textContent = err.message || "Save failed.";
-        modalNote.className = "edit-modal-note err";
-      }
-    });
+.hub-main {
+  flex: 1;
+  padding: 48px 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+}
+.hub-main .inner { max-width: 480px; }
+.hub-main h1 { font-size: 26px; margin: 0 0 10px; }
+.hub-main p { color: var(--ink-soft); margin: 0 0 24px; line-height: 1.6; }
+.status-badge {
+  display: inline-flex; align-items: center; gap: 8px;
+  background: var(--pill-bg); border: 1px solid var(--pill-border);
+  padding: 9px 18px; border-radius: 999px; font-size: 12.5px; font-weight: 700; color: var(--ink-soft);
+}
+.status-badge .pulse {
+  width: 7px; height: 7px; border-radius: 50%; background: #34d399;
+  box-shadow: 0 0 8px #34d399;
+  animation: pulse 2s infinite;
+}
+@keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
 
-    const list = document.getElementById("sidebarList");
-    window.MODULES.forEach((m) => {
-      const a = document.createElement("a");
-      a.href = `/form.html?module=${m.id}`;
-      a.className = "sidebar-item";
-      a.innerHTML = `
-        <div class="icon" style="background:${m.accent}33;">${m.icon}</div>
-        <div class="text">
-          <div class="name">${m.name}</div>
-          <div class="desc">${m.description}</div>
-        </div>
-        <span class="arrow">&rarr;</span>
-      `;
-      list.appendChild(a);
-    });
-  </script>
-</body>
-</html>
+@media (max-width: 720px) {
+  .hub-layout { flex-direction: column; min-height: auto; }
+  .sidebar { width: 100%; border-right: none; border-bottom: 1px solid var(--panel-border); max-height: 60vh; }
+}
+
+/* ---- Back to Home pill ---- */
+.back-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: linear-gradient(135deg, #38bdf8, #6366f1);
+  color: #fff;
+  font-weight: 700;
+  font-size: 13px;
+  padding: 10px 18px;
+  border-radius: 999px;
+  box-shadow: 0 10px 24px -10px rgba(56, 100, 240, 0.55);
+  transition: transform 0.15s ease;
+  margin: 16px 0 0 20px;
+}
+.back-pill:hover { transform: translateY(-1px); }
+
+/* ---- Hub header (legacy, unused on new sidebar hub, kept for reference) ---- */
+.eyebrow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+  margin-bottom: 28px;
+}
+.eyebrow .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--ink-soft); }
+
+h1 {
+  font-size: 28px;
+  font-weight: 700;
+  margin: 0 0 6px;
+  letter-spacing: -0.01em;
+}
+
+.subtitle {
+  color: var(--ink-soft);
+  margin: 0 0 36px;
+  font-size: 15px;
+}
+
+/* ---- Form page ---- */
+.form-page { max-width: 560px; margin: 0 auto; padding: 24px 20px 80px; }
+
+.form-card {
+  background: var(--card-bg);
+  border: 1px solid var(--panel-border);
+  border-radius: var(--radius);
+  padding: 30px 34px 34px;
+  box-shadow: var(--shadow);
+}
+
+.form-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 18px;
+  font-weight: 800;
+  margin-bottom: 8px;
+}
+.form-header .icon { font-size: 20px; }
+
+.form-hint {
+  color: var(--ink-soft);
+  font-size: 13px;
+  margin: 0 0 16px;
+}
+
+.form-divider {
+  border: none;
+  border-top: 1px solid var(--border);
+  margin: 0 0 20px;
+}
+
+.field { margin-bottom: 18px; }
+
+.field label {
+  display: block;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: var(--label-blue);
+  margin-bottom: 8px;
+}
+.field .required { color: var(--required); margin-left: 2px; }
+
+.field input,
+.field select,
+.field textarea {
+  width: 100%;
+  border: 1.5px solid var(--border);
+  background: var(--field-bg);
+  border-radius: 12px;
+  padding: 11px 14px;
+  font-size: 14px;
+  color: var(--ink);
+  font-family: inherit;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+.field input:focus,
+.field select:focus,
+.field textarea:focus {
+  outline: none;
+  border-color: #38bdf8;
+}
+.field textarea { resize: vertical; min-height: 90px; }
+
+/* Highlighted "what kind of issue" box */
+.field-emphasize {
+  border: 1.5px solid var(--border);
+  background: var(--field-bg);
+  border-radius: 16px;
+  padding: 14px 16px 16px;
+  margin-bottom: 18px;
+}
+.field-emphasize label { margin-bottom: 8px; }
+.field-emphasize select { border-color: #7dd3fc; }
+
+/* Conditional fields (shown/hidden based on another field's value) */
+.field[data-conditional="true"] { display: none; }
+.field[data-conditional="true"].is-visible { display: block; }
+
+/* ---- Attachments dropzone ---- */
+.attach-label {
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: var(--label-blue);
+  margin-bottom: 8px;
+  display: block;
+}
+.dropzone {
+  border: 1.5px dashed var(--border);
+  border-radius: 16px;
+  background: var(--field-bg);
+  padding: 28px 16px;
+  text-align: center;
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+.dropzone:hover,
+.dropzone.drag-over { border-color: #38bdf8; }
+.dropzone .dz-icon { font-size: 22px; margin-bottom: 6px; }
+.dropzone .dz-main { font-weight: 700; font-size: 13.5px; margin: 0 0 4px; }
+.dropzone .dz-sub { color: var(--ink-soft); font-size: 12px; margin: 0; }
+.dropzone .dz-paste { color: #38bdf8; font-size: 12px; font-weight: 600; margin-top: 6px; }
+
+.file-list { margin-top: 10px; display: flex; flex-direction: column; gap: 6px; }
+.file-chip {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: var(--field-bg);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 8px 12px;
+  font-size: 12.5px;
+}
+.file-chip .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.file-chip button {
+  border: none; background: none; color: #ef4a72; cursor: pointer; font-size: 14px; font-weight: 700; padding: 0 2px;
+}
+
+.field-with-btn { display: flex; gap: 8px; align-items: stretch; }
+.field-with-btn input { flex: 1; }
+.btn-generate {
+  flex-shrink: 0;
+  width: 42px;
+  border: 1.5px solid var(--border);
+  background: linear-gradient(135deg, #6366f1, #0ea5e9);
+  color: #fff;
+  border-radius: 12px;
+  font-size: 16px;
+  cursor: pointer;
+  transition: transform 0.12s ease;
+}
+.btn-generate:hover { transform: translateY(-1px); }
+.btn-generate:disabled { opacity: 0.6; cursor: not-allowed; transform: none; }
+
+.field-note { margin: 6px 0 0; font-size: 12px; font-weight: 600; color: var(--ink-soft); }
+.field-note.ok { color: #1a9c6e; }
+.field-note.err { color: #e0577a; }
+
+.field input[readonly] { background: var(--border); color: var(--ink-soft); }
+
+/* ---- Submit ---- */
+.form-actions { margin-top: 26px; }
+
+.btn-submit {
+  width: 100%;
+  background: linear-gradient(90deg, #6366f1, #0ea5e9);
+  color: #fff;
+  border: none;
+  border-radius: 12px;
+  padding: 14px 22px;
+  font-size: 14px;
+  font-weight: 800;
+  cursor: pointer;
+  box-shadow: 0 10px 24px -10px rgba(45, 90, 220, 0.55);
+  transition: transform 0.12s ease;
+  display: flex; align-items: center; justify-content: center; gap: 8px;
+}
+.btn-submit:hover { transform: translateY(-1px); }
+.btn-submit:disabled { opacity: 0.6; cursor: not-allowed; transform: none; }
+
+.status-msg { display: block; margin-top: 10px; font-size: 13px; font-weight: 600; text-align: center; }
+.status-msg.ok { color: #1a9c6e; }
+.status-msg.err { color: #e0577a; }
