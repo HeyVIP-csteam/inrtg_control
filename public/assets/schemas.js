@@ -38,7 +38,7 @@ const MODULES = [
     icon: "🔐",
     formTitle: "QA Check",
     accent: "#60A5FA",
-    description: "Email Verify, Number Verify, Forget Password SMS, Forget Password Email, Add Secondary Number, Domain Issue — check with QA",
+    description: "OTP & Domain issue etc.",
     reporterLabel: "PIC",
     attachments: DEFAULT_ATTACHMENTS,
     fields: [
@@ -75,7 +75,7 @@ const MODULES = [
     name: "Account Issue",
     icon: "🔑",
     accent: "#FBBF24",
-    description: "Select brand and issue type",
+    description: "Account verify & otp etc.",
     attachments: DEFAULT_ATTACHMENTS,
     fields: [
       {
@@ -158,7 +158,7 @@ const MODULES = [
     icon: "⚠️",
     formTitle: "Risk Issue Report",
     accent: "#F87171",
-    description: "Select brand and issue type",
+    description: "KYC, bonus cancel & Acc suspend etc.",
     reporterLabel: "PIC",
     attachments: DEFAULT_ATTACHMENTS,
     fields: [
@@ -246,7 +246,7 @@ const MODULES = [
     icon: "🎟️",
     formTitle: "Promotion Request",
     accent: "#F472B6",
-    description: "Select brand and promotion",
+    description: "Bonus request",
     reporterLabel: "Processed by",
     attachments: DEFAULT_ATTACHMENTS,
     // Brand+Promotion combos with a single fixed amount (no Tier/Deposits
@@ -338,7 +338,7 @@ const MODULES = [
     icon: "📊",
     formTitle: "Daily Report",
     accent: "#34D399",
-    description: "Shift summary — logged to the Day or Night block in the tracking sheet based on which shift you pick.",
+    description: "Daily issue report",
     reporterLabel: "Reported by",
     attachments: DEFAULT_ATTACHMENTS,
     fields: [
@@ -360,7 +360,7 @@ const MODULES = [
     icon: "🤖",
     formTitle: "Genie Issues",
     accent: "#A78BFA",
-    description: "Fill in all required fields and submit to Telegram",
+    description: "Genie chat issues",
     reporterLabel: "PIC",
     attachments: DEFAULT_ATTACHMENTS,
     fields: [
