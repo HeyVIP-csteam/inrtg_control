@@ -112,6 +112,31 @@ export const MODULE_META = {
 };
 
 /**
+ * Risk Issue only: certain selections auto-fill the Remark with fixed,
+ * pre-approved wording instead of whatever the agent typed — keeps phrasing
+ * to the Risk team consistent. Checked in this field order (issueType first,
+ * then accountStatus, then cancelType); first match wins. A selection not
+ * listed here just falls through to whatever the agent typed in Remark.
+ */
+export const RISK_ISSUE_AUTO_REMARKS = {
+  issueType: {
+    "Bonus Auto Force": "The player claimed the bonus, but it was automatically force-served.",
+  },
+  accountStatus: {
+    "Suspended -- player wants to deposit":
+      "𝗛𝗶 𝘁𝗲𝗮𝗺, Account showing 𝘀𝘂𝘀𝗽𝗲𝗻𝗱𝗲𝗱, Is it possible to Activate? The player want to make a 𝗱𝗲𝗽𝗼𝘀𝗶𝘁.",
+    "Account Inactive": "𝗛𝗶 𝘁𝗲𝗮𝗺, 𝗔𝗰𝗰𝗼𝘂𝗻𝘁 𝘀𝗵𝗼𝘄𝗶𝗻𝗴 𝗶𝗻𝗮𝗰𝘁𝗶𝘃𝗲, 𝗜𝘀 𝗶𝘁 𝗽𝗼𝘀𝘀𝗶𝗯𝗹𝗲 𝘁𝗼 𝗮𝗰𝘁𝗶𝘃𝗮𝘁𝗲?",
+    "Suspended -- Player has been warned":
+      "𝗛𝗶 𝘁𝗲𝗮𝗺, We have warned the player. 𝗜𝘀 𝗶𝘁 𝗽𝗼𝘀𝘀𝗶𝗯𝗹𝗲 𝘁𝗼 𝗮𝗰𝘁𝗶𝘃𝗮𝘁𝗲 𝘁𝗵𝗶𝘀 𝗮𝗰𝗰𝗼𝘂𝗻𝘁?",
+  },
+  cancelType: {
+    "Cancel with 10% Penalty":
+      "𝗛𝗶 𝘁𝗲𝗮𝗺, Please help cancel this bonus with a 10% penalty as per the player's request, Thanks.",
+    "Cancel without Penalty": "𝗛𝗶 𝘁𝗲𝗮𝗺,\nPlease help to cancel this bonus as per player request. Thanks.",
+  },
+};
+
+/**
  * Optional per-module Telegram message template — just the field rows, no
  * "New X — Brand" header line. `key` works the same as in SHEET_LAYOUT
  * above — a field key, "brand"/"pic"/"screenshotLink", or a
@@ -123,6 +148,9 @@ export const MODULE_META = {
  *     picks a template based on that field's submitted value (falls back
  *     to `default` if no exact match), e.g. QA's Domain Issue motive uses
  *     a completely different set of rows than the other 5 motives.
+ * Optionally set `header: { source: "brand" | "<fieldKey>" }` on a template
+ * to prepend a "{moduleEmoji} {moduleName} — {value}" line — e.g. Risk
+ * Issue's header shows the selected Issue Type instead of the brand name.
  * Add an entry here per module once you know the exact wording wanted.
  */
 export const MESSAGE_TEMPLATE = {
@@ -146,6 +174,26 @@ export const MESSAGE_TEMPLATE = {
         { emoji: "📝", label: "Remark", key: "remark" },
         { emoji: "👤", label: "PIC", key: "pic" },
       ],
+    },
+  },
+  risk_issue: {
+    selectorField: "issueType",
+    templates: {
+      "Bonus Cancel Related Issue": {
+        header: { source: "issueType" }, // "⚠️ Risk Issue — Bonus Cancel Related Issue"
+        spacing: "loose",
+        rows: [
+          { emoji: "🎮", label: "Brand/Platform", key: "brand", tight: true },
+          { emoji: "👤", label: "Username", key: "uid", tight: true },
+          { emoji: "🎁", label: "Bonus Code", key: "bonusCode", tight: true },
+          { emoji: "📌", label: "Cancel Type", key: "cancelType" },
+          { emoji: "📝", label: "Remark", key: "remark" },
+          { emoji: "👷", label: "PIC", key: "pic" },
+        ],
+      },
+      // No `default` yet — the other 10 Issue Types fall back to the
+      // generic "every filled field, in form order" message until their
+      // own formats are given.
     },
   },
   // "dateShift" is a computed value: "15/07/2026 ( Day Shift Report )☀️" /
