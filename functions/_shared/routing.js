@@ -389,6 +389,16 @@ export const MESSAGE_TEMPLATE = {
       { emoji: "👤", label: "Reported by", key: "pic" },
     ],
   },
+  genie_issue: {
+    header: { source: "brand", noBlankAfter: true, hideValue: true },
+    spacing: "loose",
+    rows: [
+      { emoji: "🏷️", label: "Platform", key: "brand" },
+      { emoji: "📝", label: "Issue Details", key: "issueDetails" },
+      { emoji: "🔗", label: "Chat Link(s)", key: "chatLinks" },
+      { emoji: "🧑‍💼", key: "submittedBy", raw: true },
+    ],
+  },
 };
 
 /**
