@@ -226,6 +226,9 @@ export const PROMOTION_MESSAGE_TEMPLATE = {
     { label: "Processed by", key: "pic" },
   ],
 };
+
+/**
+ * Optional per-module Telegram message template — just the field rows, no
  * "New X — Brand" header line. `key` works the same as in SHEET_LAYOUT
  * above — a field key, "brand"/"pic"/"screenshotLink", or a
  * { details: [fallbackKeys...] } object for first-non-empty-wins fields.
