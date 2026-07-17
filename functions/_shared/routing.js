@@ -188,6 +188,7 @@ export const MESSAGE_TEMPLATE = {
           { emoji: "🎁", label: "Bonus Code", key: "bonusCode", tight: true },
           { emoji: "📌", label: "Cancel Type", key: "cancelType" },
           { emoji: "📝", label: "Remark", key: "remark" },
+          { emoji: "💬", key: "autoRemark", raw: true },
           { emoji: "👷", label: "PIC", key: "pic" },
         ],
       },
