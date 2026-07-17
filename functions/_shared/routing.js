@@ -212,19 +212,51 @@ export const PROMOTION_SHEET_CONFIG = {
  * format. `key` can be a field key, "brand", "pic", or { fixed: "..." } for
  * a literal value (e.g. "To be added" is always "Manually").
  */
+const PROMOTION_ROWS_BIRTHDAY_A = [ // Crickex / Betjili / Mostplay Birthday Bonus
+  { label: "TID", key: "tid" },
+  { label: "Date", key: "date" },
+  { label: "Username", key: "username" },
+  { label: "Amount to be Added", key: "amount" },
+  { label: "Remarks", key: "promotion" },
+  { label: "NID NO", key: "nid" },
+  { label: "Platform", key: "brand" },
+  { label: "To be added", key: { fixed: "Manually" } },
+  { label: "Processed by", key: "pic" },
+];
+
+const PROMOTION_ROWS_BIRTHDAY_B = [ // BetVisa / Jeetway Birthday Bonus (has Tier Level)
+  { label: "TID", key: "tid" },
+  { label: "Date", key: "date" },
+  { label: "Username", key: "username" },
+  { label: "Remarks", key: "promotion" },
+  { label: "NID No", key: "nid" },
+  { label: "Tier Level", key: "tier" },
+  { label: "Amount to be Added", key: "amount" },
+  { label: "Platform", key: "brand" },
+  { label: "To be added", key: { fixed: "Manually" } },
+  { label: "Processed by", key: "pic" },
+];
+
+const PROMOTION_ROWS_REVIEW = [ // Betjili / Mostplay / Jeetway review-type bonuses
+  { label: "TID", key: "tid" },
+  { label: "Username", key: "username" },
+  { label: "Date", key: "date" },
+  { label: "Amount to be Added", key: "amount" },
+  { label: "Remarks", key: "promotion" },
+  { label: "Platform", key: "brand" },
+  { label: "To be added", key: { fixed: "Manually" } },
+  { label: "Processed by", key: "pic" },
+];
+
 export const PROMOTION_MESSAGE_TEMPLATE = {
-  "betvisa|Birthday Bonus": [
-    { label: "TID", key: "tid" },
-    { label: "Date", key: "date" },
-    { label: "Username", key: "username" },
-    { label: "Remarks", key: "promotion" },
-    { label: "NID No", key: "nid" },
-    { label: "Tier Level", key: "tier" },
-    { label: "Amount to be Added", key: "amount" },
-    { label: "Platform", key: "brand" },
-    { label: "To be added", key: { fixed: "Manually" } },
-    { label: "Processed by", key: "pic" },
-  ],
+  "crickex|Birthday Bonus": PROMOTION_ROWS_BIRTHDAY_A,
+  "betjili|Birthday Bonus": PROMOTION_ROWS_BIRTHDAY_A,
+  "mostplay|Birthday Bonus": PROMOTION_ROWS_BIRTHDAY_A,
+  "betvisa|Birthday Bonus": PROMOTION_ROWS_BIRTHDAY_B,
+  "jeetway|Birthday Bonus": PROMOTION_ROWS_BIRTHDAY_B,
+  "betjili|Review Bonus": PROMOTION_ROWS_REVIEW,
+  "mostplay|Facebook Review Free Bonus": PROMOTION_ROWS_REVIEW,
+  "jeetway|Review Bonus": PROMOTION_ROWS_REVIEW,
 };
 
 /**
