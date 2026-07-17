@@ -264,6 +264,21 @@ export const SHEET_LAYOUT = {
     startColumn: "B",
     columns: ["date", "uid", "number", "email", "brand", "motive", "domainLink", "screenshotLink", { details: ["remark", "issueDetails"] }, "pic"],
   },
+  account_issue: {
+    tab: "Account Issue",
+    startColumn: "B",
+    columns: [
+      "brand",
+      "uid",
+      { details: ["registerNumber", "registerWrongNumber"] },
+      { details: ["gmail", "removeGmail", "previousGmail", "updateNewGmail"] },
+      { details: ["nid", "aadharPan"] },
+      "issueType",
+      "screenshotLink",
+      "remark",
+      "pic",
+    ],
+  },
   risk_issue: {
     tab: "Risk Issue",
     startColumn: "B",
@@ -319,4 +334,5 @@ function dailyReportColumns() {
 // separate link at all since the photo is already in the message.
 export const SCREENSHOT_R2_ENABLED = {
   qa: true,
+  account_issue: true,
 };
