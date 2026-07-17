@@ -94,6 +94,7 @@ a { color: inherit; text-decoration: none; }
   display: flex; align-items: center; justify-content: center;
   flex-shrink: 0;
 }
+.logo-img { height: 32px; width: auto; flex-shrink: 0; }
 .wordmark { font-weight: 800; font-size: 16px; color: var(--wordmark); letter-spacing: -0.01em; }
 
 .topbar-right { display: flex; align-items: center; gap: 10px; }
