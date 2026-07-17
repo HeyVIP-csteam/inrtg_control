@@ -8,15 +8,30 @@
   window.initThemeToggle = function () {
     const btn = document.getElementById("themeToggle");
     if (!btn) return;
-    const setIcon = () => {
-      btn.textContent = document.documentElement.getAttribute("data-theme") === "dark" ? "☀️" : "🌙";
+    const setLabel = () => {
+      const isDark = document.documentElement.getAttribute("data-theme") === "dark";
+      btn.innerHTML = isDark ? "☀️ Light" : "🌙 Dark";
     };
-    setIcon();
+    setLabel();
     btn.addEventListener("click", () => {
       const next = document.documentElement.getAttribute("data-theme") === "dark" ? "light" : "dark";
       document.documentElement.setAttribute("data-theme", next);
       localStorage.setItem("theme", next);
-      setIcon();
+      setLabel();
     });
+  };
+
+  window.initClock = function () {
+    const el = document.getElementById("liveClock");
+    if (!el) return;
+    const tick = () => {
+      const now = new Date();
+      const day = now.toLocaleDateString(undefined, { weekday: "long" });
+      const date = now.toLocaleDateString(undefined, { day: "2-digit", month: "2-digit", year: "numeric" });
+      const time = now.toLocaleTimeString(undefined, { hour12: false });
+      el.textContent = `${day} · ${date} · ${time}`;
+    };
+    tick();
+    setInterval(tick, 1000);
   };
 })();
