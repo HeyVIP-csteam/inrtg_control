@@ -1,5 +1,6 @@
 (function () {
   if (window.initThemeToggle) window.initThemeToggle();
+  if (window.initClock) window.initClock();
   const params = new URLSearchParams(location.search);
   const moduleId = params.get("module");
   const module = window.MODULES.find((m) => m.id === moduleId);
