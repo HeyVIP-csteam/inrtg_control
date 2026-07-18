@@ -232,6 +232,24 @@ export async function updateRootText(env, threadId, text) {
   return thread;
 }
 
+// ---- Deletion history — every "delete/recall" action, kept separately
+// from the thread index so it survives even after a thread itself is
+// gone. Not linked from anywhere in the agent-facing UI.
+const DELETION_LOG_KEY = "deletion-log";
+const MAX_LOG_SIZE = 500;
+
+export async function logDeletion(env, entry) {
+  const raw = await env.THREADS_KV.get(DELETION_LOG_KEY);
+  const list = raw ? JSON.parse(raw) : [];
+  list.unshift({ id: newId(), ts: new Date().toISOString(), by: entry.by || null, ...entry });
+  await env.THREADS_KV.put(DELETION_LOG_KEY, JSON.stringify(list.slice(0, MAX_LOG_SIZE)));
+}
+
+export async function listDeletions(env) {
+  const raw = await env.THREADS_KV.get(DELETION_LOG_KEY);
+  return raw ? JSON.parse(raw) : [];
+}
+
 // Root ticket message was deleted from Telegram — keep the tracking record
 // (conversation history, sheet row, etc. are untouched) but flag it so the
 // dashboard can show "original message recalled" instead of pretending it's

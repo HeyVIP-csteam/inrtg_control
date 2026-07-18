@@ -21,6 +21,7 @@
 import {
   getThread, setSolved, softDeleteThread, appendMessage,
   updateRootText, markRootRecalled, editMessageInThread, removeMessageFromThread,
+  logDeletion,
 } from "../../_shared/threads.js";
 
 export async function onRequestGet({ env, params }) {
@@ -51,14 +52,23 @@ export async function onRequestPost({ request, env, params }) {
   if (action === "delete") {
     if (!env.BRAND_EDIT_PASSWORD) return json({ ok: false, error: "Server is missing BRAND_EDIT_PASSWORD." }, 500);
     if (body.password !== env.BRAND_EDIT_PASSWORD) return json({ ok: false, error: "Wrong password." }, 403);
+    const before = await getThread(env, id);
     const thread = await softDeleteThread(env, id);
     if (!thread) return json({ ok: false, error: "Not found." }, 404);
+    await logDeletion(env, {
+      type: "delete-thread",
+      threadId: id,
+      threadTitle: before?.title || thread.title,
+      brand: before?.brand || thread.brand,
+      content: `Ticket + ${thread.messages?.length || 0} message(s) untracked (Telegram/Sheet untouched)`,
+    });
     return json({ ok: true });
   }
 
   if (action === "reply") {
     const text = (body.text || "").trim();
     const attachment = body.attachment; // { name, type, dataUrl } | undefined
+    const replyToMessageId = body.replyToMessageId || null;
     if (!text && !attachment) return json({ ok: false, error: "Reply text is empty." }, 400);
     if (!env.TELEGRAM_BOT_TOKEN) return json({ ok: false, error: "Server is missing TELEGRAM_BOT_TOKEN." }, 500);
 
@@ -68,8 +78,8 @@ export async function onRequestPost({ request, env, params }) {
     let messageId;
     try {
       messageId = attachment
-        ? await sendTelegramAttachment(env, thread, text, attachment)
-        : await sendTelegramText(env, thread, text);
+        ? await sendTelegramAttachment(env, thread, text, attachment, replyToMessageId)
+        : await sendTelegramText(env, thread, text, replyToMessageId);
     } catch (e) {
       return json({ ok: false, error: String(e.message || e) }, 502);
     }
@@ -120,6 +130,13 @@ export async function onRequestPost({ request, env, params }) {
     if (!tg.ok) return json({ ok: false, error: telegramDeleteError(tg) }, 502);
 
     const updated = await markRootRecalled(env, id);
+    await logDeletion(env, {
+      type: "recall-root",
+      threadId: id,
+      threadTitle: thread.title,
+      brand: thread.brand,
+      content: thread.rootText || "(no text)",
+    });
     return json({ ok: true, thread: updated });
   }
 
@@ -152,7 +169,15 @@ export async function onRequestPost({ request, env, params }) {
     const tg = await callTelegram(env, "deleteMessage", { chat_id: thread.chatId, message_id: messageId });
     if (!tg.ok) return json({ ok: false, error: telegramDeleteError(tg) }, 502);
 
+    const recalledMsg = thread.messages.find((m) => m.self && m.messageId === messageId);
     const updated = await removeMessageFromThread(env, id, messageId);
+    await logDeletion(env, {
+      type: "recall-reply",
+      threadId: id,
+      threadTitle: thread.title,
+      brand: thread.brand,
+      content: recalledMsg?.text || "(no text)",
+    });
     return json({ ok: true, thread: updated });
   }
 
@@ -168,8 +193,8 @@ async function callTelegram(env, method, payload) {
   return res.json();
 }
 
-async function sendTelegramText(env, thread, text) {
-  const payload = { chat_id: thread.chatId, text, reply_to_message_id: thread.rootMessageId };
+async function sendTelegramText(env, thread, text, replyToMessageId) {
+  const payload = { chat_id: thread.chatId, text, reply_to_message_id: replyToMessageId || thread.rootMessageId };
   if (thread.topicId) payload.message_thread_id = thread.topicId;
   const data = await callTelegram(env, "sendMessage", payload);
   if (!data.ok) throw new Error(data.description || "Telegram send failed.");
@@ -178,7 +203,7 @@ async function sendTelegramText(env, thread, text) {
 
 // Sends a screenshot/PDF attached to a reply, same base64 → Blob approach
 // submit.js already uses for the original ticket's attachments.
-async function sendTelegramAttachment(env, thread, text, attachment) {
+async function sendTelegramAttachment(env, thread, text, attachment, replyToMessageId) {
   const { name, type, dataUrl } = attachment;
   const base64 = dataUrl.includes(",") ? dataUrl.slice(dataUrl.indexOf(",") + 1) : dataUrl;
   const binary = atob(base64);
@@ -193,7 +218,7 @@ async function sendTelegramAttachment(env, thread, text, attachment) {
   const form = new FormData();
   form.append("chat_id", thread.chatId);
   if (thread.topicId) form.append("message_thread_id", String(thread.topicId));
-  form.append("reply_to_message_id", String(thread.rootMessageId));
+  form.append("reply_to_message_id", String(replyToMessageId || thread.rootMessageId));
   form.append(field, blob, name || "attachment");
   if (text) form.append("caption", text);
 

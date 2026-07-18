@@ -40,6 +40,10 @@
         <div class="threads-section-title" data-target="solvedList"><span><span class="chev">▾</span> Solved / Done</span><span class="count" id="solvedCount">0</span></div>
         <div class="thread-list" id="solvedList"></div>
       </div>
+
+      <div class="ops-log-spacer"></div>
+      <div class="ops-log-trigger" id="opsLogTrigger"></div>
+      <div class="ops-log-panel" id="opsLogPanel"></div>
     </aside>
 
     <main class="threads-main" id="threadsMain">
@@ -71,6 +75,32 @@
       });
     });
 
+    document.getElementById("opsLogTrigger").addEventListener("click", async () => {
+      const panel = document.getElementById("opsLogPanel");
+      const isOpen = panel.classList.toggle("open");
+      if (isOpen) {
+        panel.innerHTML = '<div style="color:var(--ink-soft);">Loading…</div>';
+        try {
+          const res = await fetch("/api/deletion-log", { cache: "no-store" });
+          const data = await res.json();
+          if (!data.ok || !data.entries.length) {
+            panel.innerHTML = '<div style="color:var(--ink-soft);">No deletions logged yet.</div>';
+            return;
+          }
+          const typeLabel = { "delete-thread": "Deleted ticket", "recall-root": "Recalled original msg", "recall-reply": "Recalled reply" };
+          panel.innerHTML = data.entries.map((e) => `
+            <div class="ops-log-entry">
+              <div><span class="ol-type">${typeLabel[e.type] || e.type}</span> <span class="ol-meta">· ${timeAgo(e.ts)}${e.by ? " · " + escapeHtml(e.by) : ""}</span></div>
+              <div class="ol-meta">${escapeHtml(e.threadTitle || "")} (${escapeHtml(e.brand || "")})</div>
+              <div class="ol-content">${escapeHtml((e.content || "").slice(0, 200))}</div>
+            </div>
+          `).join("");
+        } catch {
+          panel.innerHTML = '<div style="color:var(--ink-soft);">Couldn\'t load — check your connection.</div>';
+        }
+      }
+    });
+
     document.getElementById("threadSearch").addEventListener("input", (e) => {
       clearTimeout(searchTimer);
       const q = e.target.value;
@@ -78,6 +108,29 @@
     });
 
     let pendingAttachment = null;
+    let replyTarget = null; // { messageId, from, text } | null
+
+    function setReplyTarget(messageId, from, text) {
+      replyTarget = { messageId: Number(messageId), from, text };
+      renderReplyTargetBanner();
+      document.getElementById("replyInput")?.focus();
+    }
+    function clearReplyTarget() {
+      replyTarget = null;
+      renderReplyTargetBanner();
+    }
+    function renderReplyTargetBanner() {
+      const el = document.getElementById("replyTargetBanner");
+      if (!el) return;
+      if (!replyTarget) { el.innerHTML = ""; return; }
+      el.innerHTML = `
+        <span class="reply-target-chip">
+          ↳ Replying to <b>${escapeHtml(replyTarget.from)}</b>: ${escapeHtml((replyTarget.text || "").slice(0, 60))}
+          <button type="button" id="cancelReplyTarget">✕</button>
+        </span>`;
+      document.getElementById("cancelReplyTarget").addEventListener("click", clearReplyTarget);
+      polishEmoji();
+    }
 
     function fileToDataUrl(file) {
       return new Promise((resolve, reject) => {
@@ -134,7 +187,7 @@
         ${t.solved ? '<span class="t-done">✓</span>' : ""}
       `;
       el.addEventListener("click", () => {
-        if (t.id !== selectedId) { pendingAttachment = null; }
+        if (t.id !== selectedId) { pendingAttachment = null; replyTarget = null; }
         openThread(t.id);
       });
       return el;
@@ -285,6 +338,9 @@
       document.querySelectorAll("[data-recall-reply]").forEach((btn) => {
         btn.addEventListener("click", () => recallReply(btn.dataset.recallReply));
       });
+      document.querySelectorAll("[data-reply-target]").forEach((btn) => {
+        btn.addEventListener("click", () => setReplyTarget(btn.dataset.replyTarget, btn.dataset.replyFrom, btn.dataset.replyText));
+      });
     }
 
     function isNearBottom(el) {
@@ -306,6 +362,7 @@
         <div class="thread-top-fixed" id="threadTopFixed">${buildTopHTML(t)}</div>
         <div class="thread-scroll-area" id="threadScrollArea">${buildConversationHTML(t)}</div>
         <div class="thread-reply-fixed">
+          <div id="replyTargetBanner"></div>
           <div class="reply-attach-preview" id="replyAttachPreview"></div>
           <div class="reply-box">
             <div class="reply-input-wrap">
@@ -363,6 +420,9 @@
           <button data-edit-reply="${m.messageId}" data-current-text="${escapeAttr(m.text)}" title="Edit">✏️</button>
           <button data-recall-reply="${m.messageId}" title="Recall">↩️</button>
         </span>` : "";
+      const replyTargetBtn = m.messageId
+        ? `<button class="reply-target-btn" data-reply-target="${m.messageId}" data-reply-from="${escapeAttr(m.from)}" data-reply-text="${escapeAttr(m.text)}" title="Reply to this message">↳</button>`
+        : "";
       const initials = (m.from || "?").trim().slice(0, 2).toUpperCase();
       const color = m.self ? "var(--accent-gold)" : colorFor(m.from || "?");
       const deliveredTick = m.self ? '<span class="msg-tick" title="Delivered">✓</span>' : "";
@@ -372,7 +432,7 @@
           <div class="msg-avatar" style="background:${color};">${initials}</div>
           <div class="msg-body">
             <div class="msg-who">${escapeHtml(m.from)}${m.handle ? ` <span class="msg-handle">${escapeHtml(m.handle)}</span>` : ""}${m.editedAt ? ' <span class="msg-edited">(edited)</span>' : ""}</div>
-            <div class="msg-bubble">${escapeHtml(m.text)}${attachTag}</div>
+            <div class="msg-bubble">${replyTargetBtn}${escapeHtml(m.text)}${attachTag}</div>
             <div class="msg-time">${timeAgo(m.ts)} ${deliveredTick} ${selfControls}</div>
           </div>
         </div>
@@ -422,6 +482,7 @@
       btn.textContent = "Sending…";
       try {
         const payload = { action: "reply", text };
+        if (replyTarget) payload.replyToMessageId = replyTarget.messageId;
         if (pendingAttachment) {
           payload.attachment = {
             name: pendingAttachment.name,
@@ -442,6 +503,7 @@
         selectedThread = data.thread;
         input.value = "";
         pendingAttachment = null;
+        replyTarget = null;
         document.getElementById("replyFileInput").value = "";
         updateThreadContent(selectedThread, true);
         loadList();
