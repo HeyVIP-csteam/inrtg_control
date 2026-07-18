@@ -396,12 +396,34 @@ a { color: inherit; text-decoration: none; }
 }
 .tool-card:hover { transform: translateY(-2px); border-color: var(--tool-accent, var(--accent-gold)); }
 .tool-card .t-icon {
+  position: relative;
   width: 36px; height: 36px; border-radius: 10px;
   display: flex; align-items: center; justify-content: center;
   font-size: 16px; margin-bottom: 12px;
 }
+.t-badge {
+  position: absolute;
+  top: -6px; right: -6px;
+  min-width: 17px; height: 17px;
+  padding: 0 4px;
+  border-radius: 999px;
+  background: #ef4a72;
+  color: #fff;
+  font-size: 10px;
+  font-weight: 800;
+  display: flex; align-items: center; justify-content: center;
+}
+.t-badge:empty { display: none; }
 .tool-card .t-name { font-family: var(--font-display); font-weight: 600; font-size: 14.5px; color: var(--ink); margin-bottom: 4px; }
 .tool-card .t-desc { font-size: 11.5px; color: var(--ink-soft); line-height: 1.4; }
+.t-sub-stat { font-size: 10.5px; font-weight: 700; color: var(--tool-accent, var(--ink-soft)); margin-top: 8px; }
+.t-sub-stat:empty { display: none; }
+.t-sub-stat.has-unsolved {
+  color: #ef4a72;
+  font-weight: 800;
+  animation: breathe 1.8s ease-in-out infinite;
+}
+@keyframes breathe { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
 @media (max-width: 560px) {
   .tool-cards { grid-template-columns: 1fr; }
 }

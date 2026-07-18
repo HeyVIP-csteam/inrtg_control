@@ -61,10 +61,11 @@
     <main class="hub-main">
       <div class="inner">
         <div class="tool-cards">
-          <a href="/threads.html" class="tool-card" style="--tool-accent:#38bdf8;">
-            <div class="t-icon" style="background:#38bdf833;">💬</div>
+          <a href="/threads.html" class="tool-card" id="threadsCard" style="--tool-accent:#38bdf8;">
+            <div class="t-icon" style="background:#38bdf833;">💬<span class="t-badge" id="threadsUnreadBadge"></span></div>
             <div class="t-name">TG Reply Threads</div>
             <div class="t-desc">Track Telegram replies to your form submissions in real-time</div>
+            <div class="t-sub-stat" id="threadsUnsolvedStat"></div>
           </a>
           <a href="/promo.html" class="tool-card" style="--tool-accent:#f472b6;">
             <div class="t-icon" style="background:#f472b633;">🎟️</div>
@@ -124,6 +125,33 @@
       renderBrandRow();
     }
     loadBrandConfig();
+
+    // ---- TG Reply Threads card: unsolved count + total unread badge ----
+    function getSeenCount(id) {
+      return parseInt(localStorage.getItem(`lastseen:${id}`) || "0", 10);
+    }
+    async function loadThreadsSummary() {
+      try {
+        const res = await fetch("/api/threads", { cache: "no-store" });
+        const data = await res.json();
+        if (!data.ok) return;
+        const all = [...(data.active || []), ...(data.solved || [])];
+        const unread = all.reduce((sum, t) => sum + Math.max(0, (t.replyCount || 0) - getSeenCount(t.id)), 0);
+        const unsolvedCount = (data.active || []).length;
+
+        const badge = document.getElementById("threadsUnreadBadge");
+        if (badge) badge.textContent = unread > 0 ? (unread > 99 ? "99+" : unread) : "";
+        const stat = document.getElementById("threadsUnsolvedStat");
+        if (stat) {
+          stat.textContent = unsolvedCount > 0 ? `${unsolvedCount} unsolved` : "All caught up ✓";
+          stat.classList.toggle("has-unsolved", unsolvedCount > 0);
+        }
+      } catch {
+        // Non-fatal — card just shows without the live counts.
+      }
+    }
+    loadThreadsSummary();
+    setInterval(loadThreadsSummary, 15000);
 
     // ---- Edit modal ----
     const backdrop = document.getElementById("editModalBackdrop");
