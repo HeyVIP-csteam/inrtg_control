@@ -101,5 +101,15 @@
     authFetch: authFetch,
     renderWhoami: renderWhoami,
     logout: function () { clearAuth(); location.href = "/login.html"; },
+    // After a successful self-service password change, the browser's
+    // saved credentials are now stale (still hold the OLD password) —
+    // this patches them in place instead of forcing an immediate
+    // re-login right after the person just proved who they are.
+    updateStoredPassword: function (newPassword) {
+      const a = getAuth();
+      if (!a) return;
+      a.password = newPassword;
+      localStorage.setItem(AUTH_KEY, JSON.stringify(a));
+    },
   };
 })();

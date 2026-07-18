@@ -323,6 +323,31 @@ a { color: inherit; text-decoration: none; }
 }
 .sidebar-item.active .name { color: var(--item-accent, var(--ink)); }
 
+.sidebar-item.expandable { cursor: pointer; user-select: none; }
+.sidebar-item.expandable .arrow { transition: transform 0.15s ease; }
+.sidebar-item.expandable.open .arrow { transform: rotate(90deg); }
+.sidebar-subitems {
+  display: none; margin: -2px 0 12px 22px; padding-left: 14px;
+  border-left: 2px solid var(--panel-border);
+}
+.sidebar-subitems.open { display: block; }
+.sidebar-subitem {
+  display: flex; align-items: center; gap: 9px; padding: 9px 10px;
+  border-radius: 10px; font-size: 12.5px; font-weight: 600;
+  color: var(--ink-soft); cursor: pointer; margin-bottom: 4px;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+.sidebar-subitem:hover { background: var(--sidebar-item-hover); color: var(--ink); }
+.sidebar-subitem .sub-icon { font-size: 13px; }
+.brand-checks { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 6px; }
+.brand-checks label {
+  display: inline-flex; align-items: center; gap: 5px; font-size: 12.5px;
+  background: var(--field-bg); border: 1px solid var(--border); border-radius: 20px;
+  padding: 4px 10px; cursor: pointer;
+}
+
+
+
 .hub-main {
   flex: 1;
   position: relative;

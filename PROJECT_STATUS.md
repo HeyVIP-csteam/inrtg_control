@@ -63,7 +63,8 @@ it. Deployed on Cloudflare Pages.
 | `functions/_shared/threads.js` | **TG Reply Threads KV storage layer** — create/read/update threads, index, auto-cleanup, deletion log |
 | `functions/_shared/accounts.js` | **New this session** — Office/Account KV storage, password hashing, per-request auth verification, brand-permission check |
 | `functions/api/auth/login.js` | **New this session** — `POST /api/auth/login` |
-| `functions/api/admin/offices.js`, `functions/api/admin/accounts.js` | **New this session** — admin-only Office/Account CRUD, used by `accounts-admin.html` |
+| `functions/api/admin/offices.js`, `functions/api/admin/accounts.js` | Admin-only Office/Account CRUD — used by `accounts-admin.html` AND the new Home-page Account Management modals |
+| `functions/api/account/change-password.js` | **New this session** — self-service password change, any logged-in account, own password only |
 | `functions/api/telegram-webhook.js` | **Receives Telegram messages**, matches replies to threads |
 | `functions/api/threads.js` | `GET /api/threads` — list active/solved threads, search — **now login-gated and brand-filtered** |
 | `functions/api/threads/[id].js` | `GET`/`POST` single thread — solve, delete, reply, editRoot, recallRoot, editReply, recallReply — **now login-gated, brand-filtered, and delete/recall no longer need a separate password** |
@@ -427,6 +428,7 @@ the right page with the right query string, idle-timeout redirect from a
 random page, etc.) hasn't been clicked through on a live deployment yet.
 
 
+### Sidebar visual pass (this session, after the account system landed)
 - "Solved / Done" renamed to **"Solved Chat History"**.
 - All three sidebar sections (Active Threads / Solved Chat History /
   Recall Chat History) now share one visual template: a boxed,
@@ -450,6 +452,41 @@ random page, etc.) hasn't been clicked through on a live deployment yet.
   click/keydown/mousemove/touch/tab-refocus — not the background poll).
   See the Account system section above for the honest caveat about this
   being browser-enforced, not server-enforced.
+
+### Account Management sidebar (this session, on top of the login gate)
+Home page sidebar now has an expandable **"Account Management"** entry
+(same level as QA / Account Issue / etc.), always visible to everyone,
+with role-based sub-items:
+- **Everyone:** "Reset Password" — self-service only. Requires typing
+  the current password again (on top of already being logged in) as a
+  deliberate safety net against an unattended-but-logged-in browser. New
+  endpoint: `POST /api/account/change-password` — checks two independent
+  proofs of identity (session headers + the typed current password), and
+  can only ever change the caller's own account, never anyone else's.
+  After a successful change, `window.AgentAuth.updateStoredPassword()`
+  patches the browser's saved credentials in place so the agent isn't
+  immediately logged out right after proving who they are.
+- **Admin only, two more:** "Create Account" and "Whitelist IP" — small
+  focused modals (not the full `accounts-admin.html` page) that call the
+  same existing `/api/admin/accounts` and `/api/admin/offices`
+  endpoints. "Reset Password" for an admin is different from the
+  self-service version above — picks any account from a dropdown and
+  overwrites its password directly, no old password needed (admin
+  authority), while carefully preserving that account's existing
+  role/office/brand settings (fetches the account list first so the
+  "just changing the password" request doesn't accidentally wipe those
+  other fields — `saveAccount()` treats missing role/officeId/
+  allowedBrands as "reset to defaults", not "leave alone").
+- `accounts-admin.html` is unchanged and still the place for full
+  list/edit/delete — these are just fast common-action shortcuts
+  layered on top, reusing its same backend.
+
+**Not yet live-tested** — same caveat as everything else in the account
+system this session. Verified the self-service change-password endpoint
+end-to-end against a fake KV (wrong current password rejected, correct
+flow succeeds, old password stops working, new password works, and
+role/office/brands survive the change) — all passing, but the actual
+modals haven't been clicked through in a browser yet.
 
 ### Not yet done / explicitly deferred (account system)
 - `public/index.html`'s "TG Reply Threads" home card doesn't mention
