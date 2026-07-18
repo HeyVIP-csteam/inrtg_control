@@ -139,9 +139,11 @@
       if (idleCheckTimer) { clearInterval(idleCheckTimer); idleCheckTimer = null; }
     }
 
+    const LOGOUT_ICON_SVG = `<svg viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path><polyline points="16 17 21 12 16 7"></polyline><line x1="21" y1="12" x2="9" y2="12"></line></svg>`;
+
     function renderWhoami(auth) {
       const el = document.getElementById("agentWhoami");
-      el.innerHTML = `${escapeHtml(auth.username)}<span class="role-badge">${escapeHtml(auth.role)}</span><span class="logout-link" id="logoutLink">Log out</span>`;
+      el.innerHTML = `${escapeHtml(auth.username)}<span class="role-badge">${escapeHtml(auth.role)}</span><span class="logout-icon-btn" id="logoutLink" title="Log out">${LOGOUT_ICON_SVG}</span>`;
       document.getElementById("logoutLink").addEventListener("click", () => {
         clearAuth();
         location.reload();
