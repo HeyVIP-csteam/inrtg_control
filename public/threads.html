@@ -82,12 +82,31 @@
     // localStorage and re-send them as headers on every request; the
     // server re-verifies (password + office IP) every single time.
     const AUTH_KEY = "agentAuth"; // { username, password, role, allowedBrands }
+    const LAST_ACTIVITY_KEY = "agentLastActivity";
+    const IDLE_TIMEOUT_MS = 2 * 60 * 60 * 1000; // 2 hours
 
     function getAuth() {
       try { return JSON.parse(localStorage.getItem(AUTH_KEY) || "null"); } catch { return null; }
     }
     function setAuth(auth) { localStorage.setItem(AUTH_KEY, JSON.stringify(auth)); }
-    function clearAuth() { localStorage.removeItem(AUTH_KEY); }
+    function clearAuth() { localStorage.removeItem(AUTH_KEY); localStorage.removeItem(LAST_ACTIVITY_KEY); }
+
+    // Idle tracking is deliberately tied to real user activity (clicks,
+    // typing, switching back to this tab), NOT the background 6s poll —
+    // otherwise an unattended-but-open tab would look "active" forever.
+    // Stored in localStorage (not just a JS variable) so it survives a
+    // page reload — "2 hours since you last actually touched this" is
+    // meant to span visits, not reset every time the tab refreshes.
+    function markActivity() {
+      if (getAuth()) localStorage.setItem(LAST_ACTIVITY_KEY, String(Date.now()));
+    }
+    function isIdleTimedOut() {
+      const last = parseInt(localStorage.getItem(LAST_ACTIVITY_KEY) || "0", 10);
+      return last > 0 && Date.now() - last > IDLE_TIMEOUT_MS;
+    }
+    ["click", "keydown", "mousemove", "touchstart"].forEach((evt) => {
+      document.addEventListener(evt, markActivity, { passive: true });
+    });
 
     // Wraps fetch with the agent's auth headers, and if the server ever
     // says 401 (bad/stale credentials, e.g. account deleted or IP
@@ -117,6 +136,7 @@
       if (message) { err.textContent = message; err.style.display = "block"; }
       else { err.style.display = "none"; }
       if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+      if (idleCheckTimer) { clearInterval(idleCheckTimer); idleCheckTimer = null; }
     }
 
     function renderWhoami(auth) {
@@ -167,6 +187,7 @@
 
     function bootDashboard() {
       const auth = getAuth();
+      markActivity(); // logging in / resuming counts as activity
       document.getElementById("loginOverlay").classList.remove("open");
       document.getElementById("threadsShell").style.display = "flex";
       renderWhoami(auth);
@@ -180,6 +201,16 @@
         loadList(document.getElementById("threadSearch").value);
         refreshOpenThread();
       }, 6000);
+      // Checks every minute whether it's been over IDLE_TIMEOUT_MS since
+      // the agent last actually clicked/typed/switched to this tab — not
+      // tied to the poll above, which would otherwise keep an unattended
+      // tab looking "active" forever.
+      idleCheckTimer = setInterval(() => {
+        if (isIdleTimedOut()) {
+          clearAuth();
+          showLogin("Logged out after 2 hours of inactivity — log in again.");
+        }
+      }, 60000);
     }
 
     // ---------------------------------------------------------------------
@@ -189,6 +220,7 @@
     let selectedId = null;
     let selectedThread = null;
     let pollTimer = null;
+    let idleCheckTimer = null;
     let searchTimer = null;
 
     const activeList = document.getElementById("activeList");
@@ -713,8 +745,11 @@
         .replace(/>/g, "&gt;");
     }
 
-    if (getAuth()) {
+    if (getAuth() && !isIdleTimedOut()) {
       bootDashboard();
+    } else if (getAuth()) {
+      clearAuth();
+      showLogin("Logged out after 2 hours of inactivity — log in again.");
     } else {
       showLogin();
     }
@@ -724,6 +759,12 @@
     // immediately the moment this tab becomes visible again.
     document.addEventListener("visibilitychange", () => {
       if (document.visibilityState === "visible" && getAuth()) {
+        if (isIdleTimedOut()) {
+          clearAuth();
+          showLogin("Logged out after 2 hours of inactivity — log in again.");
+          return;
+        }
+        markActivity();
         loadList(document.getElementById("threadSearch").value);
         refreshOpenThread();
       }

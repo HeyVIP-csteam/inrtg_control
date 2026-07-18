@@ -303,9 +303,23 @@ TG Reply Threads now requires login, with real per-agent accounts:
   `localStorage` after login and re-sends them as `X-Agent-User` /
   `X-Agent-Pass` headers on every request; every protected endpoint
   independently re-verifies the password hash AND the request's IP
-  against the account's office, every single call. No "log out" beyond
-  clearing that localStorage entry (the whoami pill in `/threads.html`
-  has a Log Out link that does exactly that).
+  against the account's office, every single call. A whoami pill next to
+  "Back to Home" in `/threads.html` shows who's logged in + a Log Out
+  link that clears the saved credentials.
+- **2-hour idle auto-logout (client-side only).** Tracked in
+  `localStorage` (`agentLastActivity`), updated on real user activity
+  (click/keydown/mousemove/touch, or switching back to the tab) — NOT on
+  the background 6s poll, so an unattended-but-open tab doesn't look
+  "active" forever. A once-a-minute check, plus a check on page load and
+  on tab-visibility-return, force back to the login screen once 2 hours
+  pass with no real interaction. **Caveat, said plainly:** since there's
+  no server-side session, this is enforced by the browser, not the
+  server — the server has no concept of "this login expired 2 hours ago"
+  and will still accept those exact credentials if sent directly (e.g.
+  someone manually replaying a request from devtools). Good enough for
+  normal use (locked screens, agents leaving for lunch); a real
+  server-enforced expiry would need the heavier session/token tier that
+  was discussed and deliberately not chosen.
 - **IMPORTANT caveat, not obvious from the UI:** an account with **no
   office assigned** (`officeId: null`) has **no IP restriction at all**
   — it can log in from anywhere. Intentional (e.g. a remote admin), but
