@@ -214,11 +214,20 @@
             ⚠️ The original message was recalled from Telegram — this ticket no longer exists in the group.
           </div>` : ""}
 
-        ${t.summary && t.summary.length ? `
+        ${t.rootEdited ? `
+          <div class="thread-summary-card">
+            <div class="row" style="margin-bottom:6px;"><b style="color:var(--accent-gold);">✏️ Edited — current message text:</b></div>
+            <div style="white-space:pre-wrap; font-size:13px;">${escapeHtml(stripHtmlTags(t.rootText || ""))}</div>
+          </div>
+        ` : (t.summary && t.summary.length ? `
           <div class="thread-summary-card">
             ${t.summary.map((s) => `<div class="row"><b>${escapeHtml(s.label)}:</b> <span>${escapeHtml(s.value)}</span></div>`).join("")}
-          </div>` : ""}
+          </div>` : "")}
       `;
+    }
+
+    function stripHtmlTags(str) {
+      return String(str).replace(/<[^>]*>/g, "");
     }
 
     function buildConversationHTML(t) {
@@ -284,7 +293,7 @@
           <div class="reply-attach-preview" id="replyAttachPreview"></div>
           <div class="reply-box">
             <div class="reply-input-wrap">
-              <button class="attach-btn" id="attachBtn" title="Attach screenshot or PDF">📎</button>
+              <button class="attach-btn" id="attachBtn" title="Attach screenshot or PDF">🔗</button>
               <input type="file" id="replyFileInput" accept="image/png,image/jpeg,application/pdf" hidden />
               <input type="text" id="replyInput" placeholder="Reply into the Telegram thread..." />
             </div>

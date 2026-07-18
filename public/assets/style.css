@@ -495,13 +495,13 @@ a { color: inherit; text-decoration: none; }
 .reply-input-wrap::before {
   content: "";
   position: absolute;
-  left: 38px; top: 20%; bottom: 20%;
+  left: 48px; top: 22%; bottom: 22%;
   width: 1px;
   background: var(--ink-soft);
-  opacity: 0.35;
+  opacity: 0.3;
   pointer-events: none;
 }
-.reply-input-wrap input#replyInput { padding-left: 50px; }
+.reply-input-wrap input#replyInput { padding-left: 60px; }
 .reply-attach-preview:empty { display: none; }
 .reply-attach-preview { margin-bottom: 8px; }
 .attach-chip {

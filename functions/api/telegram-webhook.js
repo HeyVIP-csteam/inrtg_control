@@ -15,12 +15,15 @@
  * hitting this URL directly.
  *
  * Every message posted in the bot's groups (agent replies included) is
- * delivered here. Only a genuine, explicit reply (the agent long-pressed a
- * specific ticket message and hit Reply) gets matched and recorded — and
- * if that ticket was already marked Solved, an explicit reply reopens it,
- * since replying to it on purpose is a deliberate signal. Anything else —
- * a plain message typed in the topic with no reply, or Telegram's
- * auto-attached "reply to the topic root" that isn't a real reply — is
+ * delivered here. Only a genuine, explicit reply gets matched — but that
+ * now includes chains: a reply to our root ticket message, a reply to
+ * THAT reply (e.g. someone @-tags another team who then replies), and so
+ * on, as long as each link in the chain is an explicit reply to a message
+ * we've already recorded. If that ticket was already marked Solved, an
+ * explicit reply reopens it, since replying to it on purpose is a
+ * deliberate signal. Anything else — a plain message typed in the topic
+ * with no reply, Telegram's auto-attached "reply to the topic root" that
+ * isn't a real reply, or a reply to some message outside this chain — is
  * intentionally ignored rather than guessed at, so a message never lands
  * on the wrong ticket.
  */
@@ -73,5 +76,6 @@ async function handleUpdate(env, update) {
     text: msg.text || msg.caption || "(attachment)",
     ts: new Date((msg.date || Date.now() / 1000) * 1000).toISOString(),
     self: false,
+    messageId: msg.message_id,
   });
 }

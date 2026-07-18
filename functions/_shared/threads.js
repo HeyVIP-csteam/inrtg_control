@@ -138,6 +138,7 @@ export async function createThread(env, { module: moduleId, moduleName, icon, ac
     topicId: topicId ?? null,
     rootMessageId,
     rootText: rootText || "",
+    rootEdited: false,
     hasMedia: !!hasMedia,
     rootRecalled: false,
     msgIds: [rootMessageId],
@@ -216,11 +217,15 @@ export async function setSolved(env, threadId, solved) {
 }
 
 // Root ticket message (the original submission) was edited on Telegram —
-// update the text we keep so the summary card reflects the correction.
+// update the text we keep. The structured `summary` (Promotion/TID/etc.
+// rows) was captured once at submit time and can't be safely re-parsed
+// out of free-form edited text, so we flag the thread as edited — the
+// dashboard shows this raw text instead of the now-possibly-stale summary.
 export async function updateRootText(env, threadId, text) {
   const thread = await getThread(env, threadId);
   if (!thread) return null;
   thread.rootText = text;
+  thread.rootEdited = true;
   thread.lastActivity = new Date().toISOString();
   await env.THREADS_KV.put(`thread:${thread.id}`, JSON.stringify(thread));
   await upsertIndexEntry(env, thread);
