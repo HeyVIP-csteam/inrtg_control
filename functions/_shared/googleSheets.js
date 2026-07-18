@@ -144,6 +144,23 @@ export async function writeRowForDate(env, sheetId, tab, { leftBlock, rightBlock
   if (!putRes.ok) throw new Error(`Sheets update failed (${putRes.status}): ${await putRes.text()}`);
 }
 
+/**
+ * Reads multiple ranges (e.g. one per tab) in a single API call using
+ * spreadsheets.values.batchGet. Returns Google's raw `valueRanges` array
+ * (one entry per input range, in the same order, each with a `.values`
+ * 2D array — missing/blank rows are simply absent from the array, so
+ * always index defensively). Read-only — used by Promo Code Search.
+ */
+export async function batchGetValues(env, sheetId, ranges) {
+  const token = await getAccessToken(env);
+  const params = ranges.map((r) => `ranges=${encodeURIComponent(r)}`).join("&");
+  const url = `https://sheets.googleapis.com/v4/spreadsheets/${sheetId}/values:batchGet?${params}&valueRenderOption=FORMATTED_VALUE`;
+  const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+  if (!res.ok) throw new Error(`Sheets batchGet failed (${res.status}): ${await res.text()}`);
+  const data = await res.json();
+  return data.valueRanges || [];
+}
+
 function columnIndex(letter) {
   let n = 0;
   for (const ch of letter.toUpperCase()) n = n * 26 + (ch.charCodeAt(0) - 64);
