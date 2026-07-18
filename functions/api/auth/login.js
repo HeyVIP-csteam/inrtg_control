@@ -1,0 +1,52 @@
+/**
+ * POST /api/auth/login   body: { username, password }
+ *
+ * No session is created — this just validates the credentials + the
+ * request's IP against the account's office (see accounts.js for why).
+ * On success, returns the account's public info (role, allowedBrands)
+ * so the frontend can decide what to show; the frontend then re-sends
+ * the same username/password as X-Agent-User / X-Agent-Pass headers on
+ * every subsequent request, and every protected endpoint re-verifies
+ * them independently — this endpoint is really just a "does this work"
+ * check for the login form, not a source of trust by itself.
+ */
+import { getAccount, getOffice, requestIP, verifyPassword } from "../../_shared/accounts.js";
+
+export async function onRequestPost({ request, env }) {
+  if (!env.THREADS_KV) return json({ ok: false, error: "THREADS_KV is not bound yet." }, 500);
+  let body;
+  try {
+    body = await request.json();
+  } catch {
+    return json({ ok: false, error: "Invalid JSON body." }, 400);
+  }
+
+  const username = (body.username || "").trim();
+  const password = body.password || "";
+  if (!username || !password) return json({ ok: false, error: "Username and password are required." }, 400);
+
+  // Same generic error whether the username doesn't exist, the password
+  // is wrong, or the IP doesn't match — don't help narrow down which.
+  const fail = () => json({ ok: false, error: "Wrong username, password, or you're not on an approved network." }, 401);
+
+  const account = await getAccount(env, username);
+  if (!account) return fail();
+
+  const passwordOk = await verifyPassword(password, account.salt, account.hash);
+  if (!passwordOk) return fail();
+
+  if (account.officeId) {
+    const office = await getOffice(env, account.officeId);
+    const ip = requestIP(request);
+    if (!office || !office.allowedIPs.length || !office.allowedIPs.includes(ip)) return fail();
+  }
+
+  return json({
+    ok: true,
+    account: { username: account.username, role: account.role, allowedBrands: account.allowedBrands, officeId: account.officeId },
+  });
+}
+
+function json(obj, status = 200) {
+  return new Response(JSON.stringify(obj), { status, headers: { "Content-Type": "application/json", "Cache-Control": "no-store" } });
+}

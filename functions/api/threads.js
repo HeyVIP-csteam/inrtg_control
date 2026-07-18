@@ -3,15 +3,25 @@
  * Lightweight summaries only (see functions/_shared/threads.js) — the
  * sidebar list. Fetch a single thread's full conversation via
  * GET /api/threads/<id>.
+ *
+ * Requires a logged-in account (X-Agent-User / X-Agent-Pass headers —
+ * see _shared/accounts.js). Results are filtered server-side to only
+ * the brands that account is allowed to see — an agent restricted to a
+ * subset of brands never receives the other brands' summaries at all,
+ * this isn't just hidden in the UI.
  */
 import { listThreads } from "../_shared/threads.js";
+import { verifyRequest, canSeeBrand } from "../_shared/accounts.js";
 
 export async function onRequestGet({ request, env }) {
   if (!env.THREADS_KV) {
     return json({ ok: true, active: [], solved: [], notConfigured: true });
   }
+  const account = await verifyRequest(request, env);
+  if (!account) return json({ ok: false, error: "Login required." }, 401);
+
   const q = new URL(request.url).searchParams.get("q") || "";
-  const all = await listThreads(env, { q });
+  const all = (await listThreads(env, { q })).filter((t) => canSeeBrand(account, t.brand));
   return json({
     ok: true,
     active: all.filter((t) => !t.solved),

@@ -22,9 +22,30 @@
 
   <div class="threads-topline">
     <a href="/" class="back-pill">&larr; Back to Home</a>
+    <span class="agent-whoami" id="agentWhoami"></span>
   </div>
 
-  <div class="threads-shell">
+  <div class="login-overlay" id="loginOverlay">
+    <div class="form-card" style="max-width:360px;">
+      <div class="form-header"><span class="icon">🔒</span><span>Agent Login</span></div>
+      <p class="form-hint">Log in to view and reply to Telegram ticket threads.</p>
+      <hr class="form-divider" />
+      <div class="field">
+        <label>Username</label>
+        <input type="text" id="loginUsername" autocomplete="username" />
+      </div>
+      <div class="field">
+        <label>Password</label>
+        <input type="password" id="loginPassword" autocomplete="current-password" />
+      </div>
+      <div id="loginError" class="field-note err" style="display:none;"></div>
+      <div class="form-actions">
+        <button class="btn-submit" id="loginBtn"><span>🔓</span><span>Log In</span></button>
+      </div>
+    </div>
+  </div>
+
+  <div class="threads-shell" id="threadsShell" style="display:none;">
     <aside class="threads-sidebar">
       <div class="threads-search">
         <span>🔍</span>
@@ -55,6 +76,114 @@
     window.initThemeToggle();
     window.initClock();
 
+    // ---- Auth ----------------------------------------------------------
+    // No session/token — see functions/_shared/accounts.js for why. We
+    // just keep the username+password the agent logged in with in
+    // localStorage and re-send them as headers on every request; the
+    // server re-verifies (password + office IP) every single time.
+    const AUTH_KEY = "agentAuth"; // { username, password, role, allowedBrands }
+
+    function getAuth() {
+      try { return JSON.parse(localStorage.getItem(AUTH_KEY) || "null"); } catch { return null; }
+    }
+    function setAuth(auth) { localStorage.setItem(AUTH_KEY, JSON.stringify(auth)); }
+    function clearAuth() { localStorage.removeItem(AUTH_KEY); }
+
+    // Wraps fetch with the agent's auth headers, and if the server ever
+    // says 401 (bad/stale credentials, e.g. account deleted or IP
+    // changed), boots back to the login screen instead of silently
+    // failing.
+    async function authFetch(url, opts = {}) {
+      const auth = getAuth();
+      const headers = { ...(opts.headers || {}) };
+      if (auth) {
+        headers["X-Agent-User"] = auth.username;
+        headers["X-Agent-Pass"] = auth.password;
+      }
+      const res = await fetch(url, { ...opts, headers });
+      if (res.status === 401) {
+        clearAuth();
+        showLogin("Your session's no longer valid — log in again.");
+      }
+      return res;
+    }
+
+    function showLogin(message) {
+      document.getElementById("threadsShell").style.display = "none";
+      document.getElementById("agentWhoami").innerHTML = "";
+      const overlay = document.getElementById("loginOverlay");
+      overlay.classList.add("open");
+      const err = document.getElementById("loginError");
+      if (message) { err.textContent = message; err.style.display = "block"; }
+      else { err.style.display = "none"; }
+      if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+    }
+
+    function renderWhoami(auth) {
+      const el = document.getElementById("agentWhoami");
+      el.innerHTML = `${escapeHtml(auth.username)}<span class="role-badge">${escapeHtml(auth.role)}</span><span class="logout-link" id="logoutLink">Log out</span>`;
+      document.getElementById("logoutLink").addEventListener("click", () => {
+        clearAuth();
+        location.reload();
+      });
+    }
+
+    async function attemptLogin() {
+      const username = document.getElementById("loginUsername").value.trim();
+      const password = document.getElementById("loginPassword").value;
+      const btn = document.getElementById("loginBtn");
+      const err = document.getElementById("loginError");
+      if (!username || !password) {
+        err.textContent = "Enter both a username and password.";
+        err.style.display = "block";
+        return;
+      }
+      btn.disabled = true;
+      err.style.display = "none";
+      try {
+        const res = await fetch("/api/auth/login", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ username, password }),
+        });
+        const data = await res.json();
+        if (!data.ok) {
+          err.textContent = data.error || "Login failed.";
+          err.style.display = "block";
+          return;
+        }
+        setAuth({ username: data.account.username, password, role: data.account.role, allowedBrands: data.account.allowedBrands });
+        bootDashboard();
+      } catch {
+        err.textContent = "Network error — try again.";
+        err.style.display = "block";
+      } finally {
+        btn.disabled = false;
+      }
+    }
+
+    document.getElementById("loginBtn").addEventListener("click", attemptLogin);
+    document.getElementById("loginPassword").addEventListener("keydown", (e) => { if (e.key === "Enter") attemptLogin(); });
+
+    function bootDashboard() {
+      const auth = getAuth();
+      document.getElementById("loginOverlay").classList.remove("open");
+      document.getElementById("threadsShell").style.display = "flex";
+      renderWhoami(auth);
+      // The hidden deletion-log dot only makes sense to show to admins —
+      // the server enforces this regardless, this just avoids dangling a
+      // dead-end button in front of an agent who'd get a 401 anyway.
+      document.getElementById("opsLogTrigger").style.display = auth.role === "admin" ? "" : "none";
+      loadList();
+      polishEmoji();
+      pollTimer = setInterval(() => {
+        loadList(document.getElementById("threadSearch").value);
+        refreshOpenThread();
+      }, 6000);
+    }
+
+    // ---------------------------------------------------------------------
+
     let activeThreads = [];
     let solvedThreads = [];
     let selectedId = null;
@@ -81,7 +210,7 @@
       if (isOpen) {
         panel.innerHTML = '<div style="color:var(--ink-soft);">Loading…</div>';
         try {
-          const res = await fetch("/api/deletion-log", { cache: "no-store" });
+          const res = await authFetch("/api/deletion-log", { cache: "no-store" });
           const data = await res.json();
           if (!data.ok || !data.entries.length) {
             panel.innerHTML = '<div style="color:var(--ink-soft);">No deletions logged yet.</div>';
@@ -213,7 +342,7 @@
 
     async function loadList(q) {
       try {
-        const res = await fetch(`/api/threads${q ? "?q=" + encodeURIComponent(q) : ""}`, { cache: "no-store" });
+        const res = await authFetch(`/api/threads${q ? "?q=" + encodeURIComponent(q) : ""}`, { cache: "no-store" });
         const data = await res.json();
         if (!data.ok) return;
         activeThreads = data.active || [];
@@ -228,7 +357,7 @@
       selectedId = id;
       renderLists();
       try {
-        const res = await fetch(`/api/threads/${id}`, { cache: "no-store" });
+        const res = await authFetch(`/api/threads/${id}`, { cache: "no-store" });
         const data = await res.json();
         if (!data.ok) {
           main.innerHTML = `<div class="threads-placeholder">Couldn't load this thread.</div>`;
@@ -249,7 +378,7 @@
     async function refreshOpenThread() {
       if (!selectedId) return;
       try {
-        const res = await fetch(`/api/threads/${selectedId}`, { cache: "no-store" });
+        const res = await authFetch(`/api/threads/${selectedId}`, { cache: "no-store" });
         const data = await res.json();
         if (!data.ok) return;
         selectedThread = data.thread;
@@ -452,7 +581,7 @@
 
     async function toggleSolved() {
       const action = selectedThread.solved ? "unsolve" : "solve";
-      const res = await fetch(`/api/threads/${selectedThread.id}`, {
+      const res = await authFetch(`/api/threads/${selectedThread.id}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action }),
@@ -466,12 +595,11 @@
     }
 
     async function deleteThread() {
-      const password = prompt("Enter the edit password to delete this thread:");
-      if (!password) return;
-      const res = await fetch(`/api/threads/${selectedThread.id}`, {
+      if (!confirm("Delete this tracking record? Telegram and the Sheet are untouched — this only removes it from the dashboard.")) return;
+      const res = await authFetch(`/api/threads/${selectedThread.id}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "delete", password }),
+        body: JSON.stringify({ action: "delete" }),
       });
       const data = await res.json();
       if (!data.ok) {
@@ -501,7 +629,7 @@
             dataUrl: await fileToDataUrl(pendingAttachment),
           };
         }
-        const res = await fetch(`/api/threads/${selectedThread.id}`, {
+        const res = await authFetch(`/api/threads/${selectedThread.id}`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(payload),
@@ -539,9 +667,7 @@
 
     async function recallRoot() {
       if (!confirm("Recall the original ticket message from Telegram? This removes it from the group. Your tracking record, the Sheet row, and this conversation stay.")) return;
-      const password = prompt("Enter the edit password to recall this message:");
-      if (!password) return;
-      const res = await postAction({ action: "recallRoot", password });
+      const res = await postAction({ action: "recallRoot" });
       if (!res.ok) return alert(res.error || "Recall failed.");
       selectedThread = res.thread;
       updateThreadContent(selectedThread);
@@ -560,22 +686,21 @@
 
     async function recallReply(messageId) {
       if (!confirm("Recall this reply from Telegram?")) return;
-      const password = prompt("Enter the edit password to recall this message:");
-      if (!password) return;
-      const res = await postAction({ action: "recallReply", messageId: Number(messageId), password });
+      const res = await postAction({ action: "recallReply", messageId: Number(messageId) });
       if (!res.ok) return alert(res.error || "Recall failed.");
       selectedThread = res.thread;
       updateThreadContent(selectedThread);
     }
 
     async function postAction(payload) {
-      const res = await fetch(`/api/threads/${selectedThread.id}`, {
+      const res = await authFetch(`/api/threads/${selectedThread.id}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       });
       return res.json();
     }
+
 
     function escapeAttr(str) {
       return escapeHtml(str).replace(/"/g, "&quot;");
@@ -588,18 +713,17 @@
         .replace(/>/g, "&gt;");
     }
 
-    loadList();
-    polishEmoji();
-    pollTimer = setInterval(() => {
-      loadList(document.getElementById("threadSearch").value);
-      refreshOpenThread();
-    }, 6000);
+    if (getAuth()) {
+      bootDashboard();
+    } else {
+      showLogin();
+    }
 
     // Browsers throttle background-tab timers, so a poll can lag while the
     // tab is hidden (e.g. agent switches to the Telegram app/tab). Catch up
     // immediately the moment this tab becomes visible again.
     document.addEventListener("visibilitychange", () => {
-      if (document.visibilityState === "visible") {
+      if (document.visibilityState === "visible" && getAuth()) {
         loadList(document.getElementById("threadSearch").value);
         refreshOpenThread();
       }

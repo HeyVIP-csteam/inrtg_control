@@ -8,9 +8,10 @@ handoff doc from the start of this project.
 ## What this is
 A web form → Telegram bot + Google Sheets ticketing system for INR-market
 CS teams (BetVisa, Betjili, Crickex, Jeetway, Mostplay), **plus a full
-two-way Telegram reply-tracking dashboard ("TG Reply Threads") and a
-Promo Code Search dashboard**, both built on top of it. Deployed on
-Cloudflare Pages.
+two-way Telegram reply-tracking dashboard ("TG Reply Threads") with its
+own per-agent account system (login, office-based IP allowlists, brand
+permissions), and a Promo Code Search dashboard**, all built on top of
+it. Deployed on Cloudflare Pages.
 
 - **GitHub repo:** `HeyVIP-csteam/inrtg_control`
 - **Live URL:** `inrtg-control.pages.dev`
@@ -52,15 +53,19 @@ Cloudflare Pages.
 | `public/form.html` | Generic form page, driven by `?module=<id>` |
 | `public/threads.html` | **TG Reply Threads dashboard** — full chat-panel UI (see below) |
 | `public/promo.html` | **Promo Code Search page — fully wired this session** (see below) |
+| `public/accounts-admin.html` | **New this session** — hidden admin page, not linked from nav; create/edit/delete Offices and Accounts |
 | `functions/api/submit.js` | Submission handler — sends Telegram message, writes Sheets, **creates a TG Reply Threads record** |
 | `functions/_shared/routing.js` | Per-brand/module Telegram + Sheet config; `MODULE_META` now includes `accent` color too |
 | `functions/_shared/googleSheets.js` | Google Sheets API helpers — now also `batchGetValues` (read-only, multi-range) for Promo Code Search |
 | `functions/_shared/r2.js` | R2 upload helper |
 | `functions/_shared/threads.js` | **TG Reply Threads KV storage layer** — create/read/update threads, index, auto-cleanup, deletion log |
+| `functions/_shared/accounts.js` | **New this session** — Office/Account KV storage, password hashing, per-request auth verification, brand-permission check |
+| `functions/api/auth/login.js` | **New this session** — `POST /api/auth/login` |
+| `functions/api/admin/offices.js`, `functions/api/admin/accounts.js` | **New this session** — admin-only Office/Account CRUD, used by `accounts-admin.html` |
 | `functions/api/telegram-webhook.js` | **Receives Telegram messages**, matches replies to threads |
-| `functions/api/threads.js` | `GET /api/threads` — list active/solved threads, search |
-| `functions/api/threads/[id].js` | `GET`/`POST` single thread — solve, delete, reply, editRoot, recallRoot, editReply, recallReply |
-| `functions/api/deletion-log.js` | `GET /api/deletion-log` — deletion history (see "Hidden deletion log" below) |
+| `functions/api/threads.js` | `GET /api/threads` — list active/solved threads, search — **now login-gated and brand-filtered** |
+| `functions/api/threads/[id].js` | `GET`/`POST` single thread — solve, delete, reply, editRoot, recallRoot, editReply, recallReply — **now login-gated, brand-filtered, and delete/recall no longer need a separate password** |
+| `functions/api/deletion-log.js` | `GET /api/deletion-log` — deletion history — **now requires an admin-role login** |
 | `functions/api/promo-search.js` | **Real search this session** — reads the shared Promo Code Google Sheet (11 team tabs), exact-matches the Promo Code column, groups results by tab |
 | `functions/api/brand-config.js` | Password-protected brand logo/link editor (unchanged this session) |
 | `functions/api/next-tid.js` | TID generator for Promotion Request (unchanged) |
@@ -282,40 +287,125 @@ guess.
 
 ---
 
-1. **Promo Code Search — needs verification, not fully pending anymore.**
-   Built and wired this session against the real sheet the business owner
-   provided (`1VYKwdGyoa5qxCScHWyKrYPQYvQPl8igrBzK1mk2RT98`), searching
-   exact Promo Code matches across all 11 team tabs. **Not yet confirmed
-   working against live data** — needs the sheet actually shared with the
-   service account, and a real search run to check the column mapping.
-   Two known open items:
+## Account system — built this session (needs live verification)
+
+### What it does
+TG Reply Threads now requires login, with real per-agent accounts:
+- **Offices** — a name + a small list of allowed IPs (business owner
+  confirmed CS agents work from fixed office networks, ~2-3 IPs per
+  office). Deleting or misconfiguring an office locks out every account
+  assigned to it (fails closed, not open — tested).
+- **Accounts** — username + password (PBKDF2-hashed, 100k iterations),
+  `role` (`agent` | `admin`), one `officeId`, and `allowedBrands` (an
+  array of brand names, or the string `"all"`).
+- **No session/token** — deliberate "medium tier" tradeoff discussed with
+  the business owner. The browser saves the username+password in
+  `localStorage` after login and re-sends them as `X-Agent-User` /
+  `X-Agent-Pass` headers on every request; every protected endpoint
+  independently re-verifies the password hash AND the request's IP
+  against the account's office, every single call. No "log out" beyond
+  clearing that localStorage entry (the whoami pill in `/threads.html`
+  has a Log Out link that does exactly that).
+- **IMPORTANT caveat, not obvious from the UI:** an account with **no
+  office assigned** (`officeId: null`) has **no IP restriction at all**
+  — it can log in from anywhere. Intentional (e.g. a remote admin), but
+  easy to forget and accidentally leave an account wide open. Always
+  assign an office unless that's specifically wanted.
+
+### What's gated now
+| Surface | Before | Now |
+|---|---|---|
+| `/threads.html` | Open to anyone with the URL | **Requires login** |
+| `GET /api/threads` (sidebar list) | Open | Login required; filtered server-side to the account's `allowedBrands` |
+| `GET /api/threads/<id>` + all POST actions | Open (delete/recallRoot/recallReply needed `BRAND_EDIT_PASSWORD`) | Login required; a thread outside the account's brands 404s — verified an agent can't fetch it directly by ID either, not just hidden from the list |
+| Delete / recall actions | Needed `BRAND_EDIT_PASSWORD` prompt | **No extra password** — being logged in as an account that can see the brand is the authorization. `by` on every deletion-log entry is now auto-filled from the logged-in username instead of always `null` |
+| `GET /api/deletion-log` | URL-obscurity only, no auth | **Requires `role: admin`** |
+| `form.html` (ticket submission), `promo.html` (Promo Code Search) | Open | **Unchanged, still open** — confirmed these should NOT be gated |
+
+### New files
+- `functions/_shared/accounts.js` — Office/Account KV storage, PBKDF2
+  password hashing, `verifyRequest()` (the per-request auth check used
+  everywhere), `canSeeBrand()`, `authenticateAdmin()` (real admin login
+  OR the one-time bootstrap password, see below).
+- `functions/api/auth/login.js` — `POST /api/auth/login`.
+- `functions/api/admin/offices.js`, `functions/api/admin/accounts.js` —
+  admin-only CRUD, used by the new admin page below.
+- `public/accounts-admin.html` — **hidden admin page, not linked from
+  anywhere in the nav** (same "URL-only" pattern the deletion log used) —
+  lets an admin create/edit/delete Offices and Accounts.
+
+### First-time setup (bootstrap) — do this once after deploying
+`accounts-admin.html` needs an admin account to log in, but there isn't
+one yet on a fresh deploy. So: **as long as zero admin accounts exist in
+KV**, that page accepts the existing `BRAND_EDIT_PASSWORD` secret as a
+one-time key (click "No admin account yet — first-time setup" on the
+login screen) purely to create the first real admin account. The instant
+one admin account exists anywhere in KV, this fallback stops being
+accepted for good. No new Cloudflare secret was needed.
+
+**Steps to actually go live:**
+1. Deploy this zip.
+2. Go to `/accounts-admin.html` (not linked anywhere — bookmark it).
+3. Click "first-time setup", enter the existing `BRAND_EDIT_PASSWORD`.
+4. Create at least one Office with the real office IP(s).
+5. Create the first admin account, assign it to that Office.
+6. Log out of bootstrap mode, log back in with the real admin account to
+   confirm it works, then create the rest of the agent accounts (each
+   with its brand access + office) from there.
+
+### Verified with an automated test this session (not yet live-tested)
+Exercised end-to-end against a fake in-memory KV (bootstrap → office and
+account creation → IP allow/deny → brand-filtered list AND direct-by-ID
+access → password-less delete with auto `by` → admin-only deletion log →
+office deletion locks out its accounts) — 20/20 checks passed. **Still
+needs a real run against the live Cloudflare deployment** (real KV, real
+`CF-Connecting-IP` through Cloudflare's edge, real office Wi-Fi) before
+trusting it in production.
+
+### Not yet done / explicitly deferred
+- `public/index.html`'s "TG Reply Threads" home card doesn't mention
+  login is now required — cosmetic, low priority.
+- No "forgot password" flow — an admin resets it manually via
+  `accounts-admin.html` (leave the password field blank when editing to
+  keep the old one, type a new one to overwrite it).
+- No rate-limiting on login attempts — acceptable given the IP allowlist
+  already blocks anyone off the approved networks entirely.
+
+---
+
+## Still pending / needs input before it can be finished
+
+1. **Promo Code Search — confirmed working live.** Wired this session
+   against the real sheet (`1VYKwdGyoa5qxCScHWyKrYPQYvQPl8igrBzK1mk2RT98`),
+   matching now switched from exact to **contains/partial** per business
+   owner's live testing (e.g. "1500" surfaces "1500PKR"). Two smaller
+   open items remain:
    - **"Start On" column** — the reference layout screenshot has a
      Start On field, but no matching column exists in the sheet as shown.
      Currently always renders as "—". If there is a real source column,
-     tell a fresh conversation which one and it's a one-line fix in
-     `functions/api/promo-search.js`.
+     say which one and it's a one-line fix in `functions/api/promo-search.js`.
    - Assumed **all 11 tabs share the same A–N column layout** as the one
      tab shown in the reference screenshot (Welcome Call Team). If any
      tab is laid out differently, that tab's results will come out wrong
      until it gets its own column mapping.
 
-2. **Deletion log — "who deleted it"** — field exists (`by`) but always
-   null. Needs a decision on identity (simplest: add a "your name" field
-   to the delete/recall confirmation prompts) before it can be filled in.
+2. **Deletion log — "who deleted it"** — ✅ **Resolved this session**,
+   see the Account system section above. `by` is now auto-filled from the
+   logged-in username on every delete/recall action.
 
-3. **Deletion log — visibility/access** — currently a low-key
-   unlabeled dot at the bottom of the `/threads.html` sidebar (business
-   owner wanted to review it there first before deciding). They may still
-   want to move it to a completely separate, unlinked page later, and/or
-   add a password gate on `/api/deletion-log`. Both were discussed as
-   options, neither built yet.
+3. **Deletion log — visibility/access** — ✅ **Resolved this session**,
+   see the Account system section above. `GET /api/deletion-log` now
+   requires a logged-in account with `role: admin`; the dot in the
+   sidebar is hidden client-side for non-admins too (defense in depth —
+   the real enforcement is server-side).
 
 4. **Free-tier KV limits** — good to remind a fresh conversation: Cloudflare
    KV free tier is 1,000 writes/day, 1,000 deletes/day, 100,000 reads/day,
    1 GB storage. A single form submission costs ~3 writes; each reply
-   costs ~2. If the team's ticket volume grows a lot, the fix is simply
-   upgrading to the Workers Paid plan ($5/mo minimum) — no code changes
-   needed, limits jump to ~1M/month.
+   costs ~2. The account system adds a small amount more (one write per
+   login-adjacent action, none per read). If the team's ticket volume
+   grows a lot, the fix is simply upgrading to the Workers Paid plan
+   ($5/mo minimum) — no code changes needed, limits jump to ~1M/month.
 
 ## Recurring non-code gotcha (from the original handoff, still true)
 GitHub web upload can cause duplicate files or misplaced content if the

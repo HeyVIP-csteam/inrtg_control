@@ -18,21 +18,51 @@
  *   be edited/recalled — Telegram doesn't let a bot edit or delete
  *   messages other people typed directly in the group.
  */
+/**
+ * GET  /api/threads/<id>  -> { ok, thread }  (full record incl. messages)
+ * POST /api/threads/<id>  -> body: { action, text?, messageId? }
+ *   Actions:
+ *   - solve / unsolve: any logged-in agent who can see this thread's brand.
+ *   - delete: untracks our record (Telegram/Sheet untouched). No separate
+ *     password anymore — being logged in as an account that can see this
+ *     brand is the authorization; `by` is filled from that account.
+ *   - reply: sends `text` back into the Telegram thread as a reply to the
+ *     original ticket message, and records it as a "self" message.
+ *   - editRoot { text }: edits the original ticket message on Telegram.
+ *   - recallRoot: deletes the original ticket message from Telegram.
+ *   - editReply { messageId, text }: edits one of our own past replies.
+ *   - recallReply { messageId }: deletes one of our own past replies.
+ *
+ *   Only messages our own bot sent (the root ticket + "self" replies) can
+ *   be edited/recalled — Telegram doesn't let a bot edit or delete
+ *   messages other people typed directly in the group.
+ *
+ *   Every action requires a logged-in account (X-Agent-User/X-Agent-Pass)
+ *   that's allowed to see this thread's brand — see _shared/accounts.js.
+ *   A thread outside an account's allowed brands 404s exactly like it
+ *   doesn't exist, same as it's filtered out of the sidebar list.
+ */
 import {
   getThread, setSolved, softDeleteThread, appendMessage,
   updateRootText, markRootRecalled, editMessageInThread, removeMessageFromThread,
   logDeletion,
 } from "../../_shared/threads.js";
+import { verifyRequest, canSeeBrand } from "../../_shared/accounts.js";
 
-export async function onRequestGet({ env, params }) {
+export async function onRequestGet({ request, env, params }) {
   if (!env.THREADS_KV) return json({ ok: false, error: "THREADS_KV is not bound yet." }, 500);
+  const account = await verifyRequest(request, env);
+  if (!account) return json({ ok: false, error: "Login required." }, 401);
   const thread = await getThread(env, params.id);
-  if (!thread || thread.deleted) return json({ ok: false, error: "Not found." }, 404);
+  if (!thread || thread.deleted || !canSeeBrand(account, thread.brand)) return json({ ok: false, error: "Not found." }, 404);
   return json({ ok: true, thread });
 }
 
 export async function onRequestPost({ request, env, params }) {
   if (!env.THREADS_KV) return json({ ok: false, error: "THREADS_KV is not bound yet." }, 500);
+  const account = await verifyRequest(request, env);
+  if (!account) return json({ ok: false, error: "Login required." }, 401);
+
   let body;
   try {
     body = await request.json();
@@ -43,6 +73,13 @@ export async function onRequestPost({ request, env, params }) {
   const { action } = body || {};
   const id = params.id;
 
+  // Every action operates on an existing thread the account must be
+  // allowed to see — check once up front instead of in every branch.
+  const existingThread = await getThread(env, id);
+  if (!existingThread || existingThread.deleted || !canSeeBrand(account, existingThread.brand)) {
+    return json({ ok: false, error: "Not found." }, 404);
+  }
+
   if (action === "solve" || action === "unsolve") {
     const thread = await setSolved(env, id, action === "solve");
     if (!thread) return json({ ok: false, error: "Not found." }, 404);
@@ -50,9 +87,7 @@ export async function onRequestPost({ request, env, params }) {
   }
 
   if (action === "delete") {
-    if (!env.BRAND_EDIT_PASSWORD) return json({ ok: false, error: "Server is missing BRAND_EDIT_PASSWORD." }, 500);
-    if (body.password !== env.BRAND_EDIT_PASSWORD) return json({ ok: false, error: "Wrong password." }, 403);
-    const before = await getThread(env, id);
+    const before = existingThread;
     const thread = await softDeleteThread(env, id);
     if (!thread) return json({ ok: false, error: "Not found." }, 404);
     await logDeletion(env, {
@@ -61,6 +96,7 @@ export async function onRequestPost({ request, env, params }) {
       threadTitle: before?.title || thread.title,
       brand: before?.brand || thread.brand,
       content: `Ticket + ${thread.messages?.length || 0} message(s) untracked (Telegram/Sheet untouched)`,
+      by: account.username,
     });
     return json({ ok: true });
   }
@@ -72,8 +108,7 @@ export async function onRequestPost({ request, env, params }) {
     if (!text && !attachment) return json({ ok: false, error: "Reply text is empty." }, 400);
     if (!env.TELEGRAM_BOT_TOKEN) return json({ ok: false, error: "Server is missing TELEGRAM_BOT_TOKEN." }, 500);
 
-    const thread = await getThread(env, id);
-    if (!thread || thread.deleted) return json({ ok: false, error: "Not found." }, 404);
+    const thread = existingThread;
 
     let messageId;
     try {
@@ -85,7 +120,7 @@ export async function onRequestPost({ request, env, params }) {
     }
 
     const updated = await appendMessage(env, id, {
-      from: body.agentName || "You",
+      from: account.username,
       handle: null,
       text: text || `📎 ${attachment.name}`,
       hasAttachment: !!attachment,
@@ -104,8 +139,7 @@ export async function onRequestPost({ request, env, params }) {
     if (!text) return json({ ok: false, error: "New text is empty." }, 400);
     if (!env.TELEGRAM_BOT_TOKEN) return json({ ok: false, error: "Server is missing TELEGRAM_BOT_TOKEN." }, 500);
 
-    const thread = await getThread(env, id);
-    if (!thread || thread.deleted) return json({ ok: false, error: "Not found." }, 404);
+    const thread = existingThread;
     if (thread.rootRecalled) return json({ ok: false, error: "This ticket's original message was already recalled — nothing to edit." }, 400);
 
     const method = thread.hasMedia ? "editMessageCaption" : "editMessageText";
@@ -120,13 +154,9 @@ export async function onRequestPost({ request, env, params }) {
   }
 
   if (action === "recallRoot") {
-    if (!env.BRAND_EDIT_PASSWORD) return json({ ok: false, error: "Server is missing BRAND_EDIT_PASSWORD." }, 500);
-    if (body.password !== env.BRAND_EDIT_PASSWORD) return json({ ok: false, error: "Wrong password." }, 403);
     if (!env.TELEGRAM_BOT_TOKEN) return json({ ok: false, error: "Server is missing TELEGRAM_BOT_TOKEN." }, 500);
 
-    const thread = await getThread(env, id);
-    if (!thread || thread.deleted) return json({ ok: false, error: "Not found." }, 404);
-
+    const thread = existingThread;
     const tg = await callTelegram(env, "deleteMessage", { chat_id: thread.chatId, message_id: thread.rootMessageId });
     if (!tg.ok) return json({ ok: false, error: telegramDeleteError(tg) }, 502);
 
@@ -137,6 +167,7 @@ export async function onRequestPost({ request, env, params }) {
       threadTitle: thread.title,
       brand: thread.brand,
       content: thread.rootText || "(no text)",
+      by: account.username,
     });
     return json({ ok: true, thread: updated });
   }
@@ -147,10 +178,7 @@ export async function onRequestPost({ request, env, params }) {
     if (!text || !messageId) return json({ ok: false, error: "Missing text or messageId." }, 400);
     if (!env.TELEGRAM_BOT_TOKEN) return json({ ok: false, error: "Server is missing TELEGRAM_BOT_TOKEN." }, 500);
 
-    const thread = await getThread(env, id);
-    if (!thread || thread.deleted) return json({ ok: false, error: "Not found." }, 404);
-
-    const tg = await callTelegram(env, "editMessageText", { chat_id: thread.chatId, message_id: messageId, text, parse_mode: "HTML" });
+    const tg = await callTelegram(env, "editMessageText", { chat_id: existingThread.chatId, message_id: messageId, text, parse_mode: "HTML" });
     if (!tg.ok) return json({ ok: false, error: telegramEditError(tg) }, 502);
 
     const updated = await editMessageInThread(env, id, messageId, text);
@@ -158,15 +186,11 @@ export async function onRequestPost({ request, env, params }) {
   }
 
   if (action === "recallReply") {
-    if (!env.BRAND_EDIT_PASSWORD) return json({ ok: false, error: "Server is missing BRAND_EDIT_PASSWORD." }, 500);
-    if (body.password !== env.BRAND_EDIT_PASSWORD) return json({ ok: false, error: "Wrong password." }, 403);
     const messageId = body.messageId;
     if (!messageId) return json({ ok: false, error: "Missing messageId." }, 400);
     if (!env.TELEGRAM_BOT_TOKEN) return json({ ok: false, error: "Server is missing TELEGRAM_BOT_TOKEN." }, 500);
 
-    const thread = await getThread(env, id);
-    if (!thread || thread.deleted) return json({ ok: false, error: "Not found." }, 404);
-
+    const thread = existingThread;
     const tg = await callTelegram(env, "deleteMessage", { chat_id: thread.chatId, message_id: messageId });
     if (!tg.ok) return json({ ok: false, error: telegramDeleteError(tg) }, 502);
 
@@ -178,6 +202,7 @@ export async function onRequestPost({ request, env, params }) {
       threadTitle: thread.title,
       brand: thread.brand,
       content: recalledMsg?.text || "(no text)",
+      by: account.username,
     });
     return json({ ok: true, thread: updated });
   }
