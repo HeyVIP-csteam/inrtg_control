@@ -19,7 +19,10 @@
     </div>
   </header>
 
-  <a href="/" class="back-pill">&larr; Back to Home</a>
+  <div class="threads-topline">
+    <a href="/" class="back-pill">&larr; Back to Home</a>
+    <button class="refresh-btn" id="refreshBtn">🔄 Refresh</button>
+  </div>
 
   <div class="threads-shell">
     <aside class="threads-sidebar">
@@ -74,6 +77,44 @@
       searchTimer = setTimeout(() => loadList(q), 250);
     });
 
+    let pendingAttachment = null;
+    const refreshBtn = document.getElementById("refreshBtn");
+    refreshBtn.addEventListener("click", async () => {
+      refreshBtn.classList.add("spinning");
+      refreshBtn.disabled = true;
+      try {
+        await loadList(document.getElementById("threadSearch").value);
+        if (selectedId) await openThread(selectedId);
+      } finally {
+        refreshBtn.classList.remove("spinning");
+        refreshBtn.disabled = false;
+      }
+    });
+
+    function fileToDataUrl(file) {
+      return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result);
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+      });
+    }
+
+    function renderAttachPreview() {
+      const el = document.getElementById("replyAttachPreview");
+      if (!el) return;
+      if (!pendingAttachment) { el.innerHTML = ""; return; }
+      el.innerHTML = `
+        <span class="attach-chip">📎 ${escapeHtml(pendingAttachment.name)} (${Math.round(pendingAttachment.size / 1024)} KB)
+          <button type="button" id="clearAttachBtn">✕</button>
+        </span>`;
+      document.getElementById("clearAttachBtn").addEventListener("click", () => {
+        pendingAttachment = null;
+        document.getElementById("replyFileInput").value = "";
+        renderAttachPreview();
+      });
+    }
+
     function timeAgo(iso) {
       const d = new Date(iso);
       return d.toLocaleDateString(undefined, { day: "2-digit", month: "2-digit" }) + " " + d.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
@@ -91,7 +132,10 @@
         </div>
         ${t.solved ? '<span class="t-done">✓</span>' : ""}
       `;
-      el.addEventListener("click", () => openThread(t.id));
+      el.addEventListener("click", () => {
+        if (t.id !== selectedId) { pendingAttachment = null; }
+        openThread(t.id);
+      });
       return el;
     }
 
@@ -154,6 +198,7 @@
             <button class="icon-btn" id="deleteBtn" title="Delete this tracking record (Telegram + Sheet are untouched)">🗑</button>
           </div>
         </div>
+        <hr class="thread-divider" />
 
         ${t.rootRecalled ? `
           <div class="edit-modal-note err" style="font-size:12.5px; margin-bottom:14px;">
@@ -169,8 +214,12 @@
         <div class="conversation" id="conversationList">
           ${t.messages.length ? t.messages.map(renderMsg).join("") : '<div class="threads-empty">No replies yet — they\'ll show up here as soon as someone replies in Telegram.</div>'}
         </div>
+        <hr class="thread-divider" />
 
+        <div class="reply-attach-preview" id="replyAttachPreview"></div>
         <div class="reply-box">
+          <button class="attach-btn" id="attachBtn" title="Attach screenshot or PDF">📎</button>
+          <input type="file" id="replyFileInput" accept="image/png,image/jpeg,application/pdf" hidden />
           <input type="text" id="replyInput" placeholder="Reply into the Telegram thread..." />
           <button id="replySend">Send</button>
         </div>
@@ -184,6 +233,11 @@
       document.getElementById("replyInput").addEventListener("keydown", (e) => {
         if (e.key === "Enter") sendReply();
       });
+      document.getElementById("attachBtn").addEventListener("click", () => document.getElementById("replyFileInput").click());
+      document.getElementById("replyFileInput").addEventListener("change", (e) => {
+        pendingAttachment = e.target.files[0] || null;
+        renderAttachPreview();
+      });
       document.querySelectorAll("[data-edit-reply]").forEach((btn) => {
         btn.addEventListener("click", () => editReply(btn.dataset.editReply, btn.dataset.currentText));
       });
@@ -193,6 +247,7 @@
 
       const list = document.getElementById("conversationList");
       list.scrollTop = list.scrollHeight;
+      renderAttachPreview();
     }
 
     const AVATAR_COLORS = ["#60A5FA", "#FBBF24", "#F87171", "#F472B6", "#34D399", "#A78BFA", "#38bdf8", "#fb923c"];
@@ -210,13 +265,15 @@
         </span>` : "";
       const initials = (m.from || "?").trim().slice(0, 2).toUpperCase();
       const color = m.self ? "var(--accent-gold)" : colorFor(m.from || "?");
+      const deliveredTick = m.self ? '<span class="msg-tick" title="Delivered">✓</span>' : "";
+      const attachTag = m.hasAttachment ? '<span class="msg-attach-tag">📎 attachment</span>' : "";
       return `
         <div class="msg-row ${m.self ? "self" : ""}">
           <div class="msg-avatar" style="background:${color};">${initials}</div>
           <div class="msg-body">
             <div class="msg-who">${escapeHtml(m.from)}${m.handle ? ` <span class="msg-handle">${escapeHtml(m.handle)}</span>` : ""}${m.editedAt ? ' <span class="msg-edited">(edited)</span>' : ""}</div>
-            <div class="msg-bubble">${escapeHtml(m.text)}</div>
-            <div class="msg-time">${timeAgo(m.ts)} ${selfControls}</div>
+            <div class="msg-bubble">${escapeHtml(m.text)}${attachTag}</div>
+            <div class="msg-time">${timeAgo(m.ts)} ${deliveredTick} ${selfControls}</div>
           </div>
         </div>
       `;
@@ -259,26 +316,40 @@
     async function sendReply() {
       const input = document.getElementById("replyInput");
       const text = input.value.trim();
-      if (!text) return;
+      if (!text && !pendingAttachment) return;
       const btn = document.getElementById("replySend");
       btn.disabled = true;
+      btn.textContent = "Sending…";
       try {
+        const payload = { action: "reply", text };
+        if (pendingAttachment) {
+          payload.attachment = {
+            name: pendingAttachment.name,
+            type: pendingAttachment.type,
+            dataUrl: await fileToDataUrl(pendingAttachment),
+          };
+        }
         const res = await fetch(`/api/threads/${selectedThread.id}`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ action: "reply", text }),
+          body: JSON.stringify(payload),
         });
         const data = await res.json();
         if (!data.ok) {
-          alert(data.error || "Send failed.");
-          return;
+          alert("❌ Send failed: " + (data.error || "unknown error") + "\n\nYour message wasn't sent — try again.");
+          return; // keep input + attachment so the agent can retry without retyping
         }
         selectedThread = data.thread;
         input.value = "";
+        pendingAttachment = null;
+        document.getElementById("replyFileInput").value = "";
         renderDetail();
         loadList();
+      } catch {
+        alert("❌ Send failed: network error.\n\nYour message wasn't sent — try again.");
       } finally {
         btn.disabled = false;
+        btn.textContent = "Send";
       }
     }
 

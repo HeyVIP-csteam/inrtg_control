@@ -58,34 +58,32 @@ export async function onRequestPost({ request, env, params }) {
 
   if (action === "reply") {
     const text = (body.text || "").trim();
-    if (!text) return json({ ok: false, error: "Reply text is empty." }, 400);
+    const attachment = body.attachment; // { name, type, dataUrl } | undefined
+    if (!text && !attachment) return json({ ok: false, error: "Reply text is empty." }, 400);
     if (!env.TELEGRAM_BOT_TOKEN) return json({ ok: false, error: "Server is missing TELEGRAM_BOT_TOKEN." }, 500);
 
     const thread = await getThread(env, id);
     if (!thread || thread.deleted) return json({ ok: false, error: "Not found." }, 404);
 
-    const payload = {
-      chat_id: thread.chatId,
-      text,
-      reply_to_message_id: thread.rootMessageId,
-    };
-    if (thread.topicId) payload.message_thread_id = thread.topicId;
-
-    const res = await fetch(`https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/sendMessage`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-    });
-    const data = await res.json();
-    if (!data.ok) return json({ ok: false, error: data.description || "Telegram send failed." }, 502);
+    let messageId;
+    try {
+      messageId = attachment
+        ? await sendTelegramAttachment(env, thread, text, attachment)
+        : await sendTelegramText(env, thread, text);
+    } catch (e) {
+      return json({ ok: false, error: String(e.message || e) }, 502);
+    }
 
     const updated = await appendMessage(env, id, {
       from: body.agentName || "You",
       handle: null,
-      text,
+      text: text || `📎 ${attachment.name}`,
+      hasAttachment: !!attachment,
+      attachmentName: attachment ? attachment.name : null,
       ts: new Date().toISOString(),
       self: true,
-      messageId: data.result.message_id,
+      delivered: true,
+      messageId,
     });
     return json({ ok: true, thread: updated });
   }
@@ -168,6 +166,41 @@ async function callTelegram(env, method, payload) {
     body: JSON.stringify(payload),
   });
   return res.json();
+}
+
+async function sendTelegramText(env, thread, text) {
+  const payload = { chat_id: thread.chatId, text, reply_to_message_id: thread.rootMessageId };
+  if (thread.topicId) payload.message_thread_id = thread.topicId;
+  const data = await callTelegram(env, "sendMessage", payload);
+  if (!data.ok) throw new Error(data.description || "Telegram send failed.");
+  return data.result.message_id;
+}
+
+// Sends a screenshot/PDF attached to a reply, same base64 → Blob approach
+// submit.js already uses for the original ticket's attachments.
+async function sendTelegramAttachment(env, thread, text, attachment) {
+  const { name, type, dataUrl } = attachment;
+  const base64 = dataUrl.includes(",") ? dataUrl.slice(dataUrl.indexOf(",") + 1) : dataUrl;
+  const binary = atob(base64);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  const blob = new Blob([bytes], { type: type || "application/octet-stream" });
+
+  const isImage = (type || "").startsWith("image/");
+  const method = isImage ? "sendPhoto" : "sendDocument";
+  const field = isImage ? "photo" : "document";
+
+  const form = new FormData();
+  form.append("chat_id", thread.chatId);
+  if (thread.topicId) form.append("message_thread_id", String(thread.topicId));
+  form.append("reply_to_message_id", String(thread.rootMessageId));
+  form.append(field, blob, name || "attachment");
+  if (text) form.append("caption", text);
+
+  const res = await fetch(`https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/${method}`, { method: "POST", body: form });
+  const data = await res.json();
+  if (!data.ok) throw new Error(data.description || "Telegram send failed.");
+  return data.result.message_id;
 }
 
 // Telegram's own wording is fairly technical — translate the common cases
