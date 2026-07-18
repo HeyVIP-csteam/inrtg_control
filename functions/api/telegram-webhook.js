@@ -52,7 +52,8 @@ async function handleUpdate(env, update) {
   if (!env.THREADS_KV) return;
   const msg = update.message;
   if (!msg || msg.from?.is_bot) return;
-  if (!msg.text && !msg.caption) return; // Nothing worth recording (join/leave/pin service messages, etc.)
+  const hasContent = msg.text || msg.caption || msg.photo || msg.document || msg.video || msg.voice || msg.sticker;
+  if (!hasContent) return; // Nothing worth recording (join/leave/pin service messages, etc.)
 
   const replyTarget = msg.reply_to_message;
   const isAutoTopicReply = replyTarget && msg.is_topic_message && msg.message_thread_id === replyTarget.message_id;
