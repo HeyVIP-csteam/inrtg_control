@@ -77,5 +77,6 @@ async function handleUpdate(env, update) {
     ts: new Date((msg.date || Date.now() / 1000) * 1000).toISOString(),
     self: false,
     messageId: msg.message_id,
+    replyToMessageId: replyTarget.message_id,
   });
 }

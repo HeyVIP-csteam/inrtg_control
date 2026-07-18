@@ -624,6 +624,19 @@ a { color: inherit; text-decoration: none; }
 }
 .reply-target-chip b { color: #38bdf8; }
 .reply-target-chip button { margin-left: auto; border: none; background: none; color: var(--ink-soft); cursor: pointer; font-weight: 700; }
+.reply-quote-preview {
+  display: block;
+  border-left: 3px solid #38bdf8;
+  background: rgba(56, 189, 248, 0.1);
+  border-radius: 6px;
+  padding: 4px 8px;
+  margin-bottom: 6px;
+  font-size: 11.5px;
+  line-height: 1.4;
+  color: var(--ink-soft);
+  white-space: normal;
+}
+.reply-quote-preview b { display: block; color: #38bdf8; font-size: 11px; }
 .msg-time { font-size: 10.5px; color: var(--ink-soft); margin-top: 4px; }
 .msg-edited { font-style: italic; opacity: 0.7; }
 .msg-actions { display: inline-flex; gap: 6px; margin-left: 8px; }

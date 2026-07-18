@@ -300,10 +300,17 @@
     }
 
     function buildConversationHTML(t) {
+      const msgById = {};
+      if (t.rootMessageId) {
+        msgById[t.rootMessageId] = { from: "Original ticket", text: stripHtmlTags(t.rootText || t.title || "") };
+      }
+      t.messages.forEach((m) => {
+        if (m.messageId) msgById[m.messageId] = { from: m.from, text: m.text };
+      });
       return `
         <div class="conversation-title">Conversation (${t.messages.length})</div>
         <div class="conversation">
-          ${t.messages.length ? t.messages.map(renderMsg).join("") : '<div class="threads-empty">No replies yet — they\'ll show up here as soon as someone replies in Telegram.</div>'}
+          ${t.messages.length ? t.messages.map((m) => renderMsg(m, msgById)).join("") : '<div class="threads-empty">No replies yet — they\'ll show up here as soon as someone replies in Telegram.</div>'}
         </div>
       `;
     }
@@ -414,7 +421,7 @@
       return AVATAR_COLORS[hash % AVATAR_COLORS.length];
     }
 
-    function renderMsg(m) {
+    function renderMsg(m, msgById) {
       const selfControls = m.self && m.messageId ? `
         <span class="msg-actions">
           <button data-edit-reply="${m.messageId}" data-current-text="${escapeAttr(m.text)}" title="Edit">✏️</button>
@@ -422,6 +429,10 @@
         </span>` : "";
       const replyTargetBtn = m.messageId
         ? `<button class="reply-target-btn" data-reply-target="${m.messageId}" data-reply-from="${escapeAttr(m.from)}" data-reply-text="${escapeAttr(m.text)}" title="Reply to this message">↳</button>`
+        : "";
+      const quoted = m.replyToMessageId && msgById && msgById[m.replyToMessageId];
+      const replyQuote = quoted
+        ? `<div class="reply-quote-preview"><b>${escapeHtml(quoted.from)}</b>${escapeHtml((quoted.text || "").slice(0, 80))}</div>`
         : "";
       const initials = (m.from || "?").trim().slice(0, 2).toUpperCase();
       const color = m.self ? "var(--accent-gold)" : colorFor(m.from || "?");
@@ -432,7 +443,7 @@
           <div class="msg-avatar" style="background:${color};">${initials}</div>
           <div class="msg-body">
             <div class="msg-who">${escapeHtml(m.from)}${m.handle ? ` <span class="msg-handle">${escapeHtml(m.handle)}</span>` : ""}${m.editedAt ? ' <span class="msg-edited">(edited)</span>' : ""}</div>
-            <div class="msg-bubble">${replyTargetBtn}${escapeHtml(m.text)}${attachTag}</div>
+            <div class="msg-bubble">${replyTargetBtn}${replyQuote}${escapeHtml(m.text)}${attachTag}</div>
             <div class="msg-time">${timeAgo(m.ts)} ${deliveredTick} ${selfControls}</div>
           </div>
         </div>
@@ -504,6 +515,7 @@
         input.value = "";
         pendingAttachment = null;
         replyTarget = null;
+        renderReplyTargetBanner();
         document.getElementById("replyFileInput").value = "";
         updateThreadContent(selectedThread, true);
         loadList();

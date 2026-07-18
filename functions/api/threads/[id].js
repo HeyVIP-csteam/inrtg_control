@@ -94,6 +94,7 @@ export async function onRequestPost({ request, env, params }) {
       self: true,
       delivered: true,
       messageId,
+      replyToMessageId: replyToMessageId || null,
     });
     return json({ ok: true, thread: updated });
   }
