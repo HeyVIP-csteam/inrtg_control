@@ -61,6 +61,7 @@ function summarize(thread) {
     deleted: thread.deleted,
     replyCount: thread.messages.length,
     chatId: thread.chatId,
+    topicId: thread.topicId,
     msgIds: thread.msgIds,
   };
 }
@@ -154,6 +155,21 @@ export async function getThread(env, id) {
 
 export async function findThreadIdByMessage(env, chatId, messageId) {
   return env.THREADS_KV.get(`msgid:${chatId}:${messageId}`);
+}
+
+// Fallback for forum-topic groups: Telegram auto-attaches reply_to_message
+// pointing at the topic's root message for ANY message typed in that topic
+// (not just genuine replies), so an exact message-id match often won't hit.
+// In that case, assume the message belongs to whichever thread in this
+// chat+topic was most recently active and isn't solved yet.
+export async function findLatestThreadForTopic(env, chatId, topicId) {
+  const list = await readIndex(env);
+  const candidates = list.filter((t) => !t.deleted && t.chatId === String(chatId) && t.topicId === topicId);
+  if (!candidates.length) return null;
+  const unsolved = candidates.filter((t) => !t.solved);
+  const pool = unsolved.length ? unsolved : candidates;
+  pool.sort((a, b) => new Date(b.lastActivity) - new Date(a.lastActivity));
+  return pool[0].id;
 }
 
 export async function listThreads(env, { q } = {}) {

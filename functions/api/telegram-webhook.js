@@ -19,7 +19,7 @@
  * native "reply to message" feature) to a message we originally sent for
  * a submission — everything else is ignored.
  */
-import { findThreadIdByMessage, appendMessage } from "../_shared/threads.js";
+import { findThreadIdByMessage, findLatestThreadForTopic, appendMessage } from "../_shared/threads.js";
 
 export async function onRequestPost({ request, env }) {
   // Verify the request really came from Telegram.
@@ -50,9 +50,20 @@ async function handleUpdate(env, update) {
   if (!env.THREADS_KV) return;
   const msg = update.message;
   if (!msg || msg.from?.is_bot) return;
-  if (!msg.reply_to_message) return; // Only tracking direct replies to our tickets.
+  if (!msg.reply_to_message) return; // Only tracking replies (direct, or auto-attached within a topic).
 
-  const threadId = await findThreadIdByMessage(env, msg.chat.id, msg.reply_to_message.message_id);
+  const isAutoTopicReply = msg.is_topic_message && msg.message_thread_id === msg.reply_to_message.message_id;
+
+  let threadId;
+  if (isAutoTopicReply) {
+    // This message wasn't a deliberate reply to any specific ticket —
+    // Telegram just auto-attaches the topic's root message to every
+    // message typed in that topic. Best guess: the latest active ticket
+    // in this same chat + topic.
+    threadId = await findLatestThreadForTopic(env, msg.chat.id, msg.message_thread_id);
+  } else {
+    threadId = await findThreadIdByMessage(env, msg.chat.id, msg.reply_to_message.message_id);
+  }
   if (!threadId) return;
 
   const name = [msg.from?.first_name, msg.from?.last_name].filter(Boolean).join(" ") || "Unknown";
