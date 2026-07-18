@@ -101,6 +101,12 @@
   .promo-expired { color: #c8912f; font-weight: 600; white-space: nowrap; }
   .promo-dash { color: var(--ink-soft); }
 
+  .promo-tab-warning {
+    background: rgba(234, 179, 8, 0.12); border: 1px solid rgba(234, 179, 8, 0.35);
+    color: #b45309; font-size: 12px; border-radius: 12px; padding: 10px 14px; margin-bottom: 14px;
+  }
+  [data-theme="dark"] .promo-tab-warning { color: #fbbf24; }
+
   .promo-state { text-align: center; padding: 30px 10px; color: var(--ink-soft); font-size: 13.5px; }
   .promo-state.err { color: #e0577a; }
 
@@ -250,12 +256,18 @@
           openSheetBtn.classList.remove("is-hidden");
         }
         const groups = data.groups || [];
+        const warningHtml = (data.missingTabs && data.missingTabs.length)
+          ? `<div class="promo-tab-warning">⚠️ Skipped ${data.missingTabs.length} tab(s) not found on the sheet (name mismatch?): ${data.missingTabs.map(escapeHtml).join(", ")}` +
+            (data.actualSheetTabs ? `<br/><br/>Sheet's actual tabs: ${data.actualSheetTabs.map(escapeHtml).join(", ")}` : "") +
+            `</div>`
+          : "";
         if (!groups.length) {
-          results.innerHTML = '<div class="promo-state">No matches found.</div>';
+          results.innerHTML = warningHtml + '<div class="promo-state">No matches found.</div>';
           return;
         }
         const total = groups.reduce((sum, g) => sum + g.count, 0);
         results.innerHTML =
+          warningHtml +
           `<div class="promo-results-label">Results (${total})</div>` +
           groups.map(renderGroup).join("");
         bindCollapse();

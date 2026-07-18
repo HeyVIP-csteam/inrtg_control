@@ -20,7 +20,7 @@
  * "Start On" has no source column yet in this sheet — always returned as
  * "" until one exists; the frontend shows it as a dash.
  */
-import { batchGetValues } from "../_shared/googleSheets.js";
+import { batchGetValues, getSheetTabTitles } from "../_shared/googleSheets.js";
 
 const PROMO_CODE_SHEET = {
   sheetId: "1VYKwdGyoa5qxCScHWyKrYPQYvQPl8igrBzK1mk2RT98",
@@ -44,6 +44,33 @@ function sheetEditUrl() {
   return `https://docs.google.com/spreadsheets/d/${PROMO_CODE_SHEET.sheetId}/edit`;
 }
 
+// Real tab titles rarely change, so cache them for a few minutes per Worker
+// isolate instead of re-fetching metadata on every single search.
+let cachedTabTitles = null; // { titles, expiresAt }
+const TAB_CACHE_MS = 5 * 60 * 1000;
+
+async function resolveExistingTabs(env) {
+  const now = Date.now();
+  if (cachedTabTitles && cachedTabTitles.expiresAt > now) return cachedTabTitles.titles;
+  const titles = await getSheetTabTitles(env, PROMO_CODE_SHEET.sheetId);
+  cachedTabTitles = { titles, expiresAt: now + TAB_CACHE_MS };
+  return titles;
+}
+
+// Normalizes a tab name for comparison so invisible differences — non-
+// breaking spaces, double spaces, fullwidth punctuation, stray
+// leading/trailing whitespace — don't cause a false "missing tab" even
+// when the name looks identical to the human eye. NFKC folds fullwidth
+// parentheses etc. into their plain-ASCII equivalents; \s in JS already
+// matches the non-breaking space character.
+function normalizeTabName(name) {
+  return String(name)
+    .normalize("NFKC")
+    .replace(/\s+/g, " ")
+    .trim()
+    .toLowerCase();
+}
+
 export async function onRequestGet({ request, env }) {
   const codes = (new URL(request.url).searchParams.get("codes") || "")
     .split(",")
@@ -62,16 +89,41 @@ export async function onRequestGet({ request, env }) {
 
   const needles = new Set(codes.map((c) => c.toUpperCase()));
 
-  let valueRanges;
+  // Google's batchGet is all-or-nothing: a single mistyped/renamed/deleted
+  // tab name 400s the ENTIRE request. So resolve which configured tabs
+  // actually exist on the live sheet first, and only ever ask for those —
+  // a missing tab becomes a warning in the response, not a hard failure.
+  let realTitles;
   try {
-    const ranges = PROMO_CODE_SHEET.tabs.map((t) => `'${t.replace(/'/g, "''")}'!${PROMO_CODE_SHEET.range}`);
-    valueRanges = await batchGetValues(env, PROMO_CODE_SHEET.sheetId, ranges);
+    realTitles = await resolveExistingTabs(env);
   } catch (e) {
     return json({ ok: false, error: String(e.message || e) }, 502);
   }
+  // Map normalized -> the sheet's actual title string, so once matched we
+  // query Google using the REAL title (not our possibly-slightly-off
+  // config string) — avoids a second, subtler mismatch at the API call.
+  const realByNormalized = new Map(realTitles.map((t) => [normalizeTabName(t), t]));
+
+  const tabsToQuery = []; // { configured, real }
+  const missingTabs = [];
+  for (const configured of PROMO_CODE_SHEET.tabs) {
+    const real = realByNormalized.get(normalizeTabName(configured));
+    if (real) tabsToQuery.push({ configured, real });
+    else missingTabs.push(configured);
+  }
+
+  let valueRanges = [];
+  if (tabsToQuery.length) {
+    try {
+      const ranges = tabsToQuery.map(({ real }) => `'${real.replace(/'/g, "''")}'!${PROMO_CODE_SHEET.range}`);
+      valueRanges = await batchGetValues(env, PROMO_CODE_SHEET.sheetId, ranges);
+    } catch (e) {
+      return json({ ok: false, error: String(e.message || e) }, 502);
+    }
+  }
 
   const groups = [];
-  PROMO_CODE_SHEET.tabs.forEach((tabName, i) => {
+  tabsToQuery.forEach(({ real }, i) => {
     const rows = (valueRanges[i] && valueRanges[i].values) || [];
     const matches = [];
     for (const row of rows) {
@@ -93,10 +145,19 @@ export async function onRequestGet({ request, env }) {
         expiredOn: row[13] || "",
       });
     }
-    if (matches.length) groups.push({ tab: tabName, count: matches.length, matches });
+    if (matches.length) groups.push({ tab: real, count: matches.length, matches });
   });
 
-  return json({ ok: true, groups, sheetUrl: sheetEditUrl() });
+  return json({
+    ok: true,
+    groups,
+    sheetUrl: sheetEditUrl(),
+    missingTabs: missingTabs.length ? missingTabs : undefined,
+    // Only included when something's missing — lets whoever's debugging
+    // this see the sheet's real tab names side-by-side with what's
+    // configured, without having to open the sheet.
+    actualSheetTabs: missingTabs.length ? realTitles : undefined,
+  });
 }
 
 function json(obj, status = 200) {

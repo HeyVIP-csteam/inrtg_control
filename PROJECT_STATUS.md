@@ -229,13 +229,53 @@ pill, full-width table).
   client-side JS.
 
 ### Not yet done / explicitly deferred
-- No caching — every search hits the Sheets API fresh (fine at current
-  volume; revisit if this gets heavy traffic).
+- No caching of search results — every search hits the Sheets API fresh
+  (fine at current volume; revisit if this gets heavy traffic). Tab
+  *names* (metadata only, not the code data) are cached 5 minutes per
+  Worker isolate — see next section.
 - No loading skeleton beyond a plain "Searching…" state.
 - Styling was built to match the reference screenshot as closely as
   possible from a description — the business owner said they'd send
   more screenshots/feedback to refine it further, so treat the current
   visual polish as a first pass, not final.
+
+### Fixed this session: one bad tab name broke the whole search
+First deploy failed on every search with `Sheets batchGet failed (400):
+Unable to parse range: 'Retention Team (NPR)'!A2:N1000` — Google's
+`values.batchGet` is all-or-nothing, so a single tab name in the
+`PROMO_CODE_SHEET.tabs` list not matching the sheet's real tab exactly
+(rename, typo, not created yet, etc.) 400'd every search across all 11
+tabs, not just that one.
+
+Fix: `functions/api/promo-search.js` now first calls a new
+`getSheetTabTitles()` (in `googleSheets.js`, metadata-only, no cell data)
+to get the sheet's real tab names, cached 5 minutes per isolate, and only
+ever queries `batchGetValues` for configured tabs that actually exist
+(case-insensitive match). Any configured tab that doesn't match comes
+back in the response as `missingTabs`, shown as a small non-blocking
+amber warning above the results — so a rename/typo degrades gracefully
+(that one tab's results are just missing) instead of breaking the whole
+feature.
+
+**Still needs a real check:** whether "Retention Team (NPR)" (and
+possibly others) is actually a typo in `PROMO_CODE_SHEET.tabs`, or a tab
+that doesn't exist on the sheet yet. If the dashboard shows it under
+`missingTabs` after a search, compare the exact tab name in
+`functions/api/promo-search.js` against the sheet.
+
+**Update — this turned out to be an invisible-character mismatch, not a
+typo.** Business owner confirmed the tab is visibly named "Retention
+Team (NPR)" in the Sheet UI, same as configured — the exact-string
+comparison was still failing, most likely because of a non-breaking
+space or fullwidth punctuation that looks identical but isn't the same
+character. Fixed: tab-name matching now goes through `normalizeTabName()`
+(Unicode NFKC + collapse all whitespace variants + lowercase) before
+comparing, and once a configured tab matches, the query uses the sheet's
+**real** title string (not the configured one) so this class of bug
+can't resurface at the actual API-call step either. The `missingTabs`
+warning now also includes `actualSheetTabs` (the sheet's real tab list)
+so any future mismatch is visible side-by-side instead of requiring a
+guess.
 
 ---
 

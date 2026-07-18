@@ -145,6 +145,23 @@ export async function writeRowForDate(env, sheetId, tab, { leftBlock, rightBlock
 }
 
 /**
+ * Returns the real, current tab names of a spreadsheet (spreadsheets.get,
+ * metadata only — no cell data). Used to defend against batchGetValues
+ * failing its ENTIRE call over a single mistyped/renamed/deleted tab name
+ * (Google's batchGet is all-or-nothing: one bad range 400s the whole
+ * request) — callers can filter their configured tab list down to only
+ * tabs that actually exist before calling batchGetValues.
+ */
+export async function getSheetTabTitles(env, sheetId) {
+  const token = await getAccessToken(env);
+  const url = `https://sheets.googleapis.com/v4/spreadsheets/${sheetId}?fields=sheets.properties.title`;
+  const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+  if (!res.ok) throw new Error(`Sheets metadata read failed (${res.status}): ${await res.text()}`);
+  const data = await res.json();
+  return (data.sheets || []).map((s) => s.properties.title);
+}
+
+/**
  * Reads multiple ranges (e.g. one per tab) in a single API call using
  * spreadsheets.values.batchGet. Returns Google's raw `valueRanges` array
  * (one entry per input range, in the same order, each with a `.values`
