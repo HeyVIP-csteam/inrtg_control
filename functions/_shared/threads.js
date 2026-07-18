@@ -157,21 +157,6 @@ export async function findThreadIdByMessage(env, chatId, messageId) {
   return env.THREADS_KV.get(`msgid:${chatId}:${messageId}`);
 }
 
-// Fallback for forum-topic groups: Telegram auto-attaches reply_to_message
-// pointing at the topic's root message for ANY message typed in that topic
-// (not just genuine replies), so an exact message-id match often won't hit.
-// In that case, assume the message belongs to whichever thread in this
-// chat+topic was most recently active and isn't solved yet.
-export async function findLatestThreadForTopic(env, chatId, topicId) {
-  const list = await readIndex(env);
-  const candidates = list.filter((t) => !t.deleted && t.chatId === String(chatId) && t.topicId === topicId);
-  if (!candidates.length) return null;
-  const unsolved = candidates.filter((t) => !t.solved);
-  const pool = unsolved.length ? unsolved : candidates;
-  pool.sort((a, b) => new Date(b.lastActivity) - new Date(a.lastActivity));
-  return pool[0].id;
-}
-
 export async function listThreads(env, { q } = {}) {
   const list = await readIndex(env);
   const visible = list.filter((t) => !t.deleted);
@@ -189,8 +174,10 @@ export async function appendMessage(env, threadId, message) {
   if (!thread) return null;
   thread.messages.push(message);
   thread.lastActivity = message.ts;
-  // A new reply on a thread that was already marked solved un-resolves it —
-  // someone is still talking about it.
+  // Only genuine, explicit replies ever reach here for non-self messages
+  // (see telegram-webhook.js) — so if one lands on an already-solved
+  // ticket, that's a deliberate "actually, still need to talk about this"
+  // signal, and it's safe to reopen.
   if (thread.solved && !message.self) {
     thread.solved = false;
     thread.solvedAt = null;

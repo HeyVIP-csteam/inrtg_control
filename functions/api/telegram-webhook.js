@@ -15,13 +15,16 @@
  * hitting this URL directly.
  *
  * Every message posted in the bot's groups (agent replies included) is
- * delivered here. A message that's a genuine, explicit reply to one of our
- * ticket messages is matched exactly. Anything else — a plain message
- * typed in the topic, no reply at all — is attributed to whichever
- * thread in that same chat/topic was most recently active, so agents
- * don't have to remember to hit "Reply" for it to show up.
+ * delivered here. Only a genuine, explicit reply (the agent long-pressed a
+ * specific ticket message and hit Reply) gets matched and recorded — and
+ * if that ticket was already marked Solved, an explicit reply reopens it,
+ * since replying to it on purpose is a deliberate signal. Anything else —
+ * a plain message typed in the topic with no reply, or Telegram's
+ * auto-attached "reply to the topic root" that isn't a real reply — is
+ * intentionally ignored rather than guessed at, so a message never lands
+ * on the wrong ticket.
  */
-import { findThreadIdByMessage, findLatestThreadForTopic, appendMessage } from "../_shared/threads.js";
+import { findThreadIdByMessage, appendMessage } from "../_shared/threads.js";
 
 export async function onRequestPost({ request, env }) {
   // Verify the request really came from Telegram.
@@ -58,19 +61,10 @@ async function handleUpdate(env, update) {
   const replyTarget = msg.reply_to_message;
   const isAutoTopicReply = replyTarget && msg.is_topic_message && msg.message_thread_id === replyTarget.message_id;
   const isGenuineReply = replyTarget && !isAutoTopicReply;
+  if (!isGenuineReply) return; // Not a deliberate reply — ignore, don't guess.
 
-  let threadId = null;
-  if (isGenuineReply) {
-    // Explicit reply to a specific message — try the exact match first.
-    threadId = await findThreadIdByMessage(env, msg.chat.id, replyTarget.message_id);
-  }
-  if (!threadId) {
-    // No reply at all, an auto-attached topic-root "reply", or an explicit
-    // reply that didn't match anything we're tracking — fall back to the
-    // most recently active thread in this same chat + topic.
-    threadId = await findLatestThreadForTopic(env, msg.chat.id, msg.message_thread_id ?? null);
-  }
-  if (!threadId) return;
+  const threadId = await findThreadIdByMessage(env, msg.chat.id, replyTarget.message_id);
+  if (!threadId) return; // Reply to something we're not tracking.
 
   const name = [msg.from?.first_name, msg.from?.last_name].filter(Boolean).join(" ") || "Unknown";
   await appendMessage(env, threadId, {
