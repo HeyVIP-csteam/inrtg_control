@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Promo Code Search</title>
+<link rel="stylesheet" href="/assets/style.css" />
+<script src="/assets/theme.js"></script>
+</head>
+<body>
+  <header class="topbar">
+    <div class="topbar-left">
+      <img src="/assets/img/logo.webp" alt="HeyVIP" class="logo-img" />
+      <span class="wordmark">INR CS TEAM - TBC</span>
+    </div>
+    <div class="topbar-right">
+      <span class="clock" id="liveClock"></span>
+      <button class="theme-pill" id="themeToggle"></button>
+    </div>
+  </header>
+
+  <a href="/" class="back-pill">&larr; Back to Home</a>
+
+  <div class="form-page">
+    <div class="form-card">
+      <div class="form-header"><span class="icon">🎟️</span><span>Promo Code Search</span></div>
+      <p class="form-hint">Search multiple promo codes at once — comma-separated.</p>
+      <hr class="form-divider" />
+
+      <div class="field">
+        <label>Promo Code(s)</label>
+        <input type="text" id="codesInput" placeholder="e.g. WELCOME50, VIPBONUS, RELOAD20" />
+      </div>
+      <div class="form-actions">
+        <button class="btn-submit" id="searchBtn"><span>🔍</span><span>Search</span></button>
+      </div>
+
+      <div id="resultsArea" style="margin-top:20px;"></div>
+    </div>
+  </div>
+
+  <script>
+    window.initThemeToggle();
+    window.initClock();
+
+    const input = document.getElementById("codesInput");
+    const btn = document.getElementById("searchBtn");
+    const results = document.getElementById("resultsArea");
+
+    async function runSearch() {
+      const codes = input.value.trim();
+      if (!codes) return;
+      results.innerHTML = '<p class="form-hint">Searching…</p>';
+      try {
+        const res = await fetch(`/api/promo-search?codes=${encodeURIComponent(codes)}`);
+        const data = await res.json();
+        if (data.notConfigured) {
+          results.innerHTML = `
+            <div class="edit-modal-note err" style="font-size:13px;">
+              This isn't wired up to a sheet yet — ping whoever's maintaining the site with the
+              Google Sheet link + column layout for promo codes, and this'll go live.
+            </div>`;
+          return;
+        }
+        if (!data.results.length) {
+          results.innerHTML = '<p class="form-hint">No matches found.</p>';
+          return;
+        }
+        results.innerHTML = data.results.map((r) => `
+          <div class="thread-summary-card">
+            ${Object.entries(r).map(([k, v]) => `<div class="row"><b>${k}:</b> <span>${v}</span></div>`).join("")}
+          </div>
+        `).join("");
+      } catch {
+        results.innerHTML = '<p class="form-hint">Search failed — check your connection.</p>';
+      }
+    }
+
+    btn.addEventListener("click", runSearch);
+    input.addEventListener("keydown", (e) => { if (e.key === "Enter") runSearch(); });
+  </script>
+</body>
+</html>

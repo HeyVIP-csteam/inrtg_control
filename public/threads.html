@@ -1,0 +1,347 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>TG Reply Threads</title>
+<link rel="stylesheet" href="/assets/style.css" />
+<script src="/assets/theme.js"></script>
+</head>
+<body>
+  <header class="topbar">
+    <div class="topbar-left">
+      <img src="/assets/img/logo.webp" alt="HeyVIP" class="logo-img" />
+      <span class="wordmark">INR CS TEAM - TBC</span>
+    </div>
+    <div class="topbar-right">
+      <span class="clock" id="liveClock"></span>
+      <button class="theme-pill" id="themeToggle"></button>
+    </div>
+  </header>
+
+  <a href="/" class="back-pill">&larr; Back to Home</a>
+
+  <div class="threads-shell">
+    <aside class="threads-sidebar">
+      <div class="threads-search">
+        <span>🔍</span>
+        <input type="text" id="threadSearch" placeholder="Search username, agent..." />
+      </div>
+
+      <div class="threads-section" id="activeSection">
+        <div class="threads-section-title" data-target="activeList"><span><span class="chev">▾</span> Active Threads</span><span class="count" id="activeCount">0</span></div>
+        <div class="thread-list" id="activeList"></div>
+      </div>
+
+      <div class="threads-section" id="solvedSection">
+        <div class="threads-section-title" data-target="solvedList"><span><span class="chev">▾</span> Solved / Done</span><span class="count" id="solvedCount">0</span></div>
+        <div class="thread-list" id="solvedList"></div>
+      </div>
+    </aside>
+
+    <main class="threads-main" id="threadsMain">
+      <div class="threads-placeholder">Pick a thread on the left, or submit a form to start one.</div>
+    </main>
+  </div>
+
+  <script>
+    window.initThemeToggle();
+    window.initClock();
+
+    let activeThreads = [];
+    let solvedThreads = [];
+    let selectedId = null;
+    let selectedThread = null;
+    let pollTimer = null;
+    let searchTimer = null;
+
+    const activeList = document.getElementById("activeList");
+    const solvedList = document.getElementById("solvedList");
+    const activeCount = document.getElementById("activeCount");
+    const solvedCount = document.getElementById("solvedCount");
+    const main = document.getElementById("threadsMain");
+
+    document.querySelectorAll(".threads-section-title").forEach((el) => {
+      el.addEventListener("click", () => {
+        el.classList.toggle("collapsed");
+        document.getElementById(el.dataset.target).closest(".threads-section").classList.toggle("collapsed");
+      });
+    });
+
+    document.getElementById("threadSearch").addEventListener("input", (e) => {
+      clearTimeout(searchTimer);
+      const q = e.target.value;
+      searchTimer = setTimeout(() => loadList(q), 250);
+    });
+
+    function timeAgo(iso) {
+      const d = new Date(iso);
+      return d.toLocaleDateString(undefined, { day: "2-digit", month: "2-digit" }) + " " + d.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
+    }
+
+    function renderItem(t) {
+      const el = document.createElement("div");
+      el.className = "thread-item" + (t.id === selectedId ? " selected" : "");
+      el.style.setProperty("--thread-accent", t.accent || "#7c6cf0");
+      el.innerHTML = `
+        <div class="icon" style="background:${(t.accent || "#7c6cf0")}33;">${t.icon || "🔔"}</div>
+        <div class="meta">
+          <div class="t-title">${escapeHtml(t.title)}</div>
+          <div class="t-sub">${escapeHtml(t.submitter)} · ${timeAgo(t.lastActivity)}${t.replyCount ? " · " + t.replyCount + " reply" : ""}</div>
+        </div>
+        ${t.solved ? '<span class="t-done">✓</span>' : ""}
+      `;
+      el.addEventListener("click", () => openThread(t.id));
+      return el;
+    }
+
+    function renderLists() {
+      activeCount.textContent = activeThreads.length;
+      solvedCount.textContent = solvedThreads.length;
+      activeList.innerHTML = "";
+      if (!activeThreads.length) {
+        activeList.innerHTML = '<div class="threads-empty">No active threads.<br/>Submit a form to start one.</div>';
+      } else {
+        activeThreads.forEach((t) => activeList.appendChild(renderItem(t)));
+      }
+      solvedList.innerHTML = "";
+      solvedThreads.forEach((t) => solvedList.appendChild(renderItem(t)));
+    }
+
+    async function loadList(q) {
+      try {
+        const res = await fetch(`/api/threads${q ? "?q=" + encodeURIComponent(q) : ""}`);
+        const data = await res.json();
+        if (!data.ok) return;
+        activeThreads = data.active || [];
+        solvedThreads = data.solved || [];
+        renderLists();
+      } catch {
+        // Network hiccup — keep showing the last known list, try again next poll.
+      }
+    }
+
+    async function openThread(id) {
+      selectedId = id;
+      renderLists();
+      try {
+        const res = await fetch(`/api/threads/${id}`);
+        const data = await res.json();
+        if (!data.ok) {
+          main.innerHTML = `<div class="threads-placeholder">Couldn't load this thread.</div>`;
+          return;
+        }
+        selectedThread = data.thread;
+        renderDetail();
+      } catch {
+        main.innerHTML = `<div class="threads-placeholder">Couldn't load this thread — check your connection.</div>`;
+      }
+    }
+
+    function renderDetail() {
+      const t = selectedThread;
+      if (!t) return;
+      main.innerHTML = `
+        <div class="thread-detail-header">
+          <div>
+            <div class="thread-detail-title"><span>${t.icon || "🔔"}</span> ${escapeHtml(t.title)}</div>
+            <div class="thread-detail-sub">👤 ${escapeHtml(t.submitter)} &nbsp;·&nbsp; 📅 ${timeAgo(t.submittedAt)} &nbsp;·&nbsp; ${escapeHtml(t.brand)}</div>
+          </div>
+          <div class="thread-detail-actions">
+            <button class="status-chip ${t.solved ? "solved" : "unsolved"}" id="solveBtn">${t.solved ? "✅ Solved" : "◻ Mark Solved"}</button>
+            ${!t.rootRecalled ? '<button class="icon-btn" id="editRootBtn" title="Edit the original Telegram message">✏️</button>' : ""}
+            ${!t.rootRecalled ? '<button class="icon-btn" id="recallRootBtn" title="Recall (delete) the original Telegram message">↩️</button>' : ""}
+            <button class="icon-btn" id="deleteBtn" title="Delete this tracking record (Telegram + Sheet are untouched)">🗑</button>
+          </div>
+        </div>
+
+        ${t.rootRecalled ? `
+          <div class="edit-modal-note err" style="font-size:12.5px; margin-bottom:14px;">
+            ⚠️ The original message was recalled from Telegram — this ticket no longer exists in the group.
+          </div>` : ""}
+
+        ${t.summary && t.summary.length ? `
+          <div class="thread-summary-card">
+            ${t.summary.map((s) => `<div class="row"><b>${escapeHtml(s.label)}:</b> <span>${escapeHtml(s.value)}</span></div>`).join("")}
+          </div>` : ""}
+
+        <div class="conversation-title">Conversation (${t.messages.length})</div>
+        <div class="conversation" id="conversationList">
+          ${t.messages.length ? t.messages.map(renderMsg).join("") : '<div class="threads-empty">No replies yet — they\'ll show up here as soon as someone replies in Telegram.</div>'}
+        </div>
+
+        <div class="reply-box">
+          <input type="text" id="replyInput" placeholder="Reply into the Telegram thread..." />
+          <button id="replySend">Send</button>
+        </div>
+      `;
+
+      document.getElementById("solveBtn").addEventListener("click", () => toggleSolved());
+      document.getElementById("deleteBtn").addEventListener("click", () => deleteThread());
+      document.getElementById("editRootBtn")?.addEventListener("click", () => editRoot());
+      document.getElementById("recallRootBtn")?.addEventListener("click", () => recallRoot());
+      document.getElementById("replySend").addEventListener("click", sendReply);
+      document.getElementById("replyInput").addEventListener("keydown", (e) => {
+        if (e.key === "Enter") sendReply();
+      });
+      document.querySelectorAll("[data-edit-reply]").forEach((btn) => {
+        btn.addEventListener("click", () => editReply(btn.dataset.editReply, btn.dataset.currentText));
+      });
+      document.querySelectorAll("[data-recall-reply]").forEach((btn) => {
+        btn.addEventListener("click", () => recallReply(btn.dataset.recallReply));
+      });
+
+      const list = document.getElementById("conversationList");
+      list.scrollTop = list.scrollHeight;
+    }
+
+    function renderMsg(m) {
+      const selfControls = m.self && m.messageId ? `
+        <span class="msg-actions">
+          <button data-edit-reply="${m.messageId}" data-current-text="${escapeAttr(m.text)}" title="Edit">✏️</button>
+          <button data-recall-reply="${m.messageId}" title="Recall">↩️</button>
+        </span>` : "";
+      return `
+        <div class="msg-row ${m.self ? "self" : ""}">
+          <div class="msg-who">${escapeHtml(m.from)}${m.handle ? " " + escapeHtml(m.handle) : ""}${m.editedAt ? ' <span class="msg-edited">(edited)</span>' : ""}</div>
+          <div class="msg-bubble">${escapeHtml(m.text)}</div>
+          <div class="msg-time">${timeAgo(m.ts)} ${selfControls}</div>
+        </div>
+      `;
+    }
+
+    async function toggleSolved() {
+      const action = selectedThread.solved ? "unsolve" : "solve";
+      const res = await fetch(`/api/threads/${selectedThread.id}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action }),
+      });
+      const data = await res.json();
+      if (data.ok) {
+        selectedThread = data.thread;
+        renderDetail();
+        loadList();
+      }
+    }
+
+    async function deleteThread() {
+      const password = prompt("Enter the edit password to delete this thread:");
+      if (!password) return;
+      const res = await fetch(`/api/threads/${selectedThread.id}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "delete", password }),
+      });
+      const data = await res.json();
+      if (!data.ok) {
+        alert(data.error || "Delete failed.");
+        return;
+      }
+      selectedId = null;
+      selectedThread = null;
+      main.innerHTML = `<div class="threads-placeholder">Pick a thread on the left, or submit a form to start one.</div>`;
+      loadList();
+    }
+
+    async function sendReply() {
+      const input = document.getElementById("replyInput");
+      const text = input.value.trim();
+      if (!text) return;
+      const btn = document.getElementById("replySend");
+      btn.disabled = true;
+      try {
+        const res = await fetch(`/api/threads/${selectedThread.id}`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ action: "reply", text }),
+        });
+        const data = await res.json();
+        if (!data.ok) {
+          alert(data.error || "Send failed.");
+          return;
+        }
+        selectedThread = data.thread;
+        input.value = "";
+        renderDetail();
+        loadList();
+      } finally {
+        btn.disabled = false;
+      }
+    }
+
+    async function editRoot() {
+      const newText = prompt("Edit the original Telegram message text:\n(This edits the exact message, including any formatting tags.)", selectedThread.rootText || "");
+      if (newText === null) return; // cancelled
+      if (!newText.trim()) return alert("Text can't be empty.");
+      const res = await postAction({ action: "editRoot", text: newText });
+      if (!res.ok) return alert(res.error || "Edit failed.");
+      selectedThread = res.thread;
+      renderDetail();
+    }
+
+    async function recallRoot() {
+      if (!confirm("Recall the original ticket message from Telegram? This removes it from the group. Your tracking record, the Sheet row, and this conversation stay.")) return;
+      const password = prompt("Enter the edit password to recall this message:");
+      if (!password) return;
+      const res = await postAction({ action: "recallRoot", password });
+      if (!res.ok) return alert(res.error || "Recall failed.");
+      selectedThread = res.thread;
+      renderDetail();
+      loadList();
+    }
+
+    async function editReply(messageId, currentText) {
+      const newText = prompt("Edit this reply:", currentText || "");
+      if (newText === null) return;
+      if (!newText.trim()) return alert("Text can't be empty.");
+      const res = await postAction({ action: "editReply", messageId: Number(messageId), text: newText });
+      if (!res.ok) return alert(res.error || "Edit failed.");
+      selectedThread = res.thread;
+      renderDetail();
+    }
+
+    async function recallReply(messageId) {
+      if (!confirm("Recall this reply from Telegram?")) return;
+      const password = prompt("Enter the edit password to recall this message:");
+      if (!password) return;
+      const res = await postAction({ action: "recallReply", messageId: Number(messageId), password });
+      if (!res.ok) return alert(res.error || "Recall failed.");
+      selectedThread = res.thread;
+      renderDetail();
+    }
+
+    async function postAction(payload) {
+      const res = await fetch(`/api/threads/${selectedThread.id}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      return res.json();
+    }
+
+    function escapeAttr(str) {
+      return escapeHtml(str).replace(/"/g, "&quot;");
+    }
+
+    function escapeHtml(str) {
+      return String(str == null ? "" : str)
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;");
+    }
+
+    loadList();
+    pollTimer = setInterval(() => {
+      loadList(document.getElementById("threadSearch").value);
+      if (selectedId) {
+        const draft = document.getElementById("replyInput")?.value || "";
+        openThread(selectedId).then(() => {
+          const input = document.getElementById("replyInput");
+          if (input && draft) input.value = draft;
+        });
+      }
+    }, 6000);
+  </script>
+</body>
+</html>

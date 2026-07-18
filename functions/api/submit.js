@@ -1,6 +1,7 @@
 import { BRANDS, RECORD_TO_SHEET, MODULE_META, SHEET_LAYOUT, MESSAGE_TEMPLATE, SCREENSHOT_R2_ENABLED, RISK_ISSUE_AUTO_REMARKS, RISK_ISSUE_FIELD_EMOJI, ACCOUNT_ISSUE_FIELD_STYLE, PROMOTION_SHEET_CONFIG, PROMOTION_MESSAGE_TEMPLATE } from "../_shared/routing.js";
 import { appendRowToSheet, appendRowByColumns, writeRowForDate } from "../_shared/googleSheets.js";
 import { uploadAttachmentToR2, screenshotUrl } from "../_shared/r2.js";
+import { createThread } from "../_shared/threads.js";
 
 const VALID_MODULES = Object.keys(MODULE_META);
 
@@ -84,6 +85,39 @@ export async function onRequestPost({ request, env }) {
   }
   const attachmentLinks = tgResult.attachmentLinks;
 
+  // 2b. Create a TG Reply Threads record so agent replies to this exact
+  //     Telegram message can be tracked in the dashboard. Optional feature —
+  //     skipped silently until THREADS_KV is bound (see wrangler.toml).
+  let threadId = null;
+  if (env.THREADS_KV) {
+    try {
+      const title = fieldMap.issueType ? `${meta.name} — ${fieldMap.issueType}` : `${meta.name} — ${brand.name}`;
+      const summary = fields
+        .filter((f) => f.value && !["issueType"].includes(f.key))
+        .slice(0, 6)
+        .map((f) => ({ label: f.label, value: f.value }));
+      const thread = await createThread(env, {
+        module: moduleId,
+        moduleName: meta.name,
+        icon: meta.emoji,
+        accent: meta.accent,
+        brand: brand.name,
+        title,
+        submitter: reporter,
+        chatId: route.chatId,
+        topicId: route.topicId,
+        rootMessageId: tgResult.messageId,
+        rootText: text,
+        hasMedia: Array.isArray(attachments) && attachments.length > 0,
+        summary,
+      });
+      threadId = thread.id;
+    } catch {
+      // Non-fatal — the Telegram message and sheet row are already the
+      // source of truth; the reply-tracking record is a nice-to-have.
+    }
+  }
+
   // 2. Optionally log to the brand's Google Sheet (fire-and-await, but don't
   //    fail the whole request if the sheet write fails — Telegram already has it).
   let sheetLogged = false;
@@ -137,6 +171,7 @@ export async function onRequestPost({ request, env }) {
   return json({
     ok: true,
     telegramMessageId: tgResult.messageId,
+    threadId,
     sheetAttempted,
     sheetLogged,
     sheetError,

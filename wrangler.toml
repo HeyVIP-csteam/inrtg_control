@@ -5,6 +5,14 @@ pages_build_output_dir = "public"
 binding = "SCREENSHOTS_BUCKET"
 bucket_name = "inr-issuescreenshot"
 
+# TG Reply Threads feature — create a KV namespace in the Cloudflare
+# dashboard (Workers & Pages → KV → Create namespace, e.g. "ticket-threads"),
+# then bind it here AND in the Pages project's dashboard settings
+# (Settings → Functions → KV namespace bindings) with binding name THREADS_KV.
+[[kv_namespaces]]
+binding = "THREADS_KV"
+id = "REPLACE_WITH_YOUR_KV_NAMESPACE_ID"
+
 [vars]
 # Non-secret local defaults for `wrangler pages dev`. Real deployments set
 # TELEGRAM_BOT_TOKEN as an encrypted secret in the Cloudflare dashboard —
