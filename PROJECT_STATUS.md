@@ -53,8 +53,10 @@ it. Deployed on Cloudflare Pages.
 | `public/form.html` | Generic form page, driven by `?module=<id>` |
 | `public/threads.html` | **TG Reply Threads dashboard** — full chat-panel UI (see below) |
 | `public/promo.html` | **Promo Code Search page — fully wired this session** (see below) |
-| `public/accounts-admin.html` | **New this session** — hidden admin page, not linked from nav; create/edit/delete Offices and Accounts |
-| `functions/api/submit.js` | Submission handler — sends Telegram message, writes Sheets, **creates a TG Reply Threads record** |
+| `public/login.html` | **New this session** — the site-wide login page; the entry gate for the whole hub |
+| `public/assets/authguard.js` | **New this session** — shared client-side auth guard, included on every gated page; redirects to login, exposes `window.AgentAuth` (authFetch/renderWhoami/logout) |
+| `public/accounts-admin.html` | Hidden admin page, not linked from nav; create/edit/delete Offices and Accounts |
+| `functions/api/submit.js` | Submission handler — sends Telegram message, writes Sheets, creates a TG Reply Threads record — **now also requires login** |
 | `functions/_shared/routing.js` | Per-brand/module Telegram + Sheet config; `MODULE_META` now includes `accent` color too |
 | `functions/_shared/googleSheets.js` | Google Sheets API helpers — now also `batchGetValues` (read-only, multi-range) for Promo Code Search |
 | `functions/_shared/r2.js` | R2 upload helper |
@@ -66,9 +68,9 @@ it. Deployed on Cloudflare Pages.
 | `functions/api/threads.js` | `GET /api/threads` — list active/solved threads, search — **now login-gated and brand-filtered** |
 | `functions/api/threads/[id].js` | `GET`/`POST` single thread — solve, delete, reply, editRoot, recallRoot, editReply, recallReply — **now login-gated, brand-filtered, and delete/recall no longer need a separate password** |
 | `functions/api/deletion-log.js` | `GET /api/deletion-log` — deletion history — **now requires an admin-role login** |
-| `functions/api/promo-search.js` | **Real search this session** — reads the shared Promo Code Google Sheet (11 team tabs), exact-matches the Promo Code column, groups results by tab |
+| `functions/api/promo-search.js` | Real search against the shared Promo Code Google Sheet (11 team tabs), matches (contains) the Promo Code column, groups results by tab — **now also requires login** |
 | `functions/api/brand-config.js` | Password-protected brand logo/link editor (unchanged this session) |
-| `functions/api/next-tid.js` | TID generator for Promotion Request (unchanged) |
+| `functions/api/next-tid.js` | TID generator for Promotion Request — **now also requires login** |
 | `functions/api/screenshot/[[path]].js` | Serves R2 objects (unchanged) |
 | `wrangler.toml` | Now includes the `THREADS_KV` binding (real namespace ID, not a placeholder) |
 
@@ -327,14 +329,15 @@ TG Reply Threads now requires login, with real per-agent accounts:
   assign an office unless that's specifically wanted.
 
 ### What's gated now
-| Surface | Before | Now |
+| Surface | Before this session | Now |
 |---|---|---|
-| `/threads.html` | Open to anyone with the URL | **Requires login** |
-| `GET /api/threads` (sidebar list) | Open | Login required; filtered server-side to the account's `allowedBrands` |
-| `GET /api/threads/<id>` + all POST actions | Open (delete/recallRoot/recallReply needed `BRAND_EDIT_PASSWORD`) | Login required; a thread outside the account's brands 404s — verified an agent can't fetch it directly by ID either, not just hidden from the list |
-| Delete / recall actions | Needed `BRAND_EDIT_PASSWORD` prompt | **No extra password** — being logged in as an account that can see the brand is the authorization. `by` on every deletion-log entry is now auto-filled from the logged-in username instead of always `null` |
+| **Every page** (`index.html` / `form.html` / `promo.html` / `threads.html`) | Only `/threads.html` needed login | **Whole site requires login** — a dedicated `/login.html` is the entry gate; any protected page redirects there if not logged in (see "Site-wide login gate" below) |
+| `GET /api/threads` (sidebar list) | Open | Login required; results filtered server-side to the account's `allowedBrands` |
+| `GET /api/threads/<id>` + all POST actions | Open (delete/recallRoot/recallReply needed `BRAND_EDIT_PASSWORD`) | Login required; a thread outside the account's brands 404s (verified an agent can't fetch it directly by ID either) |
+| Delete / recall actions | Needed `BRAND_EDIT_PASSWORD` prompt | **No extra password** — being logged in as an account that can see the brand is the authorization. `by` on every deletion-log entry is auto-filled from the logged-in username |
 | `GET /api/deletion-log` | URL-obscurity only, no auth | **Requires `role: admin`** |
-| `form.html` (ticket submission), `promo.html` (Promo Code Search) | Open | **Unchanged, still open** — confirmed these should NOT be gated |
+| `POST /api/submit`, `POST /api/next-tid`, `GET /api/promo-search` | Open | **Now also require login server-side** — not just the page redirect; hitting these directly (curl, etc.) without valid credentials 401s |
+| `accounts-admin.html` | N/A (new this session) | Its own separate admin+bootstrap login — deliberately NOT wired to the general site-wide gate, so the very first admin account can still be created from zero |
 
 ### New files
 - `functions/_shared/accounts.js` — Office/Account KV storage, PBKDF2
@@ -364,8 +367,11 @@ accepted for good. No new Cloudflare secret was needed.
 4. Create at least one Office with the real office IP(s).
 5. Create the first admin account, assign it to that Office.
 6. Log out of bootstrap mode, log back in with the real admin account to
-   confirm it works, then create the rest of the agent accounts (each
-   with its brand access + office) from there.
+   confirm it works, then create accounts for **every CS agent who uses
+   any part of the hub** (each with its brand access + office) — see the
+   "Site-wide login gate" section below for why this now includes people
+   who only submit tickets or search promo codes, not just TG Reply
+   Threads users.
 
 ### Verified with an automated test this session (not yet live-tested)
 Exercised end-to-end against a fake in-memory KV (bootstrap → office and
@@ -376,7 +382,51 @@ needs a real run against the live Cloudflare deployment** (real KV, real
 `CF-Connecting-IP` through Cloudflare's edge, real office Wi-Fi) before
 trusting it in production.
 
-### Sidebar visual pass (this session, after the account system landed)
+### Site-wide login gate — built this session (bigger scope change)
+Originally only `/threads.html` required login. Business owner then asked
+to widen this to **the entire hub** — nobody gets past a login page at
+all now, not even to see the Home page's brand pills or submit a ticket.
+**Practical implication worth restating: every CS agent now needs an
+account**, not just the ones using TG Reply Threads — including anyone
+who only ever submits tickets or searches promo codes. Create their
+accounts from `/accounts-admin.html` before rolling this out, or they'll
+just be stuck at the login screen.
+
+How it works:
+- **`public/login.html`** — new standalone login page, the only page NOT
+  behind the gate (plus `accounts-admin.html`, which has its own separate
+  admin/bootstrap flow). Posts to the existing `/api/auth/login`, saves
+  credentials to `localStorage` on success, then redirects to whatever
+  page the person was trying to reach (`?redirect=`, defaults to `/`).
+- **`public/assets/authguard.js`** — new shared script, included near the
+  top of `<head>` on every other page (`index.html`, `form.html`,
+  `promo.html`, `threads.html`). Runs synchronously before the page
+  renders: no saved credentials, or idle-timed-out (still the same 2-hour
+  rule)? → immediate `location.replace()` to `/login.html?redirect=...`.
+  Otherwise it exposes `window.AgentAuth` with `getAuth()`, `authFetch()`,
+  `renderWhoami(elementId)`, and `logout()` for every page to share —
+  this replaced a fair amount of code that used to be duplicated inside
+  `threads.html` alone (that page's own login form, idle-timer, and
+  `authFetch` were all removed in favor of this shared version).
+- **Server-side, not just the page redirect:** `POST /api/submit`,
+  `POST /api/next-tid`, and `GET /api/promo-search` now all call the same
+  `verifyRequest()` used everywhere else and 401 without valid
+  credentials — otherwise someone could just curl the API directly and
+  skip the login page entirely. `accounts-admin.html`'s own endpoints
+  were already admin-gated from earlier in the session and didn't need
+  touching.
+- Every gated page now shows the same `User: name ROLE` pill + red
+  circular logout icon (`window.AgentAuth.renderWhoami("agentWhoami")`) —
+  previously only `index.html` had this.
+
+**Not yet tested live** — same caveat as the rest of the account system
+this session: logic was reasoned through carefully and the underlying
+`verifyRequest()` path is the same one already covered by the 20/20
+automated test, but the actual page-redirect flow (login → land back on
+the right page with the right query string, idle-timeout redirect from a
+random page, etc.) hasn't been clicked through on a live deployment yet.
+
+
 - "Solved / Done" renamed to **"Solved Chat History"**.
 - All three sidebar sections (Active Threads / Solved Chat History /
   Recall Chat History) now share one visual template: a boxed,
@@ -390,11 +440,12 @@ trusting it in production.
   changing (e.g. auto-clear entries older than N days like threads
   already do), it's the same `isExpired()`-style pattern, just not built
   yet — business owner was fine with count-only for now.
-- The whoami pill + red circular logout icon now live **only on the Home
-  page topbar** (order: clock → theme toggle → `User: name ROLE`
-  [logout icon]) — the duplicate that used to also show on
-  `/threads.html`'s topline was removed since both pages share the same
-  `localStorage` login state anyway.
+- The whoami pill + red circular logout icon originally moved to live only
+  on the Home page topbar (removing a duplicate that was also on
+  `/threads.html`'s topline). **Superseded by the site-wide login gate
+  below** — now every gated page shows its own pill via the shared
+  `window.AgentAuth.renderWhoami()`, since every page requires login now
+  anyway.
 - 2-hour idle auto-logout added (client-side, tied to real activity —
   click/keydown/mousemove/touch/tab-refocus — not the background poll).
   See the Account system section above for the honest caveat about this

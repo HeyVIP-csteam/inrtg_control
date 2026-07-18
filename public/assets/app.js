@@ -1,6 +1,7 @@
 (function () {
   if (window.initThemeToggle) window.initThemeToggle();
   if (window.initClock) window.initClock();
+  if (window.AgentAuth) window.AgentAuth.renderWhoami("agentWhoami");
   const params = new URLSearchParams(location.search);
   const moduleId = params.get("module");
   const module = window.MODULES.find((m) => m.id === moduleId);
@@ -188,7 +189,7 @@
       note.textContent = "Generating…";
       note.className = "field-note";
       try {
-        const res = await fetch("/api/next-tid", {
+        const res = await window.AgentAuth.authFetch("/api/next-tid", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -319,7 +320,7 @@
         attachments,
       };
 
-      const res = await fetch("/api/submit", {
+      const res = await window.AgentAuth.authFetch("/api/submit", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),

@@ -179,6 +179,7 @@ export function requestIP(request) {
  * password vs bad IP all look the same from outside).
  */
 export async function verifyRequest(request, env) {
+  if (!env.THREADS_KV) return null;
   const username = request.headers.get("X-Agent-User");
   const password = request.headers.get("X-Agent-Pass");
   if (!username || !password) return null;

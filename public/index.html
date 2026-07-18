@@ -6,6 +6,7 @@
 <title>INR CS Team - TBC</title>
 <link rel="stylesheet" href="/assets/style.css" />
 <script src="/assets/theme.js"></script>
+<script src="/assets/authguard.js"></script>
 </head>
 <body>
   <header class="topbar">
@@ -87,27 +88,9 @@
     window.initThemeToggle();
     window.initClock();
 
-    // Shares the same localStorage key threads.html uses — if the agent
-    // already logged in there, Home shows who's logged in too, with a
-    // logout button right next to the theme toggle. Home itself never
-    // requires login; this is purely a "you're logged in elsewhere"
-    // indicator + a convenient place to log out from.
-    (function renderAgentWhoami() {
-      const el = document.getElementById("agentWhoami");
-      let auth;
-      try { auth = JSON.parse(localStorage.getItem("agentAuth") || "null"); } catch { auth = null; }
-      if (!auth) { el.innerHTML = ""; return; }
-      const logoutIcon = `<svg viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path><polyline points="16 17 21 12 16 7"></polyline><line x1="21" y1="12" x2="9" y2="12"></line></svg>`;
-      el.innerHTML = `User: ${escapeHtmlLocal(auth.username)}<span class="role-badge">${escapeHtmlLocal(auth.role)}</span><span class="logout-icon-btn" id="homeLogoutLink" title="Log out">${logoutIcon}</span>`;
-      document.getElementById("homeLogoutLink").addEventListener("click", () => {
-        localStorage.removeItem("agentAuth");
-        localStorage.removeItem("agentLastActivity");
-        renderAgentWhoami();
-      });
-    })();
-    function escapeHtmlLocal(str) {
-      return String(str == null ? "" : str).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-    }
+    // authguard.js (loaded in <head>) already confirmed we're logged in
+    // before this page rendered at all — just fill in the pill.
+    window.AgentAuth.renderWhoami("agentWhoami");
 
     const BRAND_COLORS = ["#4fc3f7", "#f6ad55", "#f4718a", "#8b5cf6", "#34d399"];
     const brandRow = document.getElementById("brandRow");

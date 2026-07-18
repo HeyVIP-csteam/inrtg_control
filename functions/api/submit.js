@@ -2,10 +2,18 @@ import { BRANDS, RECORD_TO_SHEET, MODULE_META, SHEET_LAYOUT, MESSAGE_TEMPLATE, S
 import { appendRowToSheet, appendRowByColumns, writeRowForDate } from "../_shared/googleSheets.js";
 import { uploadAttachmentToR2, screenshotUrl } from "../_shared/r2.js";
 import { createThread } from "../_shared/threads.js";
+import { verifyRequest } from "../_shared/accounts.js";
 
 const VALID_MODULES = Object.keys(MODULE_META);
 
 export async function onRequestPost({ request, env }) {
+  // The whole hub now requires login (business owner's call — previously
+  // only TG Reply Threads did). This is the server-side half of that: the
+  // frontend redirect to /login.html is the UX, this is what actually
+  // stops an unauthenticated request hitting the API directly.
+  const account = await verifyRequest(request, env);
+  if (!account) return json({ ok: false, error: "Login required." }, 401);
+
   let body;
   try {
     body = await request.json();

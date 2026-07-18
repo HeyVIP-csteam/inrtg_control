@@ -557,6 +557,7 @@ a { color: inherit; text-decoration: none; }
   padding: 60px 20px;
 }
 .login-overlay.open { display: flex; }
+.login-page-wrap { display: flex; align-items: flex-start; justify-content: center; padding: 60px 20px; }
 
 .thread-divider { border: none; border-top: 1px solid var(--panel-border); margin: 20px 0; }
 

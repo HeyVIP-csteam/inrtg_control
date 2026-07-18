@@ -6,6 +6,7 @@
 <title>TG Reply Threads</title>
 <link rel="stylesheet" href="/assets/style.css" />
 <script src="/assets/theme.js"></script>
+<script src="/assets/authguard.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/twemoji.min.js"></script>
 </head>
 <body class="threads-page">
@@ -24,27 +25,7 @@
     <a href="/" class="back-pill">&larr; Back to Home</a>
   </div>
 
-  <div class="login-overlay" id="loginOverlay">
-    <div class="form-card" style="max-width:360px;">
-      <div class="form-header"><span class="icon">🔒</span><span>Agent Login</span></div>
-      <p class="form-hint">Log in to view and reply to Telegram ticket threads.</p>
-      <hr class="form-divider" />
-      <div class="field">
-        <label>Username</label>
-        <input type="text" id="loginUsername" autocomplete="username" />
-      </div>
-      <div class="field">
-        <label>Password</label>
-        <input type="password" id="loginPassword" autocomplete="current-password" />
-      </div>
-      <div id="loginError" class="field-note err" style="display:none;"></div>
-      <div class="form-actions">
-        <button class="btn-submit" id="loginBtn"><span>🔓</span><span>Log In</span></button>
-      </div>
-    </div>
-  </div>
-
-  <div class="threads-shell" id="threadsShell" style="display:none;">
+  <div class="threads-shell" id="threadsShell">
     <aside class="threads-sidebar">
       <div class="threads-search">
         <span>🔍</span>
@@ -74,6 +55,7 @@
 
   <script>
     window.initThemeToggle();
+
     window.initClock();
 
     // ---- Auth ----------------------------------------------------------
@@ -81,107 +63,15 @@
     // just keep the username+password the agent logged in with in
     // localStorage and re-send them as headers on every request; the
     // server re-verifies (password + office IP) every single time.
-    const AUTH_KEY = "agentAuth"; // { username, password, role, allowedBrands }
-    const LAST_ACTIVITY_KEY = "agentLastActivity";
-    const IDLE_TIMEOUT_MS = 2 * 60 * 60 * 1000; // 2 hours
-
-    function getAuth() {
-      try { return JSON.parse(localStorage.getItem(AUTH_KEY) || "null"); } catch { return null; }
-    }
-    function setAuth(auth) { localStorage.setItem(AUTH_KEY, JSON.stringify(auth)); }
-    function clearAuth() { localStorage.removeItem(AUTH_KEY); localStorage.removeItem(LAST_ACTIVITY_KEY); }
-
-    // Idle tracking is deliberately tied to real user activity (clicks,
-    // typing, switching back to this tab), NOT the background 6s poll —
-    // otherwise an unattended-but-open tab would look "active" forever.
-    // Stored in localStorage (not just a JS variable) so it survives a
-    // page reload — "2 hours since you last actually touched this" is
-    // meant to span visits, not reset every time the tab refreshes.
-    function markActivity() {
-      if (getAuth()) localStorage.setItem(LAST_ACTIVITY_KEY, String(Date.now()));
-    }
-    function isIdleTimedOut() {
-      const last = parseInt(localStorage.getItem(LAST_ACTIVITY_KEY) || "0", 10);
-      return last > 0 && Date.now() - last > IDLE_TIMEOUT_MS;
-    }
-    ["click", "keydown", "mousemove", "touchstart"].forEach((evt) => {
-      document.addEventListener(evt, markActivity, { passive: true });
-    });
-
-    // Wraps fetch with the agent's auth headers, and if the server ever
-    // says 401 (bad/stale credentials, e.g. account deleted or IP
-    // changed), boots back to the login screen instead of silently
-    // failing.
-    async function authFetch(url, opts = {}) {
-      const auth = getAuth();
-      const headers = { ...(opts.headers || {}) };
-      if (auth) {
-        headers["X-Agent-User"] = auth.username;
-        headers["X-Agent-Pass"] = auth.password;
-      }
-      const res = await fetch(url, { ...opts, headers });
-      if (res.status === 401) {
-        clearAuth();
-        showLogin("Your session's no longer valid — log in again.");
-      }
-      return res;
-    }
-
-    function showLogin(message) {
-      document.getElementById("threadsShell").style.display = "none";
-      const overlay = document.getElementById("loginOverlay");
-      overlay.classList.add("open");
-      const err = document.getElementById("loginError");
-      if (message) { err.textContent = message; err.style.display = "block"; }
-      else { err.style.display = "none"; }
-      if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
-      if (idleCheckTimer) { clearInterval(idleCheckTimer); idleCheckTimer = null; }
-    }
-
-    async function attemptLogin() {
-      const username = document.getElementById("loginUsername").value.trim();
-      const password = document.getElementById("loginPassword").value;
-      const btn = document.getElementById("loginBtn");
-      const err = document.getElementById("loginError");
-      if (!username || !password) {
-        err.textContent = "Enter both a username and password.";
-        err.style.display = "block";
-        return;
-      }
-      btn.disabled = true;
-      err.style.display = "none";
-      try {
-        const res = await fetch("/api/auth/login", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ username, password }),
-        });
-        const data = await res.json();
-        if (!data.ok) {
-          err.textContent = data.error || "Login failed.";
-          err.style.display = "block";
-          return;
-        }
-        setAuth({ username: data.account.username, password, role: data.account.role, allowedBrands: data.account.allowedBrands });
-        bootDashboard();
-      } catch {
-        err.textContent = "Network error — try again.";
-        err.style.display = "block";
-      } finally {
-        btn.disabled = false;
-      }
-    }
-
-    document.getElementById("loginBtn").addEventListener("click", attemptLogin);
-    document.getElementById("loginPassword").addEventListener("keydown", (e) => { if (e.key === "Enter") attemptLogin(); });
+    // Login itself, idle-timeout, and the actual auth headers are all
+    // handled by /assets/authguard.js (window.AgentAuth) before this page
+    // even renders — by the time this script runs, we're guaranteed to be
+    // logged in. authFetch here is just a short alias.
+    const authFetch = window.AgentAuth.authFetch;
+    const getAuth = window.AgentAuth.getAuth;
 
     function bootDashboard() {
       const auth = getAuth();
-      markActivity(); // logging in / resuming counts as activity
-      document.getElementById("loginOverlay").classList.remove("open");
-      document.getElementById("threadsShell").style.display = "flex";
-      // Whoami + logout now live only on the Home page topbar (shares the
-      // same localStorage) — no duplicate here anymore.
       // Recall Chat History (the old hidden deletion-log dot) is a normal
       // section now, but still admin-only — the server 401s it for anyone
       // else regardless, this just avoids showing a dead-end section to an
@@ -196,16 +86,6 @@
         refreshOpenThread();
         if (isAdmin) loadRecallLog();
       }, 6000);
-      // Checks every minute whether it's been over IDLE_TIMEOUT_MS since
-      // the agent last actually clicked/typed/switched to this tab — not
-      // tied to the poll above, which would otherwise keep an unattended
-      // tab looking "active" forever.
-      idleCheckTimer = setInterval(() => {
-        if (isIdleTimedOut()) {
-          clearAuth();
-          showLogin("Logged out after 2 hours of inactivity — log in again.");
-        }
-      }, 60000);
     }
 
     // ---------------------------------------------------------------------
@@ -216,7 +96,6 @@
     let selectedId = null;
     let selectedThread = null;
     let pollTimer = null;
-    let idleCheckTimer = null;
     let searchTimer = null;
 
     const activeList = document.getElementById("activeList");
@@ -759,26 +638,14 @@
         .replace(/>/g, "&gt;");
     }
 
-    if (getAuth() && !isIdleTimedOut()) {
-      bootDashboard();
-    } else if (getAuth()) {
-      clearAuth();
-      showLogin("Logged out after 2 hours of inactivity — log in again.");
-    } else {
-      showLogin();
-    }
+    bootDashboard();
 
     // Browsers throttle background-tab timers, so a poll can lag while the
     // tab is hidden (e.g. agent switches to the Telegram app/tab). Catch up
-    // immediately the moment this tab becomes visible again.
+    // immediately the moment this tab becomes visible again. (Idle-timeout
+    // checking itself is authguard.js's job, not this page's.)
     document.addEventListener("visibilitychange", () => {
-      if (document.visibilityState === "visible" && getAuth()) {
-        if (isIdleTimedOut()) {
-          clearAuth();
-          showLogin("Logged out after 2 hours of inactivity — log in again.");
-          return;
-        }
-        markActivity();
+      if (document.visibilityState === "visible") {
         loadList(document.getElementById("threadSearch").value);
         refreshOpenThread();
       }

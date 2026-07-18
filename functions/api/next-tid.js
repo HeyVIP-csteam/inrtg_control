@@ -1,7 +1,12 @@
 import { PROMOTION_SHEET_CONFIG } from "../_shared/routing.js";
 import { getNextSequenceValue } from "../_shared/googleSheets.js";
+import { verifyRequest } from "../_shared/accounts.js";
 
 export async function onRequestPost({ request, env }) {
+  // Whole hub requires login now — see submit.js for the same note.
+  const account = await verifyRequest(request, env);
+  if (!account) return json({ ok: false, error: "Login required." }, 401);
+
   let body;
   try {
     body = await request.json();

@@ -22,6 +22,7 @@
  * "" until one exists; the frontend shows it as a dash.
  */
 import { batchGetValues, getSheetTabTitles } from "../_shared/googleSheets.js";
+import { verifyRequest } from "../_shared/accounts.js";
 
 const PROMO_CODE_SHEET = {
   sheetId: "1VYKwdGyoa5qxCScHWyKrYPQYvQPl8igrBzK1mk2RT98",
@@ -73,6 +74,10 @@ function normalizeTabName(name) {
 }
 
 export async function onRequestGet({ request, env }) {
+  // Whole hub requires login now — see submit.js for the same note.
+  const account = await verifyRequest(request, env);
+  if (!account) return json({ ok: false, error: "Login required." }, 401);
+
   const codes = (new URL(request.url).searchParams.get("codes") || "")
     .split(",")
     .map((c) => c.trim())
