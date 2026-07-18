@@ -21,7 +21,7 @@
     </div>
   </header>
 
-  <nav class="brand-row" id="brandRow"></nav>
+  <nav class="brand-row" id="brandRow"><div class="brand-row-track" id="brandRowTrack"></div></nav>
 
   <div class="edit-modal-backdrop" id="editModalBackdrop">
     <div class="edit-modal">
@@ -119,31 +119,40 @@
     window.AgentAuth.renderWhoami("agentWhoami");
 
     const BRAND_COLORS = ["#4fc3f7", "#f6ad55", "#f4718a", "#8b5cf6", "#34d399"];
-    const brandRow = document.getElementById("brandRow");
+    const brandRowTrack = document.getElementById("brandRowTrack");
     let brandConfig = {};
     let editingBrand = null;
     let unlockedPassword = sessionStorage.getItem("brandEditPassword") || "";
 
-    function renderBrandRow() {
-      brandRow.innerHTML = "";
-      window.BRANDS.forEach((b, i) => {
-        const entry = brandConfig[b.id] || {};
-        const el = document.createElement("div");
-        el.className = "brand-pill";
-        const initials = b.name.slice(0, 2).toUpperCase();
-        const avatar = entry.logoUrl
-          ? `<img class="avatar" src="${entry.logoUrl}" alt="${b.name}" />`
-          : `<span class="avatar" style="background:${BRAND_COLORS[i % BRAND_COLORS.length]};">${initials}</span>`;
-        el.innerHTML = `${avatar}<span class="pill-name">${b.name}</span><button type="button" class="pill-edit" title="Edit ${b.name}" data-brand="${b.id}">✏️</button>`;
-        el.querySelector(".pill-name").addEventListener("click", () => {
-          if (entry.link) window.open(entry.link, "_blank", "noopener");
-        });
-        el.querySelector(".pill-edit").addEventListener("click", (e) => {
-          e.stopPropagation();
-          openEditModal(b);
-        });
-        brandRow.appendChild(el);
+    function buildBrandPill(b, i) {
+      const entry = brandConfig[b.id] || {};
+      const el = document.createElement("div");
+      el.className = "brand-pill";
+      const initials = b.name.slice(0, 2).toUpperCase();
+      const avatar = entry.logoUrl
+        ? `<img class="avatar" src="${entry.logoUrl}" alt="${b.name}" />`
+        : `<span class="avatar" style="background:${BRAND_COLORS[i % BRAND_COLORS.length]};">${initials}</span>`;
+      el.innerHTML = `${avatar}<span class="pill-name">${b.name}</span><button type="button" class="pill-edit" title="Edit ${b.name}" data-brand="${b.id}">✏️</button>`;
+      el.querySelector(".pill-name").addEventListener("click", () => {
+        if (entry.link) window.open(entry.link, "_blank", "noopener");
       });
+      el.querySelector(".pill-edit").addEventListener("click", (e) => {
+        e.stopPropagation();
+        openEditModal(b);
+      });
+      return el;
+    }
+
+    function renderBrandRow() {
+      brandRowTrack.innerHTML = "";
+      // Rendered twice back-to-back so the marquee (translateX(-50%) then
+      // snap back to 0) loops seamlessly — the end of copy 1 flows
+      // straight into the identical copy 2 with no visible jump. Edit
+      // clicks work the same from either copy, both point at the same
+      // brand object.
+      for (let copy = 0; copy < 2; copy++) {
+        window.BRANDS.forEach((b, i) => brandRowTrack.appendChild(buildBrandPill(b, i)));
+      }
     }
 
     async function loadBrandConfig() {
@@ -326,19 +335,17 @@
         const data = await res.json();
         acctOffices = data.ok ? data.offices : [];
         const officeOptions = acctOffices.map((o) => `<option value="${o.id}">${acctEsc(o.name)}</option>`).join("");
-        const brandChecks = (window.BRANDS || []).map((b) => `<label><input type="checkbox" value="${acctEsc(b.name)}" /> ${acctEsc(b.name)}</label>`).join("");
+        const brandPills = (window.BRANDS || []).map((b) => `<div class="brand-toggle-pill" data-brand="${acctEsc(b.name)}">${acctEsc(b.name).toUpperCase()}</div>`).join("");
         acctBody.innerHTML = `
           <div class="field"><label>Username</label><input type="text" id="am_username" autocomplete="off" /></div>
           <div class="field"><label>Password</label><input type="password" id="am_password" autocomplete="new-password" /></div>
           <div class="field"><label>Role</label><select id="am_role"><option value="agent">agent</option><option value="admin">admin</option></select></div>
           <div class="field"><label>Office</label><select id="am_office"><option value="">— none —</option>${officeOptions}</select></div>
           <div class="field">
-            <label><input type="checkbox" id="am_allbrands" /> Can see all brands</label>
-            <div class="brand-checks" id="am_brandchecks">${brandChecks}</div>
+            <div class="brand-toggle-label"><span>Can See Brands</span><span class="select-all-btn" id="am_selectAllBtn">Select All</span></div>
+            <div class="brand-toggle-grid" id="am_brandGrid">${brandPills}</div>
           </div>`;
-        document.getElementById("am_allbrands").addEventListener("change", (e) => {
-          document.getElementById("am_brandchecks").style.display = e.target.checked ? "none" : "flex";
-        });
+        wireBrandTogglePicker();
       }
 
       if (mode === "whitelist") {
@@ -394,12 +401,45 @@
       if (acctMode === "reset") return isAdmin ? acctSaveResetAdmin() : acctSaveResetSelf();
     });
 
+    function wireBrandTogglePicker() {
+      const grid = document.getElementById("am_brandGrid");
+      const selectAllBtn = document.getElementById("am_selectAllBtn");
+      const pills = Array.from(grid.querySelectorAll(".brand-toggle-pill"));
+
+      function syncSelectAllBtn() {
+        const allSelected = pills.length > 0 && pills.every((p) => p.classList.contains("selected"));
+        selectAllBtn.classList.toggle("active", allSelected);
+        selectAllBtn.textContent = allSelected ? "✓ All Selected" : "Select All";
+      }
+
+      pills.forEach((p) => {
+        p.addEventListener("click", () => {
+          p.classList.toggle("selected");
+          syncSelectAllBtn();
+        });
+      });
+
+      selectAllBtn.addEventListener("click", () => {
+        const allSelected = pills.every((p) => p.classList.contains("selected"));
+        pills.forEach((p) => p.classList.toggle("selected", !allSelected));
+        syncSelectAllBtn();
+      });
+    }
+
+    // Reads the current selection out of the brand-toggle-grid: "all" if
+    // every pill is selected (stored the same way "all" already works
+    // server-side), otherwise the specific list of selected brand names.
+    function readBrandToggleSelection() {
+      const pills = Array.from(document.querySelectorAll("#am_brandGrid .brand-toggle-pill"));
+      const selected = pills.filter((p) => p.classList.contains("selected")).map((p) => p.dataset.brand);
+      return pills.length > 0 && selected.length === pills.length ? "all" : selected;
+    }
+
     async function acctSaveCreate() {
       const username = document.getElementById("am_username").value.trim();
       const password = document.getElementById("am_password").value;
       if (!username || !password) return setAcctNote("Username and password are required.", "err");
-      const allBrands = document.getElementById("am_allbrands").checked;
-      const allowedBrands = allBrands ? "all" : Array.from(document.querySelectorAll("#am_brandchecks input:checked")).map((el) => el.value);
+      const allowedBrands = readBrandToggleSelection();
       setAcctNote("Saving…");
       const res = await window.AgentAuth.authFetch("/api/admin/accounts", {
         method: "POST", headers: { "Content-Type": "application/json" },
