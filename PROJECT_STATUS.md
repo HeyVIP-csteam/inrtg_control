@@ -376,7 +376,31 @@ needs a real run against the live Cloudflare deployment** (real KV, real
 `CF-Connecting-IP` through Cloudflare's edge, real office Wi-Fi) before
 trusting it in production.
 
-### Not yet done / explicitly deferred
+### Sidebar visual pass (this session, after the account system landed)
+- "Solved / Done" renamed to **"Solved Chat History"**.
+- All three sidebar sections (Active Threads / Solved Chat History /
+  Recall Chat History) now share one visual template: a boxed,
+  bordered list under each collapsible header, instead of Active/Solved
+  floating with no visible container. Recall Chat History gets a subtle
+  red tint on its box + count badge to read as "sensitive" at a glance.
+- **Deletion-log retention — no time limit, only a count cap.** Kept
+  simple on purpose: `MAX_LOG_SIZE = 500` in `functions/_shared/threads.js`
+  (same file as the thread-retention constants) — the 501st deletion
+  bumps the oldest entry off, no date-based expiry. If that's ever worth
+  changing (e.g. auto-clear entries older than N days like threads
+  already do), it's the same `isExpired()`-style pattern, just not built
+  yet — business owner was fine with count-only for now.
+- The whoami pill + red circular logout icon now live **only on the Home
+  page topbar** (order: clock → theme toggle → `User: name ROLE`
+  [logout icon]) — the duplicate that used to also show on
+  `/threads.html`'s topline was removed since both pages share the same
+  `localStorage` login state anyway.
+- 2-hour idle auto-logout added (client-side, tied to real activity —
+  click/keydown/mousemove/touch/tab-refocus — not the background poll).
+  See the Account system section above for the honest caveat about this
+  being browser-enforced, not server-enforced.
+
+### Not yet done / explicitly deferred (account system)
 - `public/index.html`'s "TG Reply Threads" home card doesn't mention
   login is now required — cosmetic, low priority.
 - No "forgot password" flow — an admin resets it manually via
@@ -407,11 +431,20 @@ trusting it in production.
    see the Account system section above. `by` is now auto-filled from the
    logged-in username on every delete/recall action.
 
-3. **Deletion log — visibility/access** — ✅ **Resolved this session**,
-   see the Account system section above. `GET /api/deletion-log` now
-   requires a logged-in account with `role: admin`; the dot in the
-   sidebar is hidden client-side for non-admins too (defense in depth —
-   the real enforcement is server-side).
+3. **Deletion log — visibility/access** — ✅ **Resolved this session**
+   (twice — see below). `GET /api/deletion-log` requires a logged-in
+   account with `role: admin`; **the UI itself changed too**: what used
+   to be a nearly-invisible dot at the bottom of the sidebar is now a
+   normal collapsible section — "**Recall Chat History**" — styled
+   exactly like Active Threads / Solved Chat History (same boxed list,
+   count badge, expand/collapse). It's admin-only (hidden entirely for
+   non-admin accounts, server-enforced), so the original "hide it so
+   agents don't know it exists" goal is now handled by real permissions
+   instead of obscurity — no more reason to keep it disguised as a tiny
+   dot. Each entry shows a type badge (Deleted / Recalled / Recalled
+   reply), who did it, when, and a short preview of what was removed.
+   Refreshes on the same 6s poll as the other sidebar sections (admin
+   accounts only — never fetched at all for agents).
 
 4. **Free-tier KV limits** — good to remind a fresh conversation: Cloudflare
    KV free tier is 1,000 writes/day, 1,000 deletes/day, 100,000 reads/day,

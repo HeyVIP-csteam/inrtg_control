@@ -57,13 +57,14 @@
       </div>
 
       <div class="threads-section" id="solvedSection">
-        <div class="threads-section-title" data-target="solvedList"><span><span class="chev">▾</span> Solved / Done</span><span class="count" id="solvedCount">0</span></div>
+        <div class="threads-section-title" data-target="solvedList"><span><span class="chev">▾</span> Solved Chat History</span><span class="count" id="solvedCount">0</span></div>
         <div class="thread-list" id="solvedList"></div>
       </div>
 
-      <div class="ops-log-spacer"></div>
-      <div class="ops-log-trigger" id="opsLogTrigger"></div>
-      <div class="ops-log-panel" id="opsLogPanel"></div>
+      <div class="threads-section recall" id="recallSection" style="display:none;">
+        <div class="threads-section-title" data-target="recallList"><span><span class="chev">▾</span> Recall Chat History</span><span class="count" id="recallCount">0</span></div>
+        <div class="thread-list" id="recallList"></div>
+      </div>
     </aside>
 
     <main class="threads-main" id="threadsMain">
@@ -181,15 +182,19 @@
       document.getElementById("threadsShell").style.display = "flex";
       // Whoami + logout now live only on the Home page topbar (shares the
       // same localStorage) — no duplicate here anymore.
-      // The hidden deletion-log dot only makes sense to show to admins —
-      // the server enforces this regardless, this just avoids dangling a
-      // dead-end button in front of an agent who'd get a 401 anyway.
-      document.getElementById("opsLogTrigger").style.display = auth.role === "admin" ? "" : "none";
+      // Recall Chat History (the old hidden deletion-log dot) is a normal
+      // section now, but still admin-only — the server 401s it for anyone
+      // else regardless, this just avoids showing a dead-end section to an
+      // agent who'd get nothing useful out of it.
+      const isAdmin = auth.role === "admin";
+      document.getElementById("recallSection").style.display = isAdmin ? "" : "none";
       loadList();
+      if (isAdmin) loadRecallLog();
       polishEmoji();
       pollTimer = setInterval(() => {
         loadList(document.getElementById("threadSearch").value);
         refreshOpenThread();
+        if (isAdmin) loadRecallLog();
       }, 6000);
       // Checks every minute whether it's been over IDLE_TIMEOUT_MS since
       // the agent last actually clicked/typed/switched to this tab — not
@@ -207,6 +212,7 @@
 
     let activeThreads = [];
     let solvedThreads = [];
+    let recallEntries = [];
     let selectedId = null;
     let selectedThread = null;
     let pollTimer = null;
@@ -226,31 +232,49 @@
       });
     });
 
-    document.getElementById("opsLogTrigger").addEventListener("click", async () => {
-      const panel = document.getElementById("opsLogPanel");
-      const isOpen = panel.classList.toggle("open");
-      if (isOpen) {
-        panel.innerHTML = '<div style="color:var(--ink-soft);">Loading…</div>';
-        try {
-          const res = await authFetch("/api/deletion-log", { cache: "no-store" });
-          const data = await res.json();
-          if (!data.ok || !data.entries.length) {
-            panel.innerHTML = '<div style="color:var(--ink-soft);">No deletions logged yet.</div>';
-            return;
-          }
-          const typeLabel = { "delete-thread": "Deleted ticket", "recall-root": "Recalled original msg", "recall-reply": "Recalled reply" };
-          panel.innerHTML = data.entries.map((e) => `
-            <div class="ops-log-entry">
-              <div><span class="ol-type">${typeLabel[e.type] || e.type}</span> <span class="ol-meta">· ${timeAgo(e.ts)}${e.by ? " · " + escapeHtml(e.by) : ""}</span></div>
-              <div class="ol-meta">${escapeHtml(e.threadTitle || "")} (${escapeHtml(e.brand || "")})</div>
-              <div class="ol-content">${escapeHtml((e.content || "").slice(0, 200))}</div>
-            </div>
-          `).join("");
-        } catch {
-          panel.innerHTML = '<div style="color:var(--ink-soft);">Couldn\'t load — check your connection.</div>';
-        }
+    const RECALL_TYPE_META = {
+      "delete-thread": { icon: "🗑", badge: "Deleted" },
+      "recall-root": { icon: "↩️", badge: "Recalled" },
+      "recall-reply": { icon: "↩️", badge: "Recalled reply" },
+    };
+
+    // Admin-only — the whole #recallSection is display:none for non-admins
+    // (set in bootDashboard), and the server 401s this endpoint for them
+    // too, so this never actually runs for a non-admin account.
+    async function loadRecallLog() {
+      try {
+        const res = await authFetch("/api/deletion-log", { cache: "no-store" });
+        if (res.status === 401) return; // not admin (or logged out — authFetch already handled that)
+        const data = await res.json();
+        if (!data.ok) return;
+        recallEntries = data.entries || [];
+        renderRecallList();
+      } catch {
+        // Network hiccup — leave the list as-is, try again next poll.
       }
-    });
+    }
+
+    function renderRecallList() {
+      document.getElementById("recallCount").textContent = recallEntries.length;
+      const list = document.getElementById("recallList");
+      if (!recallEntries.length) {
+        list.innerHTML = '<div class="threads-empty">No deletions logged yet.</div>';
+        return;
+      }
+      list.innerHTML = recallEntries.map((e) => {
+        const meta = RECALL_TYPE_META[e.type] || { icon: "🗑", badge: e.type };
+        return `
+          <div class="thread-item recall-item">
+            <div class="icon">${meta.icon}</div>
+            <div class="meta">
+              <div class="t-title"><span class="badge">${escapeHtml(meta.badge)}</span>${escapeHtml(e.threadTitle || "")}</div>
+              <div class="t-sub">${escapeHtml(e.by || "unknown")} · ${timeAgo(e.ts)}${e.brand ? " · " + escapeHtml(e.brand) : ""}</div>
+              <div class="t-content">${escapeHtml((e.content || "").slice(0, 120))}</div>
+            </div>
+          </div>`;
+      }).join("");
+      polishEmoji();
+    }
 
     document.getElementById("threadSearch").addEventListener("input", (e) => {
       clearTimeout(searchTimer);
