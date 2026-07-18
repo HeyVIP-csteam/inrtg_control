@@ -154,7 +154,7 @@
 
     async function loadList(q) {
       try {
-        const res = await fetch(`/api/threads${q ? "?q=" + encodeURIComponent(q) : ""}`);
+        const res = await fetch(`/api/threads${q ? "?q=" + encodeURIComponent(q) : ""}`, { cache: "no-store" });
         const data = await res.json();
         if (!data.ok) return;
         activeThreads = data.active || [];
@@ -169,7 +169,7 @@
       selectedId = id;
       renderLists();
       try {
-        const res = await fetch(`/api/threads/${id}`);
+        const res = await fetch(`/api/threads/${id}`, { cache: "no-store" });
         const data = await res.json();
         if (!data.ok) {
           main.innerHTML = `<div class="threads-placeholder">Couldn't load this thread.</div>`;
@@ -182,10 +182,24 @@
       }
     }
 
-    function renderDetail() {
-      const t = selectedThread;
-      if (!t) return;
-      main.innerHTML = `
+    // Called by the poll (and only the poll) — fetches fresh data for the
+    // open thread but updates it in place via updateThreadContent, so a
+    // reply the agent is mid-typing is never interrupted.
+    async function refreshOpenThread() {
+      if (!selectedId) return;
+      try {
+        const res = await fetch(`/api/threads/${selectedId}`, { cache: "no-store" });
+        const data = await res.json();
+        if (!data.ok) return;
+        selectedThread = data.thread;
+        updateThreadContent(selectedThread);
+      } catch {
+        // Network hiccup — leave the panel as-is, try again next poll.
+      }
+    }
+
+    function buildTopHTML(t) {
+      return `
         <div class="thread-detail-header">
           <div>
             <div class="thread-detail-title"><span>${t.icon || "🔔"}</span> ${escapeHtml(t.title)}</div>
@@ -209,26 +223,64 @@
           <div class="thread-summary-card">
             ${t.summary.map((s) => `<div class="row"><b>${escapeHtml(s.label)}:</b> <span>${escapeHtml(s.value)}</span></div>`).join("")}
           </div>` : ""}
+      `;
+    }
 
+    function buildConversationHTML(t) {
+      return `
         <div class="conversation-title">Conversation (${t.messages.length})</div>
-        <div class="conversation" id="conversationList">
+        <div class="conversation">
           ${t.messages.length ? t.messages.map(renderMsg).join("") : '<div class="threads-empty">No replies yet — they\'ll show up here as soon as someone replies in Telegram.</div>'}
         </div>
-        <hr class="thread-divider" />
-
-        <div class="reply-attach-preview" id="replyAttachPreview"></div>
-        <div class="reply-box">
-          <button class="attach-btn" id="attachBtn" title="Attach screenshot or PDF">📎</button>
-          <input type="file" id="replyFileInput" accept="image/png,image/jpeg,application/pdf" hidden />
-          <input type="text" id="replyInput" placeholder="Reply into the Telegram thread..." />
-          <button id="replySend">Send</button>
-        </div>
       `;
+    }
 
-      document.getElementById("solveBtn").addEventListener("click", () => toggleSolved());
-      document.getElementById("deleteBtn").addEventListener("click", () => deleteThread());
+    function wireTopButtons() {
+      document.getElementById("solveBtn")?.addEventListener("click", () => toggleSolved());
+      document.getElementById("deleteBtn")?.addEventListener("click", () => deleteThread());
       document.getElementById("editRootBtn")?.addEventListener("click", () => editRoot());
       document.getElementById("recallRootBtn")?.addEventListener("click", () => recallRoot());
+    }
+
+    function wireConversationButtons() {
+      document.querySelectorAll("[data-edit-reply]").forEach((btn) => {
+        btn.addEventListener("click", () => editReply(btn.dataset.editReply, btn.dataset.currentText));
+      });
+      document.querySelectorAll("[data-recall-reply]").forEach((btn) => {
+        btn.addEventListener("click", () => recallReply(btn.dataset.recallReply));
+      });
+    }
+
+    function isNearBottom(el) {
+      return el.scrollHeight - el.scrollTop - el.clientHeight < 80;
+    }
+
+    function scrollConversation(force) {
+      const area = document.getElementById("threadScrollArea");
+      if (!area) return;
+      if (force || isNearBottom(area)) area.scrollTop = area.scrollHeight;
+    }
+
+    // Full render — used when opening/switching threads. Builds the reply
+    // box fresh (it's fine to lose focus here since the panel just opened).
+    function renderDetail() {
+      const t = selectedThread;
+      if (!t) return;
+      main.innerHTML = `
+        <div class="thread-top-fixed" id="threadTopFixed">${buildTopHTML(t)}</div>
+        <div class="thread-scroll-area" id="threadScrollArea">${buildConversationHTML(t)}</div>
+        <div class="thread-reply-fixed">
+          <div class="reply-attach-preview" id="replyAttachPreview"></div>
+          <div class="reply-box">
+            <button class="attach-btn" id="attachBtn" title="Attach screenshot or PDF">📎</button>
+            <input type="file" id="replyFileInput" accept="image/png,image/jpeg,application/pdf" hidden />
+            <input type="text" id="replyInput" placeholder="Reply into the Telegram thread..." />
+            <button id="replySend">Send</button>
+          </div>
+        </div>
+      `;
+      wireTopButtons();
+      wireConversationButtons();
       document.getElementById("replySend").addEventListener("click", sendReply);
       document.getElementById("replyInput").addEventListener("keydown", (e) => {
         if (e.key === "Enter") sendReply();
@@ -238,16 +290,24 @@
         pendingAttachment = e.target.files[0] || null;
         renderAttachPreview();
       });
-      document.querySelectorAll("[data-edit-reply]").forEach((btn) => {
-        btn.addEventListener("click", () => editReply(btn.dataset.editReply, btn.dataset.currentText));
-      });
-      document.querySelectorAll("[data-recall-reply]").forEach((btn) => {
-        btn.addEventListener("click", () => recallReply(btn.dataset.recallReply));
-      });
-
-      const list = document.getElementById("conversationList");
-      list.scrollTop = list.scrollHeight;
       renderAttachPreview();
+      scrollConversation(true);
+    }
+
+    // Light refresh — used by polling and after in-place actions (solve,
+    // send, edit, recall). Only touches the top info block and the
+    // conversation; the reply box (and whatever the agent is mid-typing)
+    // is never rebuilt, so focus/cursor/draft text all survive.
+    function updateThreadContent(t, forceScroll) {
+      const topFixed = document.getElementById("threadTopFixed");
+      const scrollArea = document.getElementById("threadScrollArea");
+      if (!topFixed || !scrollArea) { renderDetail(); return; }
+      const wasNearBottom = isNearBottom(scrollArea);
+      topFixed.innerHTML = buildTopHTML(t);
+      wireTopButtons();
+      scrollArea.innerHTML = buildConversationHTML(t);
+      wireConversationButtons();
+      if (forceScroll || wasNearBottom) scrollConversation(true);
     }
 
     const AVATAR_COLORS = ["#60A5FA", "#FBBF24", "#F87171", "#F472B6", "#34D399", "#A78BFA", "#38bdf8", "#fb923c"];
@@ -289,7 +349,7 @@
       const data = await res.json();
       if (data.ok) {
         selectedThread = data.thread;
-        renderDetail();
+        updateThreadContent(selectedThread, true);
         loadList();
       }
     }
@@ -343,7 +403,7 @@
         input.value = "";
         pendingAttachment = null;
         document.getElementById("replyFileInput").value = "";
-        renderDetail();
+        updateThreadContent(selectedThread, true);
         loadList();
       } catch {
         alert("❌ Send failed: network error.\n\nYour message wasn't sent — try again.");
@@ -360,7 +420,7 @@
       const res = await postAction({ action: "editRoot", text: newText });
       if (!res.ok) return alert(res.error || "Edit failed.");
       selectedThread = res.thread;
-      renderDetail();
+      updateThreadContent(selectedThread);
     }
 
     async function recallRoot() {
@@ -370,7 +430,7 @@
       const res = await postAction({ action: "recallRoot", password });
       if (!res.ok) return alert(res.error || "Recall failed.");
       selectedThread = res.thread;
-      renderDetail();
+      updateThreadContent(selectedThread);
       loadList();
     }
 
@@ -381,7 +441,7 @@
       const res = await postAction({ action: "editReply", messageId: Number(messageId), text: newText });
       if (!res.ok) return alert(res.error || "Edit failed.");
       selectedThread = res.thread;
-      renderDetail();
+      updateThreadContent(selectedThread);
     }
 
     async function recallReply(messageId) {
@@ -391,7 +451,7 @@
       const res = await postAction({ action: "recallReply", messageId: Number(messageId), password });
       if (!res.ok) return alert(res.error || "Recall failed.");
       selectedThread = res.thread;
-      renderDetail();
+      updateThreadContent(selectedThread);
     }
 
     async function postAction(payload) {
@@ -417,14 +477,18 @@
     loadList();
     pollTimer = setInterval(() => {
       loadList(document.getElementById("threadSearch").value);
-      if (selectedId) {
-        const draft = document.getElementById("replyInput")?.value || "";
-        openThread(selectedId).then(() => {
-          const input = document.getElementById("replyInput");
-          if (input && draft) input.value = draft;
-        });
-      }
+      refreshOpenThread();
     }, 6000);
+
+    // Browsers throttle background-tab timers, so a poll can lag while the
+    // tab is hidden (e.g. agent switches to the Telegram app/tab). Catch up
+    // immediately the moment this tab becomes visible again.
+    document.addEventListener("visibilitychange", () => {
+      if (document.visibilityState === "visible") {
+        loadList(document.getElementById("threadSearch").value);
+        refreshOpenThread();
+      }
+    });
   </script>
 </body>
 </html>
