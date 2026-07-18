@@ -109,16 +109,28 @@
       return d.toLocaleDateString(undefined, { day: "2-digit", month: "2-digit" }) + " " + d.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
     }
 
+    // Unread tracking — per-browser (each agent's "have I seen this" state
+    // is naturally their own, not shared team-wide, same as Telegram's own
+    // unread counts). Stored as "how many messages had I seen last time".
+    function getSeenCount(id) {
+      return parseInt(localStorage.getItem(`lastseen:${id}`) || "0", 10);
+    }
+    function markSeen(id, count) {
+      localStorage.setItem(`lastseen:${id}`, String(count));
+    }
+
     function renderItem(t) {
       const el = document.createElement("div");
       el.className = "thread-item" + (t.id === selectedId ? " selected" : "");
       el.style.setProperty("--thread-accent", t.accent || "#7c6cf0");
+      const unread = Math.max(0, (t.replyCount || 0) - getSeenCount(t.id));
       el.innerHTML = `
         <div class="icon" style="background:${(t.accent || "#7c6cf0")}33;">${t.icon || "🔔"}</div>
         <div class="meta">
           <div class="t-title">${escapeHtml(t.title)}</div>
           <div class="t-sub">${escapeHtml(t.submitter)} · ${timeAgo(t.lastActivity)}${t.replyCount ? " · " + t.replyCount + " reply" : ""}</div>
         </div>
+        ${unread > 0 ? `<span class="unread-badge">${unread > 99 ? "99+" : unread}</span>` : ""}
         ${t.solved ? '<span class="t-done">✓</span>' : ""}
       `;
       el.addEventListener("click", () => {
@@ -171,6 +183,8 @@
         }
         selectedThread = data.thread;
         renderDetail();
+        markSeen(id, selectedThread.messages.length);
+        renderLists();
       } catch {
         main.innerHTML = `<div class="threads-placeholder">Couldn't load this thread — check your connection.</div>`;
       }
@@ -187,6 +201,8 @@
         if (!data.ok) return;
         selectedThread = data.thread;
         updateThreadContent(selectedThread);
+        markSeen(selectedId, selectedThread.messages.length);
+        renderLists();
       } catch {
         // Network hiccup — leave the panel as-is, try again next poll.
       }

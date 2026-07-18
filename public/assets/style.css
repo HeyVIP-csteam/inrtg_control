@@ -460,6 +460,20 @@ a { color: inherit; text-decoration: none; }
 .thread-item .t-title { font-size: 12.5px; font-weight: 700; color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .thread-item .t-sub { font-size: 11px; color: var(--ink-soft); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .thread-item .t-done { color: #34d399; font-size: 13px; flex-shrink: 0; }
+.unread-badge {
+  flex-shrink: 0;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: #ef4a72;
+  color: #fff;
+  font-size: 10.5px;
+  font-weight: 800;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
 
 .threads-main { flex: 1; display: flex; flex-direction: column; overflow: hidden; min-height: 0; }
 .threads-placeholder { flex: 1; display: flex; align-items: center; justify-content: center; color: var(--ink-soft); font-size: 14px; text-align: center; }
