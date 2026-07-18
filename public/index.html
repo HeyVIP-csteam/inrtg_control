@@ -14,9 +14,9 @@
       <span class="wordmark">INR CS TEAM - TBC</span>
     </div>
     <div class="topbar-right">
-      <span class="agent-whoami" id="agentWhoami"></span>
       <span class="clock" id="liveClock"></span>
       <button class="theme-pill" id="themeToggle"></button>
+      <span class="agent-whoami" id="agentWhoami"></span>
     </div>
   </header>
 
@@ -98,7 +98,7 @@
       try { auth = JSON.parse(localStorage.getItem("agentAuth") || "null"); } catch { auth = null; }
       if (!auth) { el.innerHTML = ""; return; }
       const logoutIcon = `<svg viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path><polyline points="16 17 21 12 16 7"></polyline><line x1="21" y1="12" x2="9" y2="12"></line></svg>`;
-      el.innerHTML = `${escapeHtmlLocal(auth.username)}<span class="role-badge">${escapeHtmlLocal(auth.role)}</span><span class="logout-icon-btn" id="homeLogoutLink" title="Log out">${logoutIcon}</span>`;
+      el.innerHTML = `User: ${escapeHtmlLocal(auth.username)}<span class="role-badge">${escapeHtmlLocal(auth.role)}</span><span class="logout-icon-btn" id="homeLogoutLink" title="Log out">${logoutIcon}</span>`;
       document.getElementById("homeLogoutLink").addEventListener("click", () => {
         localStorage.removeItem("agentAuth");
         localStorage.removeItem("agentLastActivity");

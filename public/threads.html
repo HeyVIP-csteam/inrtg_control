@@ -22,7 +22,6 @@
 
   <div class="threads-topline">
     <a href="/" class="back-pill">&larr; Back to Home</a>
-    <span class="agent-whoami" id="agentWhoami"></span>
   </div>
 
   <div class="login-overlay" id="loginOverlay">
@@ -129,7 +128,6 @@
 
     function showLogin(message) {
       document.getElementById("threadsShell").style.display = "none";
-      document.getElementById("agentWhoami").innerHTML = "";
       const overlay = document.getElementById("loginOverlay");
       overlay.classList.add("open");
       const err = document.getElementById("loginError");
@@ -137,17 +135,6 @@
       else { err.style.display = "none"; }
       if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
       if (idleCheckTimer) { clearInterval(idleCheckTimer); idleCheckTimer = null; }
-    }
-
-    const LOGOUT_ICON_SVG = `<svg viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path><polyline points="16 17 21 12 16 7"></polyline><line x1="21" y1="12" x2="9" y2="12"></line></svg>`;
-
-    function renderWhoami(auth) {
-      const el = document.getElementById("agentWhoami");
-      el.innerHTML = `${escapeHtml(auth.username)}<span class="role-badge">${escapeHtml(auth.role)}</span><span class="logout-icon-btn" id="logoutLink" title="Log out">${LOGOUT_ICON_SVG}</span>`;
-      document.getElementById("logoutLink").addEventListener("click", () => {
-        clearAuth();
-        location.reload();
-      });
     }
 
     async function attemptLogin() {
@@ -192,7 +179,8 @@
       markActivity(); // logging in / resuming counts as activity
       document.getElementById("loginOverlay").classList.remove("open");
       document.getElementById("threadsShell").style.display = "flex";
-      renderWhoami(auth);
+      // Whoami + logout now live only on the Home page topbar (shares the
+      // same localStorage) — no duplicate here anymore.
       // The hidden deletion-log dot only makes sense to show to admins —
       // the server enforces this regardless, this just avoids dangling a
       // dead-end button in front of an agent who'd get a 401 anyway.
