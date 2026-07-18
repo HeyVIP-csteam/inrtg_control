@@ -3,9 +3,10 @@
  *
  * Search-only — never writes anything. Reads directly from the shared
  * Promo Code Google Sheet (one workbook, many team tabs) and returns
- * every EXACT match of the Promo Code column, grouped by tab, so the
- * dashboard can show "which team's sheet has this code" the same way
- * the reference screenshot did.
+ * every match of the Promo Code column (contains/partial match, not
+ * exact — e.g. searching "1500" matches "1500PKR"), grouped by tab, so
+ * the dashboard can show "which team's sheet has this code" the same
+ * way the reference screenshot did.
  *
  * Requires the sheet to be shared (Viewer is enough) with the service
  * account: reward-form-writer@fifth-trainer-500806-e7.iam.gserviceaccount.com
@@ -87,7 +88,7 @@ export async function onRequestGet({ request, env }) {
     return json({ ok: false, error: "Server is missing Google service account credentials." }, 500);
   }
 
-  const needles = new Set(codes.map((c) => c.toUpperCase()));
+  const needles = codes.map((c) => c.toUpperCase());
 
   // Google's batchGet is all-or-nothing: a single mistyped/renamed/deleted
   // tab name 400s the ENTIRE request. So resolve which configured tabs
@@ -128,7 +129,12 @@ export async function onRequestGet({ request, env }) {
     const matches = [];
     for (const row of rows) {
       const promoCode = (row[2] || "").trim();
-      if (!promoCode || !needles.has(promoCode.toUpperCase())) continue;
+      if (!promoCode) continue;
+      const upperCode = promoCode.toUpperCase();
+      // Contains match, not exact — e.g. searching "1500" should surface
+      // "1500PKR". Any one of the comma-separated search terms being a
+      // substring of the code counts as a hit.
+      if (!needles.some((n) => upperCode.includes(n))) continue;
       matches.push({
         brand: row[0] || "",
         bonusCode: row[1] || "",

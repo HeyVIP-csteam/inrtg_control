@@ -216,8 +216,11 @@ pill, full-width table).
   source column yet).
 
 ### How the search works
-- Matching is **exact** (case-insensitive) on the Promo Code column —
-  business owner confirmed this, not fuzzy/contains.
+- Matching is **contains/partial** (case-insensitive) on the Promo Code
+  column — changed from the original exact-match spec after the business
+  owner tried it live and wanted "1500" to also surface "1500PKR", etc.
+  Any one of the comma-separated search terms being a substring of the
+  code counts as a hit.
 - One `spreadsheets.values.batchGet` call reads all 11 tab ranges
   (`A2:N1000` each) at once — new `batchGetValues()` helper added to
   `functions/_shared/googleSheets.js`, read-only, reused nowhere else yet.
