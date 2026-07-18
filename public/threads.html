@@ -28,7 +28,7 @@
     <aside class="threads-sidebar">
       <div class="threads-search">
         <span>🔍</span>
-        <input type="text" id="threadSearch" placeholder="Search username, agent..." />
+        <input type="text" id="threadSearch" placeholder="Search username, TID, UID..." />
       </div>
 
       <div class="threads-section" id="activeSection">
@@ -200,7 +200,7 @@
             <div class="thread-detail-sub">👤 ${escapeHtml(t.submitter)} &nbsp;·&nbsp; 📅 ${timeAgo(t.submittedAt)} &nbsp;·&nbsp; ${escapeHtml(t.brand)}</div>
           </div>
           <div class="thread-detail-actions">
-            <button class="status-chip ${t.solved ? "solved" : "unsolved"}" id="solveBtn">${t.solved ? "✅ Solved" : "◻ Mark Solved"}</button>
+            <button class="status-chip ${t.solved ? "solved" : "unsolved"}" id="solveBtn">${t.solved ? "✅ Solved" : "❌ Not Solved"}</button>
             ${!t.rootRecalled ? '<button class="icon-btn" id="editRootBtn" title="Edit the original Telegram message">✏️</button>' : ""}
             ${!t.rootRecalled ? '<button class="icon-btn" id="recallRootBtn" title="Recall (delete) the original Telegram message">↩️</button>' : ""}
             <button class="icon-btn" id="deleteBtn" title="Delete this tracking record (Telegram + Sheet are untouched)">🗑</button>
@@ -239,10 +239,14 @@
         const btn = e.currentTarget;
         btn.classList.add("spinning");
         btn.disabled = true;
+        const startedAt = Date.now();
+        const MIN_VISIBLE_MS = 2000;
         try {
           await loadList(document.getElementById("threadSearch").value);
           await refreshOpenThread();
         } finally {
+          const elapsed = Date.now() - startedAt;
+          if (elapsed < MIN_VISIBLE_MS) await new Promise((r) => setTimeout(r, MIN_VISIBLE_MS - elapsed));
           document.getElementById("refreshBtn")?.classList.remove("spinning");
           if (document.getElementById("refreshBtn")) document.getElementById("refreshBtn").disabled = false;
         }

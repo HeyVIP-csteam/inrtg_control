@@ -45,6 +45,10 @@ async function writeIndex(env, list) {
 }
 
 function summarize(thread) {
+  const searchText = [thread.title, thread.submitter, thread.brand, ...(thread.summary || []).map((s) => s.value)]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
   return {
     id: thread.id,
     module: thread.module,
@@ -63,6 +67,7 @@ function summarize(thread) {
     chatId: thread.chatId,
     topicId: thread.topicId,
     msgIds: thread.msgIds,
+    searchText,
   };
 }
 
@@ -162,11 +167,15 @@ export async function listThreads(env, { q } = {}) {
   const visible = list.filter((t) => !t.deleted);
   if (!q) return visible;
   const needle = q.toLowerCase();
-  return visible.filter((t) =>
-    (t.submitter || "").toLowerCase().includes(needle) ||
-    (t.title || "").toLowerCase().includes(needle) ||
-    (t.brand || "").toLowerCase().includes(needle)
-  );
+  return visible.filter((t) => {
+    if (t.searchText) return t.searchText.includes(needle);
+    // Older index entries created before searchText existed — fall back.
+    return (
+      (t.submitter || "").toLowerCase().includes(needle) ||
+      (t.title || "").toLowerCase().includes(needle) ||
+      (t.brand || "").toLowerCase().includes(needle)
+    );
+  });
 }
 
 export async function appendMessage(env, threadId, message) {
