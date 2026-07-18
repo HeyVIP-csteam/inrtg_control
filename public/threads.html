@@ -6,8 +6,9 @@
 <title>TG Reply Threads</title>
 <link rel="stylesheet" href="/assets/style.css" />
 <script src="/assets/theme.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/twemoji.min.js"></script>
 </head>
-<body>
+<body class="threads-page">
   <header class="topbar">
     <div class="topbar-left">
       <img src="/assets/img/logo.webp" alt="HeyVIP" class="logo-img" />
@@ -21,7 +22,6 @@
 
   <div class="threads-topline">
     <a href="/" class="back-pill">&larr; Back to Home</a>
-    <button class="refresh-btn" id="refreshBtn">🔄 Refresh</button>
   </div>
 
   <div class="threads-shell">
@@ -78,18 +78,6 @@
     });
 
     let pendingAttachment = null;
-    const refreshBtn = document.getElementById("refreshBtn");
-    refreshBtn.addEventListener("click", async () => {
-      refreshBtn.classList.add("spinning");
-      refreshBtn.disabled = true;
-      try {
-        await loadList(document.getElementById("threadSearch").value);
-        if (selectedId) await openThread(selectedId);
-      } finally {
-        refreshBtn.classList.remove("spinning");
-        refreshBtn.disabled = false;
-      }
-    });
 
     function fileToDataUrl(file) {
       return new Promise((resolve, reject) => {
@@ -113,6 +101,7 @@
         document.getElementById("replyFileInput").value = "";
         renderAttachPreview();
       });
+      polishEmoji();
     }
 
     function timeAgo(iso) {
@@ -139,6 +128,10 @@
       return el;
     }
 
+    function polishEmoji() {
+      if (window.twemoji) window.twemoji.parse(document.body, { folder: "svg", ext: ".svg" });
+    }
+
     function renderLists() {
       activeCount.textContent = activeThreads.length;
       solvedCount.textContent = solvedThreads.length;
@@ -150,6 +143,7 @@
       }
       solvedList.innerHTML = "";
       solvedThreads.forEach((t) => solvedList.appendChild(renderItem(t)));
+      polishEmoji();
     }
 
     async function loadList(q) {
@@ -210,6 +204,7 @@
             ${!t.rootRecalled ? '<button class="icon-btn" id="editRootBtn" title="Edit the original Telegram message">✏️</button>' : ""}
             ${!t.rootRecalled ? '<button class="icon-btn" id="recallRootBtn" title="Recall (delete) the original Telegram message">↩️</button>' : ""}
             <button class="icon-btn" id="deleteBtn" title="Delete this tracking record (Telegram + Sheet are untouched)">🗑</button>
+            <button class="icon-btn" id="refreshBtn" title="Refresh this thread">🔄</button>
           </div>
         </div>
         <hr class="thread-divider" />
@@ -240,6 +235,18 @@
       document.getElementById("deleteBtn")?.addEventListener("click", () => deleteThread());
       document.getElementById("editRootBtn")?.addEventListener("click", () => editRoot());
       document.getElementById("recallRootBtn")?.addEventListener("click", () => recallRoot());
+      document.getElementById("refreshBtn")?.addEventListener("click", async (e) => {
+        const btn = e.currentTarget;
+        btn.classList.add("spinning");
+        btn.disabled = true;
+        try {
+          await loadList(document.getElementById("threadSearch").value);
+          await refreshOpenThread();
+        } finally {
+          document.getElementById("refreshBtn")?.classList.remove("spinning");
+          if (document.getElementById("refreshBtn")) document.getElementById("refreshBtn").disabled = false;
+        }
+      });
     }
 
     function wireConversationButtons() {
@@ -272,9 +279,11 @@
         <div class="thread-reply-fixed">
           <div class="reply-attach-preview" id="replyAttachPreview"></div>
           <div class="reply-box">
-            <button class="attach-btn" id="attachBtn" title="Attach screenshot or PDF">📎</button>
-            <input type="file" id="replyFileInput" accept="image/png,image/jpeg,application/pdf" hidden />
-            <input type="text" id="replyInput" placeholder="Reply into the Telegram thread..." />
+            <div class="reply-input-wrap">
+              <button class="attach-btn" id="attachBtn" title="Attach screenshot or PDF">📎</button>
+              <input type="file" id="replyFileInput" accept="image/png,image/jpeg,application/pdf" hidden />
+              <input type="text" id="replyInput" placeholder="Reply into the Telegram thread..." />
+            </div>
             <button id="replySend">Send</button>
           </div>
         </div>
@@ -292,6 +301,7 @@
       });
       renderAttachPreview();
       scrollConversation(true);
+      polishEmoji();
     }
 
     // Light refresh — used by polling and after in-place actions (solve,
@@ -308,6 +318,7 @@
       scrollArea.innerHTML = buildConversationHTML(t);
       wireConversationButtons();
       if (forceScroll || wasNearBottom) scrollConversation(true);
+      polishEmoji();
     }
 
     const AVATAR_COLORS = ["#60A5FA", "#FBBF24", "#F87171", "#F472B6", "#34D399", "#A78BFA", "#38bdf8", "#fb923c"];
@@ -475,6 +486,7 @@
     }
 
     loadList();
+    polishEmoji();
     pollTimer = setInterval(() => {
       loadList(document.getElementById("threadSearch").value);
       refreshOpenThread();
