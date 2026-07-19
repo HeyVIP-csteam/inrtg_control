@@ -3,6 +3,7 @@ import { appendRowToSheet, appendRowByColumns, writeRowForDate } from "../_share
 import { uploadAttachmentToR2, screenshotUrl } from "../_shared/r2.js";
 import { createThread } from "../_shared/threads.js";
 import { verifyRequest } from "../_shared/accounts.js";
+import { getRouteOverride } from "../_shared/routes.js";
 
 const VALID_MODULES = Object.keys(MODULE_META);
 
@@ -40,7 +41,12 @@ export async function onRequestPost({ request, env }) {
   }
 
   const meta = MODULE_META[moduleId];
-  const route = brand.telegram[moduleId] || brand.telegram.default;
+  // Live-editable routing (TG Group / Channel admin page) takes priority
+  // over the hardcoded default — see _shared/routes.js. An empty/unset KV
+  // means every brand+module just falls back to brand.telegram as before,
+  // so this can't break anything that already works.
+  const routeOverride = await getRouteOverride(env, brandId, moduleId);
+  const route = routeOverride || brand.telegram[moduleId] || brand.telegram.default;
   const timestamp = new Date().toISOString().replace("T", " ").slice(0, 19) + " UTC";
   const fieldMap = Object.fromEntries(fields.map((f) => [f.key, f.value]));
 

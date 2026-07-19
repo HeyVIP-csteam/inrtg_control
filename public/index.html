@@ -83,6 +83,7 @@
       <div class="sidebar-subitems" id="acctMgmtSubitems">
         <div class="sidebar-subitem" id="subCreateAccount" style="display:none;"><span class="sub-icon">➕</span> Create Account</div>
         <div class="sidebar-subitem" id="subWhitelistIp" style="display:none;"><span class="sub-icon">🌐</span> Whitelist IP</div>
+        <div class="sidebar-subitem" id="subTgRoutes" style="display:none;"><span class="sub-icon">📡</span> TG Group / Channel</div>
         <div class="sidebar-subitem" id="subResetPassword"><span class="sub-icon">🔑</span> Reset Password</div>
         <div class="sidebar-subitem" id="subAgentProfile" style="display:none;"><span class="sub-icon">🪪</span> Agent Profile</div>
       </div>
@@ -302,6 +303,10 @@
     const isSuperAdmin = myRank >= ROLE_RANK.superadmin; // can actually change Whitelist IP / edit Agent Profile / assign any role
     document.getElementById("subCreateAccount").style.display = isSenior ? "flex" : "none";
     document.getElementById("subWhitelistIp").style.display = isAdmin ? "flex" : "none";
+    // TG Group/Channel controls where every ticket actually gets
+    // delivered — SuperAdmin-only, no Admin view tier (unlike Whitelist
+    // IP, which Admin can at least see read-only).
+    document.getElementById("subTgRoutes").style.display = isSuperAdmin ? "flex" : "none";
     document.getElementById("subAgentProfile").style.display = isAdmin ? "flex" : "none";
 
     const acctToggle = document.getElementById("acctMgmtToggle");
@@ -313,6 +318,7 @@
 
     document.getElementById("subCreateAccount").addEventListener("click", () => openAcctModal("create"));
     document.getElementById("subWhitelistIp").addEventListener("click", () => openAcctModal("whitelist"));
+    document.getElementById("subTgRoutes").addEventListener("click", () => openAcctModal("tgroutes"));
     document.getElementById("subResetPassword").addEventListener("click", () => openAcctModal("reset"));
     document.getElementById("subAgentProfile").addEventListener("click", () => openAcctModal("profile"));
 
@@ -351,8 +357,11 @@
       acctBody.innerHTML = '<p class="edit-modal-note">Loading…</p>';
       acctBackdrop.classList.add("is-open");
       const modalEl = acctBackdrop.querySelector(".edit-modal");
-      modalEl.classList.toggle("wide", mode === "profile");
-      document.getElementById("acctModalSave").style.display = mode === "profile" ? "none" : "";
+      modalEl.classList.toggle("wide", mode === "profile" || mode === "tgroutes");
+      // Both "profile" and "tgroutes" use per-row inline save buttons
+      // instead of one global footer Save (too many independently-
+      // editable rows for a single "Save" to mean anything useful).
+      document.getElementById("acctModalSave").style.display = mode === "profile" || mode === "tgroutes" ? "none" : "";
 
       if (mode === "create") {
         acctTitle.textContent = "Create Account";
@@ -430,6 +439,115 @@
         acctTitle.textContent = "Agent Profile";
         await loadAgentProfileTable();
       }
+
+      if (mode === "tgroutes") {
+        acctTitle.textContent = "TG Group / Channel";
+        await loadTgRoutes();
+      }
+    }
+
+    // ---- TG Group / Channel (live-editable Telegram routing) ----
+    // Left column: the 5 brands. Right column: that brand's 6 modules,
+    // each with an editable Chat ID + Topic ID. Backed by
+    // /api/admin/routes, which merges hardcoded defaults
+    // (_shared/routing.js) with any live KV overrides — see
+    // _shared/routes.js for the fallback logic actually used at
+    // submission time.
+    let acctRoutesData = null;
+    let acctRoutesSelectedBrand = null;
+
+    async function loadTgRoutes() {
+      const res = await window.AgentAuth.authFetch("/api/admin/routes");
+      const data = await res.json();
+      if (!data.ok) {
+        acctBody.innerHTML = `<p class="edit-modal-note err">${acctEsc(data.error || "Failed to load.")}</p>`;
+        return;
+      }
+      acctRoutesData = data;
+      if (!acctRoutesSelectedBrand || !data.brands.some((b) => b.id === acctRoutesSelectedBrand)) {
+        acctRoutesSelectedBrand = data.brands[0]?.id || null;
+      }
+      renderTgRoutes();
+    }
+
+    function renderTgRoutes() {
+      if (!acctRoutesData) return;
+      const { brands, modules, routes } = acctRoutesData;
+
+      const brandListHtml = brands.map((b) => `
+        <div class="tgroute-brand${b.id === acctRoutesSelectedBrand ? " selected" : ""}" data-brand="${acctEsc(b.id)}">${acctEsc(b.name)}</div>
+      `).join("");
+
+      const moduleRowsHtml = modules.map((m) => {
+        const key = `${acctRoutesSelectedBrand}|${m.id}`;
+        const r = routes[key] || { chatId: "", topicId: null, isOverride: false };
+        return `
+          <div class="tgroute-row" data-module="${acctEsc(m.id)}">
+            <div class="tgroute-mod-name">${m.emoji} ${acctEsc(m.name)}
+              <span class="route-tag${r.isOverride ? " custom" : ""}">${r.isOverride ? "custom" : "default"}</span>
+            </div>
+            <div class="tgroute-fields">
+              <input type="text" class="tgroute-chatid" placeholder="Chat ID e.g. -1001234567890" value="${acctEsc(r.chatId)}" />
+              <input type="text" class="tgroute-topicid" placeholder="Topic ID (optional)" value="${r.topicId ?? ""}" />
+            </div>
+            <div class="tgroute-row-actions">
+              <button type="button" class="row-btn tgroute-save" title="Save">✅</button>
+              ${r.isOverride ? '<button type="button" class="row-btn tgroute-reset" title="Reset to default">↩️</button>' : ""}
+            </div>
+          </div>`;
+      }).join("");
+
+      acctBody.innerHTML = `
+        <div class="tgroute-layout">
+          <div class="tgroute-brands">${brandListHtml}</div>
+          <div class="tgroute-modules">${moduleRowsHtml}</div>
+        </div>
+        <p class="edit-modal-note">Changes apply to the very next form submission — no redeploy needed. "default" rows are still using the value built into the code; "custom" rows have been overridden here.</p>`;
+
+      acctBody.querySelectorAll(".tgroute-brand").forEach((el) => {
+        el.addEventListener("click", () => {
+          acctRoutesSelectedBrand = el.dataset.brand;
+          setAcctNote("");
+          renderTgRoutes();
+        });
+      });
+      acctBody.querySelectorAll(".tgroute-save").forEach((btn) => {
+        btn.addEventListener("click", () => saveTgRouteRow(btn.closest(".tgroute-row")));
+      });
+      acctBody.querySelectorAll(".tgroute-reset").forEach((btn) => {
+        btn.addEventListener("click", () => resetTgRouteRow(btn.closest(".tgroute-row")));
+      });
+    }
+
+    async function saveTgRouteRow(row) {
+      const moduleId = row.dataset.module;
+      const chatId = row.querySelector(".tgroute-chatid").value.trim();
+      const topicId = row.querySelector(".tgroute-topicid").value.trim();
+      if (!chatId) return setAcctNote("Chat ID is required.", "err");
+      setAcctNote("Saving…");
+      const res = await window.AgentAuth.authFetch("/api/admin/routes", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "save", brandId: acctRoutesSelectedBrand, moduleId, chatId, topicId: topicId === "" ? null : topicId }),
+      });
+      const data = await res.json();
+      if (!data.ok) return setAcctNote(data.error || "Save failed.", "err");
+      acctRoutesData.routes[`${acctRoutesSelectedBrand}|${moduleId}`] = data.route;
+      setAcctNote("Saved.", "ok");
+      renderTgRoutes();
+    }
+
+    async function resetTgRouteRow(row) {
+      const moduleId = row.dataset.module;
+      setAcctNote("Resetting…");
+      const res = await window.AgentAuth.authFetch("/api/admin/routes", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "reset", brandId: acctRoutesSelectedBrand, moduleId }),
+      });
+      const data = await res.json();
+      if (!data.ok) return setAcctNote(data.error || "Reset failed.", "err");
+      acctRoutesData.routes[`${acctRoutesSelectedBrand}|${moduleId}`] = data.route;
+      setAcctNote("Reset to default.", "ok");
+      renderTgRoutes();
     }
 
     async function loadAgentProfileTable() {

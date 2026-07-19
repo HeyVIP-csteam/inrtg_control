@@ -269,6 +269,50 @@ a { color: inherit; text-decoration: none; }
 .agent-profile-table .pw-by { color: var(--ink-soft); font-size: 10.5px; display: block; }
 .agent-profile-table .row-btn { background: none; border: none; cursor: pointer; font-size: 13px; padding: 2px 4px; }
 
+/* ---- TG Group / Channel (live-editable Telegram routing) ---- */
+.tgroute-layout { display: flex; gap: 14px; max-height: 440px; }
+.tgroute-brands {
+  flex-shrink: 0; width: 150px; display: flex; flex-direction: column; gap: 6px;
+  overflow-y: auto; padding-right: 4px;
+}
+.tgroute-brand {
+  padding: 10px 12px; border-radius: 10px; font-size: 12.5px; font-weight: 700;
+  color: var(--ink-soft); background: var(--field-bg); border: 1.5px solid var(--border);
+  cursor: pointer; transition: all 0.15s ease;
+}
+.tgroute-brand:hover { border-color: rgba(200, 145, 47, 0.5); color: var(--ink); }
+.tgroute-brand.selected {
+  background: linear-gradient(135deg, rgba(200, 145, 47, 0.28), rgba(200, 145, 47, 0.14));
+  border-color: var(--accent-gold); color: #f3c463;
+}
+.tgroute-modules { flex: 1; min-width: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; }
+.tgroute-row {
+  border: 1px solid var(--panel-border); border-radius: 12px; padding: 10px 12px;
+  background: var(--field-bg);
+}
+.tgroute-mod-name {
+  font-size: 12.5px; font-weight: 700; color: var(--ink);
+  display: flex; align-items: center; gap: 6px; margin-bottom: 8px;
+}
+.route-tag {
+  font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.03em;
+  padding: 2px 6px; border-radius: 6px; background: var(--card-bg); color: var(--ink-soft);
+  border: 1px solid var(--border);
+}
+.route-tag.custom { color: var(--accent-gold); border-color: var(--accent-gold); background: rgba(200, 145, 47, 0.14); }
+.tgroute-fields { display: flex; gap: 8px; }
+.tgroute-fields input {
+  flex: 1; min-width: 0; background: var(--card-bg); border: 1px solid var(--border); border-radius: 8px;
+  padding: 7px 9px; font-size: 12px; color: var(--ink); font-family: inherit;
+}
+.tgroute-row-actions { display: flex; justify-content: flex-end; gap: 4px; margin-top: 6px; }
+.tgroute-row-actions .row-btn { font-size: 14px; padding: 3px 6px; border-radius: 6px; }
+.tgroute-row-actions .row-btn:hover { background: rgba(0, 0, 0, 0.08); }
+@media (max-width: 640px) {
+  .tgroute-layout { flex-direction: column; max-height: none; }
+  .tgroute-brands { width: 100%; flex-direction: row; flex-wrap: wrap; }
+}
+
 
 /* ---- Theme toggle (legacy floating button, kept for old pages) ---- */
 .theme-toggle {

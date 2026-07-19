@@ -677,18 +677,32 @@ whether that's acceptable for this internal tool).
 
 3. **Deletion log — visibility/access** — ✅ **Resolved this session**
    (twice — see below). `GET /api/deletion-log` requires a logged-in
-   account with `role: admin`; **the UI itself changed too**: what used
-   to be a nearly-invisible dot at the bottom of the sidebar is now a
-   normal collapsible section — "**Recall Chat History**" — styled
-   exactly like Active Threads / Solved Chat History (same boxed list,
-   count badge, expand/collapse). It's admin-only (hidden entirely for
-   non-admin accounts, server-enforced), so the original "hide it so
+   account ranked **admin or above** (admin or superadmin — uses the
+   rank-based `authenticateAdmin` alias from the later Role Hierarchy
+   work, see below); **the UI itself changed too**: what used to be a
+   nearly-invisible dot at the bottom of the sidebar is now a normal
+   collapsible section — "**Recall Chat History**" — styled exactly like
+   Active Threads / Solved Chat History (same boxed list, count badge,
+   expand/collapse). It's admin-or-above-only (hidden entirely for
+   agent/senior accounts, server-enforced), so the original "hide it so
    agents don't know it exists" goal is now handled by real permissions
    instead of obscurity — no more reason to keep it disguised as a tiny
    dot. Each entry shows a type badge (Deleted / Recalled / Recalled
    reply), who did it, when, and a short preview of what was removed.
-   Refreshes on the same 6s poll as the other sidebar sections (admin
-   accounts only — never fetched at all for agents).
+   Refreshes on the same 6s poll as the other sidebar sections
+   (admin-or-above accounts only — never fetched at all for agent/senior).
+   **Bug partially fixed this session (see 4b below for the rest):**
+   `threads.html`'s own visibility check for this section (separate from
+   the server-side gate) was still doing a literal `auth.role === "admin"`
+   string match — missed during the Role Hierarchy rollout, so it
+   silently excluded SuperAdmin (whose role string is literally
+   `"superadmin"`, not `"admin"`) from seeing the section rendered at
+   all. Fixed to use the same `ROLE_RANK` comparison (`rank >= admin`) as
+   everywhere else. **This note originally claimed that fully solved it —
+   it didn't.** The server-side gate (`/api/deletion-log`) and
+   `accounts-admin.html`'s own login form had the exact same bug and were
+   still live; see item 4b for what that actually looked like for a
+   SuperAdmin and how it was found/fixed.
 
 4. **Free-tier KV limits** — good to remind a fresh conversation: Cloudflare
    KV free tier is 1,000 writes/day, 1,000 deletes/day, 100,000 reads/day,
@@ -697,6 +711,87 @@ whether that's acceptable for this internal tool).
    login-adjacent action, none per read). If the team's ticket volume
    grows a lot, the fix is simply upgrading to the Workers Paid plan
    ($5/mo minimum) — no code changes needed, limits jump to ~1M/month.
+
+4b. **✅ Fixed this session — the literal-"admin"-string bug was NOT
+    fully fixed, despite this doc previously saying so.** The earlier fix
+    only landed in `threads.html`'s client-side visibility check. Two
+    more instances of the exact same bug class were still live and got
+    fixed just now:
+    - **`functions/api/deletion-log.js`** (the actual server-side gate for
+      Recall Chat History) — was still `account.role !== "admin"`, a
+      literal string compare. Since SuperAdmin's role string is literally
+      `"superadmin"`, every SuperAdmin request 401'd here. `threads.html`
+      silently swallows a 401 on this endpoint (`if (res.status === 401)
+      return;`), so the visible symptom was: SuperAdmin sees the "Recall
+      Chat History" section (client-side check was fine), but it's
+      permanently empty / stuck at count 0 — looks exactly like "can't
+      see it" from the outside even though the section itself renders.
+      Fixed to use the existing rank-based `authenticateAdmin()` alias
+      from `_shared/accounts.js` (same one `admin/offices.js` etc. use)
+      instead of the literal string.
+    - **`public/accounts-admin.html`**'s own login form — same bug,
+      different surface: logging in with a real SuperAdmin account
+      rejected the login client-side with "This account isn't an admin,"
+      again from a literal `data.account.role !== "admin"` check. Fixed
+      to a local rank comparison (`ROLE_RANK[role] >= ROLE_RANK.admin`),
+      matching the pattern used everywhere else.
+    - **Swept the rest of the codebase** for the same pattern
+      (`grep -rn 'role\s*===\s*"admin"\|role\s*!==\s*"admin"'` across
+      `functions/` and every `public/*.html`) — nothing else found.
+      `admin/accounts.js`'s few `body.role === "superadmin"` /
+      `existingTarget.role` comparisons were checked individually and are
+      legitimate (comparing against a specific literal target role for
+      the self-promotion bootstrap, or diffing old vs new value) — not
+      permission gates, so not the same bug.
+    - **Lesson for next time this class of bug is suspected:** don't
+      trust a past session's "fixed" note at face value if the actual
+      symptom (SuperAdmin can't see something) is still being reported —
+      grep for the literal string pattern across the whole repo, not just
+      the one file mentioned in the note. This doc said the bug was fixed
+      after only patching one of three call sites.
+    **Not yet live-tested** — same caveat as everything else this
+    session; reasoned through and grep-verified, not clicked through
+    against a real deployment with a real SuperAdmin account yet.
+
+5. **TG Group/Channel management UI — ✅ built this session.**
+   Business owner was tired of every routing change (chatId/topicId per
+   brand per module) requiring a code edit + redeploy from a fresh
+   conversation. Built exactly to the agreed design:
+   - New Account Management sub-item **"TG Group / Channel"**,
+     **SuperAdmin-only** — unlike Whitelist IP (Admin can view read-only,
+     SuperAdmin edits), this one is SuperAdmin-only for *viewing* too,
+     since routing controls where every ticket actually gets delivered.
+   - UI (`public/index.html`, new `tgroutes` mode inside the existing
+     Account Management modal): left column lists the 5 brands; clicking
+     one shows its 6 modules on the right (QA, Account Issue, Risk Issue,
+     Promotion Request, Daily Report, Genie Issue), each with editable
+     Chat ID + Topic ID fields, a "default"/"custom" tag, and inline
+     ✅ Save / ↩️ Reset-to-default buttons per row (no single global Save
+     — too many independently-editable rows for that to mean anything).
+   - **Architecture change (as planned):** new `functions/_shared/routes.js`
+     — KV layer for overrides, keyed `route:<brandId>:<moduleId>` in
+     `THREADS_KV` (same namespace as accounts/offices). `getRouteOverride()`
+     is a single KV read; `getAllRouteOverrides()` batch-fetches all
+     30 brand×module combos in parallel for the admin grid (no index
+     needed at this scale).
+   - `functions/api/submit.js` now checks `getRouteOverride(env, brandId,
+     moduleId)` **first**, falling back to the existing hardcoded
+     `brand.telegram[moduleId] || brand.telegram.default` exactly as
+     before if nothing is stored — so shipping this with an empty KV
+     changes nothing that already worked; only brand/module combos
+     someone actually edits through the new UI diverge from the code
+     defaults.
+   - New endpoint `functions/api/admin/routes.js` — `GET` returns the
+     merged grid (defaults + overrides, with `isOverride` per cell);
+     `POST { action:"save"|"reset", brandId, moduleId, chatId?, topicId? }`
+     writes/clears one override. Both gated `authenticateStaff(request,
+     env, ROLE_RANK.superadmin)`, same pattern as
+     `functions/api/admin/offices.js`.
+   - **Not yet live-tested** — same caveat as the rest of the account
+     system: code reviewed and syntax-checked, but hasn't been clicked
+     through against a real Cloudflare deployment yet (create an
+     override, confirm the next real submission for that brand+module
+     actually lands in the new chat/topic, confirm Reset reverts it).
 
 ### Brand dropdown order + "Platform: X INR" formatting (this session)
 - `public/assets/schemas.js`'s `BRANDS` array reordered to Crickex,

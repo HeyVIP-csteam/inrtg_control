@@ -73,10 +73,13 @@
     function bootDashboard() {
       const auth = getAuth();
       // Recall Chat History (the old hidden deletion-log dot) is a normal
-      // section now, but still admin-only — the server 401s it for anyone
-      // else regardless, this just avoids showing a dead-end section to an
-      // agent who'd get nothing useful out of it.
-      const isAdmin = auth.role === "admin";
+      // section now, but still admin-or-above only — the server 401s it
+      // for anyone else regardless, this just avoids showing a dead-end
+      // section to an agent/senior who'd get nothing useful out of it.
+      // Rank-based (not a literal "admin" string match) so SuperAdmin
+      // sees it too — matches functions/_shared/accounts.js ROLE_RANK.
+      const ROLE_RANK = { agent: 0, senior: 1, admin: 2, superadmin: 3 };
+      const isAdmin = (ROLE_RANK[auth.role] ?? 0) >= ROLE_RANK.admin;
       document.getElementById("recallSection").style.display = isAdmin ? "" : "none";
       loadList();
       if (isAdmin) loadRecallLog();
