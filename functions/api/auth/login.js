@@ -23,8 +23,26 @@
  * whitelisted for your office" message (with the actual IP, so an admin
  * can immediately go add it) is much more useful than the same generic
  * line. Requested directly by the business owner.
+ *
+ * IP ALERT NOTIFICATION — business owner requested a Telegram alert when
+ * a real (password-correct) account tries to log in from an IP that
+ * ISN'T on its office's approved list. Login is STILL BLOCKED exactly as
+ * before — this only adds visibility, it does not loosen access.
+ * Notifies on EVERY such attempt (deliberately not de-duplicated) — the
+ * business owner wants to see how many times a given account has tried
+ * from unapproved networks, not just a one-time flag. Switching between
+ * multiple IPs that are ALL already on the approved list never alerts at
+ * all (officeIpCheckPasses() passes, this whole block is skipped).
+ *
+ * NOT YET CONFIGURED: set SECURITY_ALERTS_CHAT_ID (and optionally
+ * SECURITY_ALERTS_TOPIC_ID) as Cloudflare environment variables once
+ * there's a Telegram group/topic picked out for these — until then this
+ * silently no-ops (sendTelegramMessage() skips cleanly with no chat ID),
+ * so this ships now without breaking anything or requiring the group to
+ * exist yet.
  */
 import { getAccount, verifyPassword, officeIpCheckPasses, getOffice, requestIP } from "../../_shared/accounts.js";
+import { sendTelegramMessage } from "../../_shared/telegram.js";
 
 export async function onRequestPost(context) {
   try {
@@ -34,7 +52,7 @@ export async function onRequestPost(context) {
   }
 }
 
-async function handleLogin({ request, env }) {
+async function handleLogin({ request, env, waitUntil }) {
   if (!env.THREADS_KV) return json({ ok: false, error: "THREADS_KV is not bound yet." }, 500);
   let body;
   try {
@@ -57,6 +75,10 @@ async function handleLogin({ request, env }) {
 
   if (!(await officeIpCheckPasses(env, account, request))) {
     const ip = requestIP(request) || "unknown";
+    // Fire-and-forget via waitUntil — never adds latency to the actual
+    // rejection response, and a Telegram hiccup here can't turn into a
+    // broken login flow (notifyUnrecognizedIp swallows its own errors).
+    if (waitUntil) waitUntil(notifyUnrecognizedIp(env, { account, ip, request }));
     if (!account.officeId) {
       return json({ ok: false, error: `Your account has no office assigned, so it can't log in from anywhere. Ask an admin to assign you an office (your current IP: ${ip}).` }, 401);
     }
@@ -69,6 +91,82 @@ async function handleLogin({ request, env }) {
     ok: true,
     account: { username: account.username, role: account.role, allowedBrands: account.allowedBrands, officeId: account.officeId },
   });
+}
+
+async function notifyUnrecognizedIp(env, { account, ip, request }) {
+  try {
+    const userAgent = request.headers.get("User-Agent") || "unknown device";
+    const officeName = account.officeId ? (await getOffice(env, account.officeId))?.name : null;
+
+    // Cloudflare attaches geo/network info to every request at the edge —
+    // no extra API call needed, this is instant. `cf` can be missing in
+    // local/dev environments, so every field below falls back cleanly.
+    const cf = request.cf || {};
+    const country = countryName(cf.country);
+    const city = cf.city || "Unknown";
+    const isp = cf.asOrganization || "Unknown";
+
+    const now = new Date();
+    const lines = [
+      `⚠️<b>登录提醒（IP异常）</b>⚠️`,
+      ``,
+      `👤 User: ${escapeHtml(account.username)}`,
+      `🌐 IP: ${escapeHtml(ip)}`,
+      `🏢 Assigned office: ${escapeHtml(officeName || "none")}`,
+      `📱 Browser/device: ${escapeHtml(userAgent)}`,
+      `🗺️ Country: ${escapeHtml(country)}`,
+      `🏙️ City: ${escapeHtml(city)}`,
+      `📡 ISP: ${escapeHtml(isp)}`,
+      `🕒 Colombo Time: ${formatInZone(now, "Asia/Colombo")} (GMT+5:30)`,
+      `🕗 Malaysia Time: ${formatInZone(now, "Asia/Kuala_Lumpur")} (GMT+8:00)`,
+      ``,
+      `🚫 Login was blocked as usual — this is just a heads-up.`,
+    ];
+    await sendTelegramMessage(env, {
+      chatId: env.SECURITY_ALERTS_CHAT_ID,
+      topicId: env.SECURITY_ALERTS_TOPIC_ID,
+      text: lines.join("\n"),
+    });
+  } catch {
+    // Never let a notification hiccup affect anything else — this
+    // function's caller is a fire-and-forget waitUntil() anyway.
+  }
+}
+
+// Cloudflare's `cf.country` is a 2-letter code (e.g. "LK", "MY") — spell
+// it out for a human reading a Telegram alert. Falls back to the raw
+// code if Intl.DisplayNames can't resolve it (or isn't available) rather
+// than showing nothing.
+function countryName(code) {
+  if (!code) return "Unknown";
+  try {
+    return new Intl.DisplayNames(["en"], { type: "region" }).of(code) || code;
+  } catch {
+    return code;
+  }
+}
+
+// "2026-07-19 18:32" in the given IANA timezone — the (GMT+X) label is
+// added by the caller as a static string rather than computed here,
+// since the two zones this is used for (Colombo, Kuala Lumpur) don't
+// observe daylight saving, so their offset never changes.
+function formatInZone(date, timeZone) {
+  try {
+    const parts = new Intl.DateTimeFormat("en-CA", {
+      timeZone, year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hour12: false,
+    }).formatToParts(date);
+    const get = (type) => parts.find((p) => p.type === type)?.value || "";
+    return `${get("year")}-${get("month")}-${get("day")} ${get("hour")}:${get("minute")}`;
+  } catch {
+    return date.toISOString();
+  }
+}
+
+function escapeHtml(str) {
+  return String(str == null ? "" : str)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
 }
 
 function json(obj, status = 200) {

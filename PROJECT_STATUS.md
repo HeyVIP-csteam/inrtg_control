@@ -49,7 +49,11 @@ routing admin page ("TG Group / Channel"). Deployed on Cloudflare Pages.
   for the `accounts-admin.html` one-time bootstrap flow now — see Account
   system below, it is NOT used for brand logo/link editing anymore),
   `TELEGRAM_WEBHOOK_SECRET` (self-chosen random string, verifies Telegram
-  webhook calls).
+  webhook calls — see "IMPORTANT: must be alphanumeric only, no
+  spaces/symbols/non-ASCII" note under TG Reply Threads below).
+  **Not yet set, optional:** `SECURITY_ALERTS_CHAT_ID` and
+  `SECURITY_ALERTS_TOPIC_ID` — see "Unrecognized-IP login alerts" under
+  Account system below; the feature silently no-ops until these exist.
 
 ## Key files
 | File | Purpose |
@@ -71,6 +75,7 @@ routing admin page ("TG Group / Channel"). Deployed on Cloudflare Pages.
 | `functions/api/admin/routes.js` | `GET`/`POST` for the TG Group/Channel admin page — SuperAdmin-only for both read and write |
 | `functions/_shared/googleSheets.js` | Google Sheets API helpers |
 | `functions/_shared/r2.js` | R2 upload helper (used for ticket attachments — no longer used for brand logos) |
+| `functions/_shared/telegram.js` | Small shared `sendTelegramMessage()` helper — new this session, used by the unrecognized-IP login alert feature (see Account system below); `submit.js`/`threads/[id].js` still have their own separate, richer Telegram senders, not refactored onto this |
 | `functions/_shared/threads.js` | TG Reply Threads KV storage layer — create/read/update threads, auto-cleanup, deletion log. This session: removed the shared `"index"` KV key (was a write-contention hot spot under concurrent agents) in favor of `THREADS_KV.list()` + per-key metadata — see "Reliability & performance" below. |
 | `functions/_shared/accounts.js` | Office/Account KV storage, password hashing, per-request auth (`verifyRequest`), role ranks, and the shared `officeIpCheckPasses()` office/IP rule |
 | `functions/api/auth/login.js` | `POST /api/auth/login` — uses the same `officeIpCheckPasses()` as every other endpoint |
@@ -177,6 +182,33 @@ beyond the one reference tab. Unchanged this session.
 ---
 
 ## Account system
+
+### 🆕 Unrecognized-IP login alerts (built this session, needs one config
+step before it's live)
+
+When a real account (correct username + password) tries to log in from
+an IP that's NOT on its office's approved list, a Telegram alert can fire
+to a security/alerts chat — username, role, the IP, office name, raw
+User-Agent string (best available "device" info — Cloudflare/browsers
+don't expose real device details, just what the browser reports about
+itself), and a timestamp. **Login is still blocked exactly as before —
+this only adds visibility, it does not loosen the office/IP rule.**
+
+De-duplication was considered (only alert once per account+IP) but the
+business owner specifically wants a count of how many times an account
+has tried from unapproved networks — **so this notifies on EVERY single
+failed-IP attempt, deliberately not de-duplicated.** Sent via
+`context.waitUntil()` so it never adds latency to the (still instant)
+rejection response, and a Telegram hiccup can't break login.
+
+**Not fully wired up yet — one thing still needed:** set
+`SECURITY_ALERTS_CHAT_ID` (and optionally `SECURITY_ALERTS_TOPIC_ID` if
+it should go to a specific topic, not just the group's General) as
+Cloudflare environment variables once a Telegram group/topic exists for
+this. Until then, `sendTelegramMessage()` in `_shared/telegram.js` sees
+no chat ID configured and silently no-ops — nothing breaks, alerts just
+don't go anywhere yet. Business owner hasn't decided which chat to use —
+revisit once that's picked.
 
 ### ✅ Root-caused and fixed this session — the mysterious, persistent 503s
 across the whole site (submit, threads list, open a thread, send a reply,
