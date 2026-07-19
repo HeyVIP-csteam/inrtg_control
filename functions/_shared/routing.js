@@ -42,7 +42,7 @@ export const BRANDS = {
   },
   betjili: {
     name: "Betjili",
-    sheetId: "",
+    sheetId: "1jEIomHdq9BBiwI8AcpWCB0IJolcHYWw1tlT3DR8WzeQ",
     telegram: {
       default: { chatId: "-100XXXXXXXXXX", topicId: null },
       qa: { chatId: "-100XXXXXXXXXX", topicId: null },
@@ -54,7 +54,7 @@ export const BRANDS = {
   },
   crickex: {
     name: "Crickex",
-    sheetId: "",
+    sheetId: "10vMJWW7XLbvRV47Q_tqqTV_U13oA_3VGpHSo-df9I54",
     telegram: {
       default: { chatId: "-100XXXXXXXXXX", topicId: null },
       qa: { chatId: "-100XXXXXXXXXX", topicId: null },
@@ -66,7 +66,7 @@ export const BRANDS = {
   },
   jeetway: {
     name: "Jeetway",
-    sheetId: "",
+    sheetId: "1tQdhnCwSl-ybwlIFGcK2oPVaApnU9vsloHboaFtsb_4",
     telegram: {
       default: { chatId: "-100XXXXXXXXXX", topicId: null },
       qa: { chatId: "-100XXXXXXXXXX", topicId: null },
@@ -78,7 +78,7 @@ export const BRANDS = {
   },
   mostplay: {
     name: "Mostplay",
-    sheetId: "",
+    sheetId: "1Phq6Fsw4ouoJumW2iz54y2YnfQzDp8hBdRL3h-cu5M4",
     telegram: {
       default: { chatId: "-100XXXXXXXXXX", topicId: null },
       qa: { chatId: "-100XXXXXXXXXX", topicId: null },
