@@ -76,9 +76,20 @@ export async function onRequestPost({ request, env }) {
       }
     } else {
       // ---- Editing an existing account ----
+      // Compare against the ACTUAL existing values, not just "was this
+      // field present in the body" — accounts-admin.html's form always
+      // resubmits every field (officeId, allowedBrands, fullName, pid)
+      // whether or not the person actually touched it, so "field present"
+      // would wrongly count as "changing" even when the value is
+      // identical. This matters a lot for the SuperAdmin self-promotion
+      // bootstrap below, which requires ONLY role to be changing.
       const roleChanging = body.role !== undefined && body.role !== existingTarget.role;
-      const profileChanging = body.fullName !== undefined || body.pid !== undefined;
-      const accessChanging = body.officeId !== undefined || body.allowedBrands !== undefined;
+      const profileChanging =
+        (body.fullName !== undefined && body.fullName !== (existingTarget.fullName || "")) ||
+        (body.pid !== undefined && body.pid !== (existingTarget.pid || ""));
+      const accessChanging =
+        (body.officeId !== undefined && (body.officeId || null) !== (existingTarget.officeId || null)) ||
+        (body.allowedBrands !== undefined && JSON.stringify(body.allowedBrands) !== JSON.stringify(existingTarget.allowedBrands ?? []));
       const passwordChanging = !!body.password;
 
       if (roleChanging || accessChanging) {
