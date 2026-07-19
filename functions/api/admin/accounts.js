@@ -1,31 +1,52 @@
 /**
  * /api/admin/accounts
- *   GET                                  -> list accounts (no secrets)
- *   POST { action:"save", username, password?, role, officeId, allowedBrands, fullName?, pid? } -> create/update
- *     - `password` omitted when editing an existing account and not
- *       changing the password.
- *     - Any field omitted from the body keeps its existing value
- *       (saveAccount uses patch/merge semantics) — so a caller that only
- *       wants to update fullName/pid, say, doesn't have to resend
- *       role/officeId/allowedBrands just to avoid wiping them.
- *   POST { action:"delete", username }   -> delete
+ *   GET                                  -> list accounts (no secrets).
+ *     Requires rank >= senior (Senior needs this to pick a target for
+ *     assisted password resets).
+ *   POST { action:"save", username, password?, role?, officeId?, allowedBrands?, fullName?, pid? }
+ *     What's allowed depends on the caller's rank AND what's actually
+ *     changing — see the permission matrix below. Any field omitted from
+ *     the body keeps its existing value (saveAccount uses patch/merge
+ *     semantics).
+ *   POST { action:"delete", username }   -> requires rank >= admin, and
+ *     scoped the same way as create/reset below.
  *
- * Admin-gated — see authenticateAdmin() in _shared/accounts.js for the
- * two ways in (real admin login, or one-time bootstrap password).
+ * Permission matrix (see PROJECT_STATUS.md "Role hierarchy" for the
+ * full writeup) — each tier's "manage scope" is a literal allow-list,
+ * NOT "anything ranked below me":
+ *   - Senior's manage scope: Agent only.
+ *   - Admin's manage scope: Agent AND Senior.
+ *   - SuperAdmin: unrestricted.
+ *   Manage scope governs THREE actions identically: creating a new
+ *   account with that role, an assisted password-only reset targeting
+ *   an existing account with that role, and deleting an account with
+ *   that role.
+ *   - Editing role / officeId / allowedBrands on an EXISTING account:
+ *     SuperAdmin only — EXCEPT the one-time SuperAdmin self-promotion
+ *     bootstrap (an admin-or-above promoting THEIR OWN account to
+ *     "superadmin", only while no superadmin exists anywhere yet).
+ *   - Editing fullName / pid (profile fields) on an EXISTING account:
+ *     rank >= admin (Admin and SuperAdmin both allowed — Senior is not).
  */
-import { listAccounts, saveAccount, deleteAccount, authenticateAdmin } from "../../_shared/accounts.js";
+import { listAccounts, saveAccount, deleteAccount, getAccount, authenticateStaff, anySuperAdminExists, ROLE_RANK, rankOf } from "../../_shared/accounts.js";
+
+// Literal allow-lists, not a rank comparison — see file header.
+const MANAGE_SCOPE = {
+  senior: ["agent"],
+  admin: ["agent", "senior"],
+};
 
 export async function onRequestGet({ request, env }) {
   if (!env.THREADS_KV) return json({ ok: false, error: "THREADS_KV is not bound yet." }, 500);
-  const auth = await authenticateAdmin(request, env);
-  if (!auth.ok) return json({ ok: false, error: "Admin login required." }, 401);
+  const auth = await authenticateStaff(request, env, ROLE_RANK.senior);
+  if (!auth.ok) return json({ ok: false, error: "Not authorized." }, 401);
   return json({ ok: true, accounts: await listAccounts(env) });
 }
 
 export async function onRequestPost({ request, env }) {
   if (!env.THREADS_KV) return json({ ok: false, error: "THREADS_KV is not bound yet." }, 500);
-  const auth = await authenticateAdmin(request, env);
-  if (!auth.ok) return json({ ok: false, error: "Admin login required." }, 401);
+  const auth = await authenticateStaff(request, env, ROLE_RANK.senior);
+  if (!auth.ok) return json({ ok: false, error: "Not authorized." }, 401);
 
   let body;
   try {
@@ -34,16 +55,60 @@ export async function onRequestPost({ request, env }) {
     return json({ ok: false, error: "Invalid JSON body." }, 400);
   }
 
+  // Bootstrap mode (no real account yet) is treated as superadmin-rank
+  // for this one-time setup call — same trust level BRAND_EDIT_PASSWORD
+  // already had before any of this existed.
+  const actorRank = auth.account ? rankOf(auth.account.role) : ROLE_RANK.superadmin;
+  const actorRole = auth.account ? auth.account.role : "superadmin";
+  const actorUsername = auth.account ? auth.account.username : null;
+  const inScope = (targetRole) => actorRank === ROLE_RANK.superadmin || (MANAGE_SCOPE[actorRole] || []).includes(targetRole);
+
   if (body.action === "save") {
     if (!body.username) return json({ ok: false, error: "Username is required." }, 400);
+    const targetUsername = body.username.toLowerCase();
+    const existingTarget = await getAccount(env, targetUsername);
+
+    if (!existingTarget) {
+      // ---- Creating a brand-new account ----
+      const requestedRole = body.role || "agent";
+      if (!inScope(requestedRole)) {
+        return json({ ok: false, error: `You can only create accounts with role: ${(MANAGE_SCOPE[actorRole] || []).join(" or ")}.` }, 403);
+      }
+    } else {
+      // ---- Editing an existing account ----
+      const roleChanging = body.role !== undefined && body.role !== existingTarget.role;
+      const profileChanging = body.fullName !== undefined || body.pid !== undefined;
+      const accessChanging = body.officeId !== undefined || body.allowedBrands !== undefined;
+      const passwordChanging = !!body.password;
+
+      if (roleChanging || accessChanging) {
+        const isSelfPromotionToSuperAdmin =
+          actorUsername === targetUsername &&
+          body.role === "superadmin" &&
+          !accessChanging &&
+          actorRank >= ROLE_RANK.admin;
+        const superAdminAlreadyExists = await anySuperAdminExists(env);
+
+        if (actorRank < ROLE_RANK.superadmin && !(isSelfPromotionToSuperAdmin && !superAdminAlreadyExists)) {
+          return json({ ok: false, error: "Only SuperAdmin can change role, office, or brand access." }, 403);
+        }
+      }
+      if (profileChanging && actorRank < ROLE_RANK.admin) {
+        return json({ ok: false, error: "Only Admin or above can edit profile fields." }, 403);
+      }
+      if (passwordChanging && !roleChanging && !accessChanging) {
+        // Password-only change on someone else's account (an assisted reset).
+        if (!inScope(existingTarget.role)) {
+          return json({ ok: false, error: `You can only reset a password for: ${(MANAGE_SCOPE[actorRole] || []).join(" or ")}.` }, 403);
+        }
+      }
+    }
+
     try {
       const account = await saveAccount(env, {
         username: body.username,
         password: body.password || undefined,
-        // An admin resetting/setting a password is a different "who did
-        // this" than self-service — auth.account is null only in
-        // bootstrap mode (no real admin account exists yet).
-        passwordChangedBy: body.password ? (auth.account ? auth.account.username : "bootstrap-setup") : undefined,
+        passwordChangedBy: body.password ? (actorUsername || "bootstrap-setup") : undefined,
         role: body.role !== undefined ? body.role : undefined,
         officeId: body.officeId !== undefined ? (body.officeId || null) : undefined,
         allowedBrands: body.allowedBrands !== undefined ? body.allowedBrands : undefined,
@@ -57,7 +122,12 @@ export async function onRequestPost({ request, env }) {
   }
 
   if (body.action === "delete") {
+    if (actorRank < ROLE_RANK.admin) return json({ ok: false, error: "Not authorized." }, 403); // Senior has no delete access at all
     if (!body.username) return json({ ok: false, error: "Missing username." }, 400);
+    const target = await getAccount(env, body.username);
+    if (target && !inScope(target.role)) {
+      return json({ ok: false, error: `You can only delete: ${(MANAGE_SCOPE[actorRole] || []).join(" or ")}.` }, 403);
+    }
     await deleteAccount(env, body.username);
     return json({ ok: true });
   }

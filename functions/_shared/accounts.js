@@ -26,6 +26,13 @@
 const OFFICES_INDEX_KEY = "offices-index";
 const ACCOUNTS_INDEX_KEY = "accounts-index";
 
+// Role hierarchy — each tier can act on anything strictly below it (see
+// the per-endpoint checks in functions/api/admin/*.js and
+// functions/api/account/*.js for exactly what each tier can do).
+export const ROLE_RANK = { agent: 0, senior: 1, admin: 2, superadmin: 3 };
+const VALID_ROLES = Object.keys(ROLE_RANK);
+export function rankOf(role) { return ROLE_RANK[role] ?? ROLE_RANK.agent; }
+
 // ---- password hashing (PBKDF2 via Web Crypto, available in Workers) ----
 
 async function hashPassword(password, saltB64) {
@@ -144,7 +151,7 @@ export async function saveAccount(env, { username, password, passwordChangedBy, 
     username: key,
     salt,
     hash,
-    role: role !== undefined ? (role === "admin" ? "admin" : "agent") : (existing?.role || "agent"),
+    role: role !== undefined ? (VALID_ROLES.includes(role) ? role : "agent") : (existing?.role || "agent"),
     officeId: officeId !== undefined ? (officeId || null) : (existing?.officeId ?? null),
     allowedBrands: allowedBrands !== undefined
       ? (allowedBrands === "all" ? "all" : (Array.isArray(allowedBrands) ? allowedBrands : []))
@@ -174,9 +181,18 @@ export async function deleteAccount(env, username) {
   await env.THREADS_KV.put(ACCOUNTS_INDEX_KEY, JSON.stringify(usernames.filter((u) => u !== key)));
 }
 
+// "Admin-or-above exists" — governs the original bootstrap window (create
+// the very first admin-tier account with the BRAND_EDIT_PASSWORD).
 export async function anyAdminExists(env) {
   const accounts = await listAccounts(env);
-  return accounts.some((a) => a.role === "admin");
+  return accounts.some((a) => rankOf(a.role) >= ROLE_RANK.admin);
+}
+
+// Governs the SuperAdmin self-promotion bootstrap (see authenticateStaff
+// below) — once true, that path closes for good.
+export async function anySuperAdminExists(env) {
+  const accounts = await listAccounts(env);
+  return accounts.some((a) => a.role === "superadmin");
 }
 
 // ---- request-time auth ----
@@ -233,25 +249,34 @@ export async function verifyRequest(request, env) {
 }
 
 export function canSeeBrand(account, brandName) {
-  if (account.role === "admin") return true;
+  if (rankOf(account.role) >= ROLE_RANK.admin) return true; // admin & superadmin see everything
   if (account.allowedBrands === "all") return true;
   return Array.isArray(account.allowedBrands) && account.allowedBrands.includes(brandName);
 }
 
 /**
- * Gate for the admin-only account/office management endpoints. Two ways in:
- *   1. A real logged-in account with role "admin" (X-Agent-User/X-Agent-Pass).
- *   2. BOOTSTRAP MODE: if no admin account exists in KV yet at all, the
- *      existing BRAND_EDIT_PASSWORD secret works as a one-time key (sent
- *      as X-Bootstrap-Password) purely to let the business owner create
- *      the very first admin account. The instant one admin account
+ * Gate for the Account-Management endpoints, parameterized by minimum
+ * role rank. Two ways in:
+ *   1. A real logged-in account whose role rank >= minRank
+ *      (X-Agent-User/X-Agent-Pass).
+ *   2. BOOTSTRAP MODE: if no admin-or-above account exists in KV yet at
+ *      all, and minRank is admin or below, the existing
+ *      BRAND_EDIT_PASSWORD secret works as a one-time key (sent as
+ *      X-Bootstrap-Password) purely to let the business owner create the
+ *      very first admin account. The instant one admin-or-above account
  *      exists, this fallback stops being accepted — it's not a
  *      permanent second door, just a way to get started.
  */
-export async function authenticateAdmin(request, env) {
+export async function authenticateStaff(request, env, minRank) {
   const viaAccount = await verifyRequest(request, env);
-  if (viaAccount && viaAccount.role === "admin") return { ok: true, account: viaAccount };
+  if (viaAccount && rankOf(viaAccount.role) >= minRank) return { ok: true, account: viaAccount };
 
+  // Bootstrap mode grants FULL trust (any minRank, including superadmin
+  // operations like creating an Office) but ONLY while zero admin-or-above
+  // accounts exist anywhere — that's the entire initial-setup window
+  // (create the first Office, then the first admin account). The instant
+  // one admin-or-above account exists, this fallback stops being accepted
+  // for good, at any rank — it's not a permanent second door.
   const bootstrapPassword = request.headers.get("X-Bootstrap-Password");
   if (bootstrapPassword && env.BRAND_EDIT_PASSWORD && bootstrapPassword === env.BRAND_EDIT_PASSWORD) {
     const hasAdmin = await anyAdminExists(env);
@@ -259,4 +284,10 @@ export async function authenticateAdmin(request, env) {
   }
 
   return { ok: false };
+}
+
+// Back-compat alias — deletion-log.js and anywhere else that only ever
+// needs the "classic" admin-or-above gate can keep using this name.
+export async function authenticateAdmin(request, env) {
+  return authenticateStaff(request, env, ROLE_RANK.admin);
 }

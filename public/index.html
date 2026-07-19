@@ -291,10 +291,16 @@
       list.appendChild(a);
     });
 
-    // ---- Account Management (sidebar dropdown + 3 focused modals) ----
+    // ---- Account Management (sidebar dropdown + 4 focused modals) ----
+    // Rank matches functions/_shared/accounts.js ROLE_RANK exactly — keep
+    // these in sync if that ever changes.
+    const ROLE_RANK = { agent: 0, senior: 1, admin: 2, superadmin: 3 };
     const authInfo = window.AgentAuth.getAuth();
-    const isAdmin = authInfo && authInfo.role === "admin";
-    document.getElementById("subCreateAccount").style.display = isAdmin ? "flex" : "none";
+    const myRank = ROLE_RANK[authInfo?.role] ?? ROLE_RANK.agent;
+    const isSenior = myRank >= ROLE_RANK.senior;   // sees Create Account, and Reset Password gains an account-picker
+    const isAdmin = myRank >= ROLE_RANK.admin;     // sees Whitelist IP (view-only) and Agent Profile (view-only)
+    const isSuperAdmin = myRank >= ROLE_RANK.superadmin; // can actually change Whitelist IP / edit Agent Profile / assign any role
+    document.getElementById("subCreateAccount").style.display = isSenior ? "flex" : "none";
     document.getElementById("subWhitelistIp").style.display = isAdmin ? "flex" : "none";
     document.getElementById("subAgentProfile").style.display = isAdmin ? "flex" : "none";
 
@@ -309,6 +315,7 @@
     document.getElementById("subWhitelistIp").addEventListener("click", () => openAcctModal("whitelist"));
     document.getElementById("subResetPassword").addEventListener("click", () => openAcctModal("reset"));
     document.getElementById("subAgentProfile").addEventListener("click", () => openAcctModal("profile"));
+
 
     const acctBackdrop = document.getElementById("acctModalBackdrop");
     const acctTitle = document.getElementById("acctModalTitle");
@@ -354,12 +361,18 @@
         acctOffices = data.ok ? data.offices : [];
         const officeOptions = acctOffices.map((o) => `<option value="${o.id}">${acctEsc(o.name)}</option>`).join("");
         const brandPills = (window.BRANDS || []).map((b) => `<div class="brand-toggle-pill" data-brand="${acctEsc(b.name)}">${acctEsc(b.name).toUpperCase()}</div>`).join("");
+        // Manage scope is a literal allow-list per tier, not "below my
+        // rank" — Senior: agent only. Admin: agent + senior. SuperAdmin:
+        // anything. Server enforces this too; this just keeps the
+        // dropdown from offering a choice that would get rejected.
+        const manageScope = isSuperAdmin ? ["agent", "senior", "admin", "superadmin"] : (myRank === ROLE_RANK.admin ? ["agent", "senior"] : ["agent"]);
+        const roleOptions = manageScope.map((r) => `<option value="${r}">${r}</option>`).join("");
         acctBody.innerHTML = `
           <div class="field"><label>Username</label><input type="text" id="am_username" autocomplete="off" /></div>
           <div class="field"><label>Password</label><input type="password" id="am_password" autocomplete="new-password" /></div>
           <div class="field"><label>Full Name</label><input type="text" id="am_fullname" autocomplete="off" placeholder="e.g. Daniel Tan" /></div>
           <div class="field"><label>PSD</label><input type="text" id="am_pid" autocomplete="off" placeholder="e.g. PSD-014" /></div>
-          <div class="field"><label>Role</label><select id="am_role"><option value="agent">agent</option><option value="admin">admin</option></select></div>
+          <div class="field"><label>Role</label><select id="am_role">${roleOptions}</select></div>
           <div class="field"><label>Office</label><select id="am_office"><option value="">— none —</option>${officeOptions}</select></div>
           <div class="field">
             <div class="brand-toggle-label"><span>Can See Brands</span><span class="select-all-btn" id="am_selectAllBtn">Select All</span></div>
@@ -374,31 +387,37 @@
         const data = await res.json();
         acctOffices = data.ok ? data.offices : [];
         const officeOptions = acctOffices.map((o) => `<option value="${o.id}">${acctEsc(o.name)}</option>`).join("");
+        const ro = isSuperAdmin ? "" : "disabled";
         acctBody.innerHTML = `
-          <div class="field"><label>Office</label><select id="am_office_picker"><option value="">+ New Office</option>${officeOptions}</select></div>
-          <div class="field"><label>Office name</label><input type="text" id="am_office_name" /></div>
-          <div class="field"><label>Allowed IPs (one per line)</label><textarea id="am_office_ips" rows="4" placeholder="203.0.113.10"></textarea></div>`;
+          <div class="field"><label>Office</label><select id="am_office_picker" ${ro}><option value="">+ New Office</option>${officeOptions}</select></div>
+          <div class="field"><label>Office name</label><input type="text" id="am_office_name" ${ro} /></div>
+          <div class="field"><label>Allowed IPs (one per line)</label><textarea id="am_office_ips" rows="4" placeholder="203.0.113.10" ${ro}></textarea></div>
+          ${isSuperAdmin ? "" : '<p class="edit-modal-note">View only — SuperAdmin can edit.</p>'}`;
         document.getElementById("am_office_picker").addEventListener("change", (e) => {
           const office = acctOffices.find((o) => o.id === e.target.value);
           document.getElementById("am_office_name").value = office ? office.name : "";
           document.getElementById("am_office_ips").value = office ? (office.allowedIPs || []).join("\n") : "";
         });
+        document.getElementById("acctModalSave").style.display = isSuperAdmin ? "" : "none";
       }
 
-      if (mode === "reset" && isAdmin) {
+      if (mode === "reset" && isSenior) {
         acctTitle.textContent = "Reset Password";
         const res = await window.AgentAuth.authFetch("/api/admin/accounts");
         const data = await res.json();
-        acctAccounts = data.ok ? data.accounts : [];
+        // Manage scope allow-list: Senior -> agent only. Admin -> agent +
+        // senior. SuperAdmin -> everyone.
+        const manageScope = isSuperAdmin ? null : (myRank === ROLE_RANK.admin ? ["agent", "senior"] : ["agent"]);
+        acctAccounts = data.ok ? data.accounts.filter((a) => !manageScope || manageScope.includes(a.role)) : [];
         const accountOptions = acctAccounts.map((a) => `<option value="${acctEsc(a.username)}">${acctEsc(a.username)} (${acctEsc(a.role)})</option>`).join("");
         acctBody.innerHTML = `
-          <div class="field"><label>Account</label><select id="am_reset_account">${accountOptions}</select></div>
+          <div class="field"><label>Account</label><select id="am_reset_account">${accountOptions || '<option value="">— no eligible accounts —</option>'}</select></div>
           <div class="field"><label>New Password</label><input type="password" id="am_reset_newpass" autocomplete="new-password" /></div>
           <div class="field"><label>Confirm New Password</label><input type="password" id="am_reset_confirm" autocomplete="new-password" /></div>
-          <p class="edit-modal-note">Admin reset — the old password isn't needed.</p>`;
+          <p class="edit-modal-note">${isSuperAdmin ? "SuperAdmin reset" : `You can only reset a password for: ${manageScope.join(" or ")}`} — the old password isn't needed.</p>`;
       }
 
-      if (mode === "reset" && !isAdmin) {
+      if (mode === "reset" && !isSenior) {
         acctTitle.textContent = "Reset Password";
         acctBody.innerHTML = `
           <div class="field"><label>Current Password</label><input type="password" id="am_reset_current" autocomplete="current-password" /></div>
@@ -425,15 +444,19 @@
         const pwBy = a.lastPasswordChange
           ? `${timeAgoLocal(a.lastPasswordChange.at)}<span class="pw-by">by ${acctEsc(a.lastPasswordChange.by)}</span>`
           : "—";
+        // Admin can edit fullName/PSD; only SuperAdmin can also change Role.
+        const editCell = isAdmin
+          ? `<button type="button" class="row-btn" data-edit="${acctEsc(a.username)}" title="Edit name/PSD${isSuperAdmin ? "/role" : ""}">✏️</button>`
+          : "";
         return `
           <tr data-username="${acctEsc(a.username)}">
             <td>${acctEsc(a.username)}</td>
-            <td><span class="role-tag">${acctEsc(a.role)}</span></td>
+            <td class="cell-role"><span class="role-tag">${acctEsc(a.role)}</span></td>
             <td class="cell-fullname">${acctEsc(a.fullName || "—")}</td>
             <td class="cell-pid">${acctEsc(a.pid || "—")}</td>
             <td>${timeAgoLocal(a.lastActiveAt)}</td>
             <td>${pwBy}</td>
-            <td><button type="button" class="row-btn" data-edit="${acctEsc(a.username)}" title="Edit name/PID">✏️</button></td>
+            <td>${editCell}</td>
           </tr>`;
       }).join("");
       acctBody.innerHTML = `
@@ -442,7 +465,8 @@
             <thead><tr><th>Username</th><th>Role</th><th>Full Name</th><th>PSD</th><th>Last Log In Time</th><th>Password Changed</th><th></th></tr></thead>
             <tbody>${rows || '<tr><td colspan="7" style="color:var(--ink-soft);">No accounts yet.</td></tr>'}</tbody>
           </table>
-        </div>`;
+        </div>
+        ${isAdmin ? "" : '<p class="edit-modal-note">View only.</p>'}`;
       acctBody.querySelectorAll("[data-edit]").forEach((btn) => {
         btn.addEventListener("click", () => editAgentProfileRow(btn.dataset.edit));
       });
@@ -452,6 +476,12 @@
       const account = acctAccounts.find((a) => a.username === username);
       if (!account) return;
       const row = acctBody.querySelector(`tr[data-username="${CSS.escape(username)}"]`);
+      // Role is SuperAdmin-only — Admin sees it as read-only text, not a dropdown.
+      if (isSuperAdmin) {
+        const roleOptions = ["agent", "senior", "admin", "superadmin"]
+          .map((r) => `<option value="${r}" ${r === account.role ? "selected" : ""}>${r}</option>`).join("");
+        row.querySelector(".cell-role").innerHTML = `<select class="edit-role">${roleOptions}</select>`;
+      }
       row.querySelector(".cell-fullname").innerHTML = `<input type="text" class="edit-fullname" value="${acctEsc(account.fullName || "")}" />`;
       row.querySelector(".cell-pid").innerHTML = `<input type="text" class="edit-pid" value="${acctEsc(account.pid || "")}" />`;
       const btnCell = row.lastElementChild;
@@ -464,9 +494,12 @@
     async function saveAgentProfileRow(username, row) {
       const fullName = row.querySelector(".edit-fullname").value.trim();
       const pid = row.querySelector(".edit-pid").value.trim();
+      const roleEl = row.querySelector(".edit-role"); // only present for SuperAdmin
+      const payload = { action: "save", username, fullName, pid };
+      if (roleEl) payload.role = roleEl.value;
       const res = await window.AgentAuth.authFetch("/api/admin/accounts", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "save", username, fullName, pid }),
+        body: JSON.stringify(payload),
       });
       const data = await res.json();
       if (!data.ok) { alert(data.error || "Save failed."); return; }
@@ -484,7 +517,7 @@
     document.getElementById("acctModalSave").addEventListener("click", async () => {
       if (acctMode === "create") return acctSaveCreate();
       if (acctMode === "whitelist") return acctSaveWhitelist();
-      if (acctMode === "reset") return isAdmin ? acctSaveResetAdmin() : acctSaveResetSelf();
+      if (acctMode === "reset") return isSenior ? acctSaveResetAdmin() : acctSaveResetSelf();
     });
 
     function wireBrandTogglePicker() {

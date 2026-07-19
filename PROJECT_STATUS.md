@@ -520,6 +520,83 @@ flow succeeds, old password stops working, new password works, and
 role/office/brands survive the change) — all passing, but the actual
 modals haven't been clicked through in a browser yet.
 
+### Role hierarchy — Agent/Senior/Admin/SuperAdmin (this session, replaces the old binary agent/admin)
+Business owner wanted finer-grained control than just "agent vs admin".
+New hierarchy, each tier strictly scoped (not a vague "higher rank can
+do everything lower ranks can" — the actual rules below are literal,
+not a sliding rank comparison):
+
+| Capability | Agent | Senior | Admin | SuperAdmin |
+|---|---|---|---|---|
+| Reset own password | ✅ | ✅ | ✅ | ✅ |
+| Reset an **Agent's** password (assisted) | ❌ | ✅ | ✅ | ✅ |
+| Reset a **Senior's** password (assisted) | ❌ | ❌ | ✅ | ✅ |
+| Reset an Admin/SuperAdmin's password | ❌ | ❌ | ❌ | ✅ (anyone) |
+| Create an **Agent** account | ❌ | ✅ | ✅ | ✅ |
+| Create a **Senior** account | ❌ | ❌ | ✅ | ✅ |
+| Create an Admin/SuperAdmin account | ❌ | ❌ | ❌ | ✅ (any role) |
+| Delete an **Agent** account | ❌ | ❌ (no delete access at all) | ✅ | ✅ |
+| Delete a **Senior** account | ❌ | ❌ | ✅ | ✅ |
+| Delete an Admin/SuperAdmin account | ❌ | ❌ | ❌ | ✅ |
+| View Whitelist IP (Offices) | ❌ | ❌ | 👁️ view only | ✅ view + edit |
+| View Agent Profile table | ❌ | ❌ | ✅ view | ✅ view |
+| Edit Agent Profile fullName/PSD | ❌ | ❌ | ✅ | ✅ |
+| Edit Agent Profile Role | ❌ | ❌ | ❌ | ✅ |
+
+Key point: each tier's authority is a **literal allow-list** ("Senior
+manages Agent"; "Admin manages Agent + Senior"), not a sliding "anything
+below my own rank" comparison — Admin's reach stops at Senior, it never
+extends to other Admins or SuperAdmin regardless of how the numbers
+compare. This went through two rounds of correction with the business
+owner: v1 used "below my rank" (wrong), v2 used "Agent only for
+everyone above Agent" (also wrong — Admin was supposed to reach Senior
+too), this is the corrected v3. `MANAGE_SCOPE` in
+`functions/api/admin/accounts.js` is the literal allow-list:
+`{ senior: ["agent"], admin: ["agent", "senior"] }` (superadmin bypasses
+the map entirely). Profile-field editing (fullName/pid) is its own
+separate rank check (`rank >= admin`), independent of the manage-scope
+allow-list, since it applies to editing ANY account's profile, not
+scoped by the target's role the way create/reset/delete are.
+
+**SuperAdmin self-promotion bootstrap.** Changing an EXISTING account's
+role now requires SuperAdmin — but that's a chicken-and-egg problem for
+the very first SuperAdmin (an Admin can't grant themselves a rank they
+don't have). Solution: **while zero SuperAdmin accounts exist anywhere**,
+any Admin-or-above account can promote **only its own account** to
+`superadmin` (via `accounts-admin.html`'s Edit Account, or Home's Agent
+Profile once you're already Admin-tier — Agent Profile edit itself is
+SuperAdmin-gated, so realistically this has to happen via
+`accounts-admin.html`). The instant one SuperAdmin account exists
+anywhere, this path closes for good — same "one-time door, not a
+permanent backdoor" pattern as the original BRAND_EDIT_PASSWORD
+bootstrap. **To actually do this: log into `accounts-admin.html` as your
+existing Admin account, click Edit on your own row, change Role to
+`superadmin`, save.**
+
+Implementation: `functions/_shared/accounts.js` now exports `ROLE_RANK`
+(`{agent:0, senior:1, admin:2, superadmin:3}`) and a rank-parameterized
+`authenticateStaff(request, env, minRank)` (replacing the old binary
+`authenticateAdmin`, kept as a thin alias for `deletion-log.js` which is
+still simply "admin-or-above"). `functions/api/admin/accounts.js` and
+`functions/api/admin/offices.js` both got a full rewrite of their
+permission checks along these exact lines — see the comment blocks at
+the top of each file for the precise rule for each action.
+
+**Verified with a new 24-check automated test** (`role_hierarchy_test.mjs`,
+not shipped in the repo, was a throwaway verification script) covering:
+bootstrap can still create the first Office + Admin (regression-checked,
+since tightening Whitelist IP to SuperAdmin-only initially broke this —
+fixed by making bootstrap grant full trust while zero admin-or-above
+accounts exist, not capped at admin-equivalent), SuperAdmin
+self-promotion works once and then locks out, Senior capped to Agent
+only, Admin's expanded scope (Agent + Senior) for create/reset/delete
+but confirmed still blocked from touching other Admins, Admin can now
+edit profile fields but still can't change role, SuperAdmin unrestricted
+everywhere. All 24/24 passing, plus the original 20-check account-system
+suite and 10-check Agent Profile suite were re-run and still pass (54
+total across the whole account system this session). **Not yet
+live-tested** in the actual browser UI.
+
 ### Agent Profile (this session, 4th Account Management sub-item)
 New admin-only sub-item under the Home sidebar's Account Management —
 opens a wide table modal listing every account with:
