@@ -16,6 +16,7 @@
   --panel: rgba(255, 255, 255, 0.45);
   --panel-border: rgba(255, 255, 255, 0.6);
   --wordmark: #4338ca;
+  --wordmark-gradient: linear-gradient(90deg, #4338ca, #6d5ce8, #8b7ff5, #6d5ce8, #4338ca);
   --sidebar-bg: rgba(255, 255, 255, 0.28);
   --sidebar-item-bg: rgba(255, 255, 255, 0.55);
   --sidebar-item-hover: rgba(255, 255, 255, 0.82);
@@ -53,6 +54,7 @@
   --panel: rgba(18, 22, 46, 0.92);
   --panel-border: rgba(255, 255, 255, 0.08);
   --wordmark: #f3c463;
+  --wordmark-gradient: linear-gradient(90deg, #e0a83f, #fff2cf, #d9a53c, #f3c463, #e0a83f);
   --sidebar-bg: rgba(15, 19, 40, 0.75);
   --sidebar-item-bg: rgba(255, 255, 255, 0.03);
   --sidebar-item-hover: rgba(255, 255, 255, 0.07);
@@ -130,19 +132,29 @@ a { color: inherit; text-decoration: none; }
 .wordmark {
   font-family: var(--font-display);
   font-weight: 700;
-  font-size: 16px;
-  color: var(--wordmark);
+  font-size: 17px;
   letter-spacing: 0.01em;
+  /* Slow gradient drift — the gold/indigo tone slowly breathes/shifts
+     rather than staying a flat color (dark theme: gold via
+     --wordmark-gradient; light theme: indigo, same variable, different
+     value — see the two [data-theme] blocks near the top of this file).
+     Font-size (17px) was measured to visually match "HEYVIP" as it's
+     actually rendered inside logo.webp, not an arbitrary "bigger"
+     number — see PROJECT_STATUS.md for the reasoning if this ever needs
+     revisiting. Respects prefers-reduced-motion below. */
+  background: var(--wordmark-gradient);
+  background-size: 300% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: wordmark-drift 6s ease-in-out infinite;
 }
-.wordmark::after {
-  content: "";
-  display: inline-block;
-  width: 5px; height: 5px;
-  margin-left: 8px;
-  border-radius: 50%;
-  background: var(--accent-gold);
-  box-shadow: 0 0 6px var(--accent-gold);
-  vertical-align: middle;
+@keyframes wordmark-drift {
+  0%, 100% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .wordmark { animation: none; background-position: 0% 50%; }
 }
 
 .topbar-right { display: flex; align-items: center; gap: 10px; }
