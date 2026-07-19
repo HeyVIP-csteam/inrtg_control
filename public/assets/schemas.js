@@ -9,11 +9,11 @@
 // Rename / add your real brands here. The `id` must match the brand key
 // used in functions/_shared/routing.js on the server.
 const BRANDS = [
-  { id: "betvisa", name: "BetVisa" },
-  { id: "betjili", name: "Betjili" },
   { id: "crickex", name: "Crickex" },
-  { id: "jeetway", name: "Jeetway" },
+  { id: "betjili", name: "Betjili" },
   { id: "mostplay", name: "Mostplay" },
+  { id: "betvisa", name: "BetVisa" },
+  { id: "jeetway", name: "Jeetway" },
 ];
 
 // Every module gets the same attachment slot (screenshots/PDFs, shown as a

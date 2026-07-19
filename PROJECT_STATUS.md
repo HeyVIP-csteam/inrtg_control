@@ -698,6 +698,28 @@ whether that's acceptable for this internal tool).
    grows a lot, the fix is simply upgrading to the Workers Paid plan
    ($5/mo minimum) — no code changes needed, limits jump to ~1M/month.
 
+### Brand dropdown order + "Platform: X INR" formatting (this session)
+- `public/assets/schemas.js`'s `BRANDS` array reordered to Crickex,
+  Betjili, Mostplay, BetVisa, Jeetway — every module's brand dropdown
+  (and the Home page brand-pill row) follows this array's order directly,
+  so this one change updates all of them.
+- Every TG-message "Platform"/"Brand" labeled **row** (not the title/
+  header lines, not the Google Sheet columns — those stay as the plain
+  brand name) now reads `"<Brand> INR"`, e.g. `Platform: Crickex INR`.
+  Centralized in a `brandInrLabel()` helper in `functions/api/submit.js`,
+  applied at the three places a labeled brand row gets rendered:
+  `buildPromotionRequestMessage`, `resolveFieldValue` (the shared
+  MESSAGE_TEMPLATE row renderer used by QA/Risk Issue/Genie Issue/Daily
+  Report), and the Account Issue / Risk Issue dynamic-fallback message
+  builders. Verified by rendering sample output in Node — not yet sent
+  through a live Telegram message.
+- **Still pending, waiting on the business owner:** unifying each
+  module's Telegram routing (QA, Account Issue, Risk Issue, Daily
+  Report, Genie Issue) so all 5 brands go to ONE fixed group/topic per
+  module — same treatment already done for Promotion Request earlier
+  this session. Need a `t.me/c/.../N` link (or just the group link if no
+  topic) for each of those modules before this can be done.
+
 ## Recurring non-code gotcha (from the original handoff, still true)
 GitHub web upload can cause duplicate files or misplaced content if the
 wrong folder depth is dragged in. Always sanity-check file contents after
