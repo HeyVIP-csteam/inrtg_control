@@ -44,7 +44,7 @@
     let control = "";
 
     if (f.type === "textarea") {
-      control = `<textarea name="${f.key}" placeholder="${f.placeholder || ""}"></textarea>`;
+      control = `<textarea name="${f.key}" placeholder="${f.placeholder || ""}" autocomplete="off"></textarea>`;
     } else if (f.type === "select") {
       const opts = f.optionsByBrand ? [] : f.options; // optionsByBrand fields start empty, filled in by refreshBrandDependentOptions()
       control = `<select name="${f.key}">
@@ -53,12 +53,12 @@
       </select>`;
     } else if (f.generate) {
       control = `<div class="field-with-btn">
-        <input type="${f.type}" name="${f.key}" placeholder="${f.placeholder || ""}" />
+        <input type="${f.type}" name="${f.key}" placeholder="${f.placeholder || ""}" autocomplete="off" />
         <button type="button" class="btn-generate" title="Generate next ${f.label}">🔄</button>
       </div>
       <p class="field-note" id="note-${f.key}"></p>`;
     } else {
-      control = `<input type="${f.type}" name="${f.key}" placeholder="${f.placeholder || ""}" />`;
+      control = `<input type="${f.type}" name="${f.key}" placeholder="${f.placeholder || ""}" autocomplete="off" />`;
     }
 
     wrap.innerHTML = `<label>${f.label} ${req}</label>${control}`;

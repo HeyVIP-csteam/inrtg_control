@@ -29,7 +29,7 @@
     <aside class="threads-sidebar">
       <div class="threads-search">
         <span>🔍</span>
-        <input type="text" id="threadSearch" placeholder="Search username, TID, UID..." />
+        <input type="text" id="threadSearch" placeholder="Search username, TID, UID..." autocomplete="off" />
       </div>
 
       <div class="threads-section" id="activeSection">
@@ -432,7 +432,7 @@
             <div class="reply-input-wrap">
               <button class="attach-btn" id="attachBtn" title="Attach screenshot or PDF">🔗</button>
               <input type="file" id="replyFileInput" accept="image/png,image/jpeg,application/pdf" hidden />
-              <input type="text" id="replyInput" placeholder="Reply into the Telegram thread..." />
+              <input type="text" id="replyInput" placeholder="Reply into the Telegram thread..." autocomplete="off" />
             </div>
             <button id="replySend">Send</button>
           </div>

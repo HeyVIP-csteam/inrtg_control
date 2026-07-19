@@ -78,7 +78,7 @@
       <div id="bootstrapFields" style="display:none;">
         <div class="field">
           <label>Existing edit password (BRAND_EDIT_PASSWORD)</label>
-          <input type="password" id="bootstrapPassword" />
+          <input type="password" id="bootstrapPassword" autocomplete="off" />
         </div>
       </div>
 
@@ -104,8 +104,8 @@
         <h3 id="officeFormTitle">New Office</h3>
         <div id="officeMsg"></div>
         <input type="hidden" id="officeId" />
-        <div class="field"><label>Office name</label><input type="text" id="officeName" placeholder="e.g. Office A" /></div>
-        <div class="field"><label>Allowed IPs (one per line)</label><textarea id="officeIPs" rows="3" placeholder="203.0.113.10&#10;203.0.113.11"></textarea></div>
+        <div class="field"><label>Office name</label><input type="text" id="officeName" placeholder="e.g. Office A" autocomplete="off" /></div>
+        <div class="field"><label>Allowed IPs (one per line)</label><textarea id="officeIPs" rows="3" placeholder="203.0.113.10&#10;203.0.113.11" autocomplete="off"></textarea></div>
         <div class="form-actions">
           <button class="btn-submit" id="officeSaveBtn"><span>💾</span><span>Save Office</span></button>
           <button class="btn-submit" id="officeCancelBtn" style="background:var(--field-bg); color:var(--ink); box-shadow:none; display:none;">Cancel edit</button>

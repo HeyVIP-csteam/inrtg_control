@@ -28,7 +28,7 @@
       <p class="edit-modal-title" id="editModalTitle">Edit brand</p>
       <div class="field">
         <label>Link (opens when the pill is clicked)</label>
-        <input type="text" id="editLink" placeholder="https://..." />
+        <input type="text" id="editLink" placeholder="https://..." autocomplete="off" />
       </div>
       <p class="edit-modal-note" id="editModalNote"></p>
       <div class="edit-modal-actions">
@@ -367,8 +367,8 @@
         const ro = isSuperAdmin ? "" : "disabled";
         acctBody.innerHTML = `
           <div class="field"><label>Office</label><select id="am_office_picker" ${ro}><option value="">+ New Office</option>${officeOptions}</select></div>
-          <div class="field"><label>Office name</label><input type="text" id="am_office_name" ${ro} /></div>
-          <div class="field"><label>Allowed IPs (one per line)</label><textarea id="am_office_ips" rows="4" placeholder="203.0.113.10" ${ro}></textarea></div>
+          <div class="field"><label>Office name</label><input type="text" id="am_office_name" ${ro} autocomplete="off" /></div>
+          <div class="field"><label>Allowed IPs (one per line)</label><textarea id="am_office_ips" rows="4" placeholder="203.0.113.10" ${ro} autocomplete="off"></textarea></div>
           ${isSuperAdmin ? "" : '<p class="edit-modal-note">View only — SuperAdmin can edit.</p>'}`;
         document.getElementById("am_office_picker").addEventListener("change", (e) => {
           const office = acctOffices.find((o) => o.id === e.target.value);
@@ -455,12 +455,12 @@
               <span class="route-tag${r.isOverride ? " custom" : ""}">${r.isOverride ? "custom" : "default"}</span>
             </div>
             <div class="tgroute-fields">
-              <input type="text" class="tgroute-chatid" placeholder="Chat ID e.g. -1001234567890" value="${acctEsc(r.chatId)}" />
-              <input type="text" class="tgroute-topicid" placeholder="Topic ID (optional)" value="${r.topicId ?? ""}" />
-            </div>
-            <div class="tgroute-row-actions">
-              <button type="button" class="tgroute-action-btn tgroute-save">Save</button>
-              ${r.isOverride ? '<button type="button" class="tgroute-action-btn tgroute-action-secondary tgroute-reset">Reset</button>' : ""}
+              <input type="text" class="tgroute-chatid" placeholder="Chat ID e.g. -1001234567890" value="${acctEsc(r.chatId)}" autocomplete="off" />
+              <input type="text" class="tgroute-topicid" placeholder="Topic ID (optional)" value="${r.topicId ?? ""}" autocomplete="off" />
+              <div class="tgroute-row-actions">
+                <button type="button" class="tgroute-action-btn tgroute-save">Save</button>
+                ${r.isOverride ? '<button type="button" class="tgroute-action-btn tgroute-action-secondary tgroute-reset">Reset</button>' : ""}
+              </div>
             </div>
           </div>`;
       }).join("");
@@ -568,8 +568,8 @@
           .map((r) => `<option value="${r}" ${r === account.role ? "selected" : ""}>${r}</option>`).join("");
         row.querySelector(".cell-role").innerHTML = `<select class="edit-role">${roleOptions}</select>`;
       }
-      row.querySelector(".cell-fullname").innerHTML = `<input type="text" class="edit-fullname" value="${acctEsc(account.fullName || "")}" />`;
-      row.querySelector(".cell-pid").innerHTML = `<input type="text" class="edit-pid" value="${acctEsc(account.pid || "")}" />`;
+      row.querySelector(".cell-fullname").innerHTML = `<input type="text" class="edit-fullname" value="${acctEsc(account.fullName || "")}" autocomplete="off" />`;
+      row.querySelector(".cell-pid").innerHTML = `<input type="text" class="edit-pid" value="${acctEsc(account.pid || "")}" autocomplete="off" />`;
       const btnCell = row.lastElementChild;
       btnCell.innerHTML = `<button type="button" class="row-btn" title="Save">✅</button><button type="button" class="row-btn" title="Cancel">✖️</button>`;
       const [saveBtn, cancelBtn] = btnCell.querySelectorAll("button");
