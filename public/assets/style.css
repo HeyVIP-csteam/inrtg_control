@@ -221,6 +221,8 @@ a { color: inherit; text-decoration: none; }
   opacity: 0;
   pointer-events: none;
   transition: opacity 0.18s ease;
+  overflow-y: auto;
+  padding: 24px 12px;
 }
 .edit-modal-backdrop.is-open { opacity: 1; pointer-events: auto; }
 .edit-modal {
@@ -270,7 +272,7 @@ a { color: inherit; text-decoration: none; }
 .agent-profile-table .row-btn { background: none; border: none; cursor: pointer; font-size: 13px; padding: 2px 4px; }
 
 /* ---- TG Group / Channel (live-editable Telegram routing) ---- */
-.tgroute-layout { display: flex; gap: 14px; max-height: 440px; }
+.tgroute-layout { display: flex; gap: 14px; max-height: 78vh; }
 .tgroute-brands {
   flex-shrink: 0; width: 150px; display: flex; flex-direction: column; gap: 6px;
   overflow-y: auto; padding-right: 4px;
@@ -305,11 +307,19 @@ a { color: inherit; text-decoration: none; }
   flex: 1; min-width: 0; background: var(--card-bg); border: 1px solid var(--border); border-radius: 8px;
   padding: 7px 9px; font-size: 12px; color: var(--ink); font-family: inherit;
 }
-.tgroute-row-actions { display: flex; justify-content: flex-end; gap: 4px; margin-top: 6px; }
-.tgroute-row-actions .row-btn { font-size: 14px; padding: 3px 6px; border-radius: 6px; }
-.tgroute-row-actions .row-btn:hover { background: rgba(0, 0, 0, 0.08); }
+.tgroute-row-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 8px; }
+.tgroute-action-btn {
+  font-size: 11.5px; font-weight: 700; padding: 6px 14px; border-radius: 8px;
+  cursor: pointer; border: 1.5px solid var(--accent-gold); color: #0f1220;
+  background: var(--accent-gold); transition: all 0.15s ease;
+}
+.tgroute-action-btn:hover { transform: translateY(-1px); box-shadow: 0 4px 12px -4px rgba(200, 145, 47, 0.5); }
+.tgroute-action-btn.tgroute-action-secondary {
+  background: none; color: var(--ink-soft); border-color: var(--border);
+}
+.tgroute-action-btn.tgroute-action-secondary:hover { border-color: var(--ink-soft); color: var(--ink); box-shadow: none; }
 @media (max-width: 640px) {
-  .tgroute-layout { flex-direction: column; max-height: none; }
+  .tgroute-layout { flex-direction: column; max-height: 70vh; }
   .tgroute-brands { width: 100%; flex-direction: row; flex-wrap: wrap; }
 }
 

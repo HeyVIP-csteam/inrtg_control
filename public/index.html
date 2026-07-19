@@ -459,8 +459,8 @@
               <input type="text" class="tgroute-topicid" placeholder="Topic ID (optional)" value="${r.topicId ?? ""}" />
             </div>
             <div class="tgroute-row-actions">
-              <button type="button" class="row-btn tgroute-save" title="Save">✅</button>
-              ${r.isOverride ? '<button type="button" class="row-btn tgroute-reset" title="Reset to default">↩️</button>' : ""}
+              <button type="button" class="tgroute-action-btn tgroute-save">Save</button>
+              ${r.isOverride ? '<button type="button" class="tgroute-action-btn tgroute-action-secondary tgroute-reset">Reset</button>' : ""}
             </div>
           </div>`;
       }).join("");
