@@ -26,11 +26,9 @@
   .admin-table th {
     text-align: left; font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.03em;
     color: var(--ink-soft); padding: 8px 12px; white-space: nowrap;
-    border-bottom: 1px solid var(--border); border-right: 1px solid rgba(148, 163, 184, 0.18);
+    border-bottom: 1px solid var(--border);
   }
-  .admin-table th:last-child { border-right: none; }
-  .admin-table td { padding: 10px 12px; border-bottom: 1px solid var(--border); vertical-align: middle; border-right: 1px solid rgba(148, 163, 184, 0.18); }
-  .admin-table td:last-child { border-right: none; }
+  .admin-table td { padding: 10px 12px; border-bottom: 1px solid var(--border); vertical-align: middle; }
   .admin-table .row-actions { display: flex; gap: 8px; }
   .admin-table .row-actions button { background: none; border: none; cursor: pointer; font-size: 13px; color: var(--label-blue); }
   .admin-table .row-actions button.danger { color: #e0577a; }
@@ -118,7 +116,7 @@
       <div class="admin-card">
         <h3>Existing Offices</h3>
         <table class="admin-table">
-          <thead><tr><th>Name</th><th>Allowed IPs</th><th></th></tr></thead>
+          <thead><tr><th>Name</th><th>Allowed IPs</th><th>Actions</th></tr></thead>
           <tbody id="officesTableBody"></tbody>
         </table>
       </div>
@@ -153,7 +151,7 @@
       <div class="admin-card">
         <h3>Existing Accounts</h3>
         <table class="admin-table">
-          <thead><tr><th>Username</th><th>Full Name</th><th>PID</th><th>Role</th><th>Office</th><th>Brands</th><th>Last Login</th><th>Pwd Changed</th><th></th></tr></thead>
+          <thead><tr><th>Username</th><th>Full Name</th><th>PID</th><th>Role</th><th>Office</th><th>Brands</th><th>Last Login</th><th>Pwd Changed</th><th>Actions</th></tr></thead>
           <tbody id="accountsTableBody"></tbody>
         </table>
       </div>
