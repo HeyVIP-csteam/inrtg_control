@@ -125,6 +125,8 @@
         <input type="hidden" id="accountOriginalUsername" />
         <div class="field"><label>Username</label><input type="text" id="accountUsername" autocomplete="off" /></div>
         <div class="field"><label>Password <span id="passwordHint" style="font-weight:400; color:var(--ink-soft);"></span></label><input type="password" id="accountPassword" autocomplete="new-password" /></div>
+        <div class="field"><label>Full Name</label><input type="text" id="accountFullName" autocomplete="off" placeholder="e.g. Daniel Tan" /></div>
+        <div class="field"><label>PID</label><input type="text" id="accountPid" autocomplete="off" placeholder="e.g. PID-014" /></div>
         <div class="field">
           <label>Role</label>
           <select id="accountRole"><option value="agent">agent</option><option value="admin">admin</option></select>
@@ -145,7 +147,7 @@
       <div class="admin-card">
         <h3>Existing Accounts</h3>
         <table class="admin-table">
-          <thead><tr><th>Username</th><th>Role</th><th>Office</th><th>Brands</th><th></th></tr></thead>
+          <thead><tr><th>Username</th><th>Full Name</th><th>PID</th><th>Role</th><th>Office</th><th>Brands</th><th>Last Active</th><th>Password Changed</th><th></th></tr></thead>
           <tbody id="accountsTableBody"></tbody>
         </table>
       </div>
@@ -362,23 +364,41 @@
       renderAccountsTable();
     }
 
+    function timeAgo(iso) {
+      if (!iso) return "—";
+      const diffMs = Date.now() - new Date(iso).getTime();
+      const mins = Math.floor(diffMs / 60000);
+      if (mins < 1) return "just now";
+      if (mins < 60) return `${mins}m ago`;
+      const hrs = Math.floor(mins / 60);
+      if (hrs < 24) return `${hrs}h ago`;
+      return `${Math.floor(hrs / 24)}d ago`;
+    }
+
     function renderAccountsTable() {
       const body = document.getElementById("accountsTableBody");
       body.innerHTML = accounts.map((a) => {
         const officeName = offices.find((o) => o.id === a.officeId)?.name || "—";
         const brands = a.allowedBrands === "all" ? "All" : (a.allowedBrands || []).join(", ") || "—";
+        const pwChanged = a.lastPasswordChange
+          ? `${timeAgo(a.lastPasswordChange.at)} <span style="color:var(--ink-soft); font-size:11px;">by ${escapeHtml(a.lastPasswordChange.by)}</span>`
+          : "—";
         return `
         <tr>
           <td>${escapeHtml(a.username)}</td>
+          <td>${escapeHtml(a.fullName || "—")}</td>
+          <td>${escapeHtml(a.pid || "—")}</td>
           <td>${escapeHtml(a.role)}</td>
           <td>${escapeHtml(officeName)}</td>
           <td>${escapeHtml(brands)}</td>
+          <td>${timeAgo(a.lastActiveAt)}</td>
+          <td>${pwChanged}</td>
           <td class="row-actions">
             <button data-edit-account="${a.username}">Edit</button>
             <button class="danger" data-delete-account="${a.username}">Delete</button>
           </td>
         </tr>`;
-      }).join("") || `<tr><td colspan="5" style="color:var(--ink-soft);">No accounts yet.</td></tr>`;
+      }).join("") || `<tr><td colspan="9" style="color:var(--ink-soft);">No accounts yet.</td></tr>`;
       body.querySelectorAll("[data-edit-account]").forEach((b) => b.addEventListener("click", () => editAccount(b.dataset.editAccount)));
       body.querySelectorAll("[data-delete-account]").forEach((b) => b.addEventListener("click", () => deleteAccount(b.dataset.deleteAccount)));
     }
@@ -390,6 +410,8 @@
       document.getElementById("accountUsername").value = a.username;
       document.getElementById("accountPassword").value = "";
       document.getElementById("passwordHint").textContent = "(leave blank to keep current password)";
+      document.getElementById("accountFullName").value = a.fullName || "";
+      document.getElementById("accountPid").value = a.pid || "";
       document.getElementById("accountRole").value = a.role;
       document.getElementById("accountOffice").value = a.officeId || "";
       const allBrands = a.allowedBrands === "all";
@@ -405,6 +427,8 @@
       document.getElementById("accountUsername").value = "";
       document.getElementById("accountPassword").value = "";
       document.getElementById("passwordHint").textContent = "";
+      document.getElementById("accountFullName").value = "";
+      document.getElementById("accountPid").value = "";
       document.getElementById("accountRole").value = "agent";
       document.getElementById("accountOffice").value = "";
       document.getElementById("accountAllBrands").checked = false;
@@ -429,6 +453,8 @@
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           action: "save", username, password: password || undefined,
+          fullName: document.getElementById("accountFullName").value.trim(),
+          pid: document.getElementById("accountPid").value.trim(),
           role: document.getElementById("accountRole").value,
           officeId: document.getElementById("accountOffice").value || null,
           allowedBrands,

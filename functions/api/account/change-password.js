@@ -48,6 +48,7 @@ export async function onRequestPost({ request, env }) {
   await saveAccount(env, {
     username: full.username,
     password: newPassword,
+    passwordChangedBy: full.username, // self-service — always their own name
     role: full.role,
     officeId: full.officeId,
     allowedBrands: full.allowedBrands,

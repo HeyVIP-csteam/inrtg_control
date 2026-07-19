@@ -1,9 +1,13 @@
 /**
  * /api/admin/accounts
  *   GET                                  -> list accounts (no secrets)
- *   POST { action:"save", username, password?, role, officeId, allowedBrands } -> create/update
+ *   POST { action:"save", username, password?, role, officeId, allowedBrands, fullName?, pid? } -> create/update
  *     - `password` omitted when editing an existing account and not
  *       changing the password.
+ *     - Any field omitted from the body keeps its existing value
+ *       (saveAccount uses patch/merge semantics) — so a caller that only
+ *       wants to update fullName/pid, say, doesn't have to resend
+ *       role/officeId/allowedBrands just to avoid wiping them.
  *   POST { action:"delete", username }   -> delete
  *
  * Admin-gated — see authenticateAdmin() in _shared/accounts.js for the
@@ -35,10 +39,16 @@ export async function onRequestPost({ request, env }) {
     try {
       const account = await saveAccount(env, {
         username: body.username,
-        password: body.password || null,
-        role: body.role,
-        officeId: body.officeId || null,
-        allowedBrands: body.allowedBrands,
+        password: body.password || undefined,
+        // An admin resetting/setting a password is a different "who did
+        // this" than self-service — auth.account is null only in
+        // bootstrap mode (no real admin account exists yet).
+        passwordChangedBy: body.password ? (auth.account ? auth.account.username : "bootstrap-setup") : undefined,
+        role: body.role !== undefined ? body.role : undefined,
+        officeId: body.officeId !== undefined ? (body.officeId || null) : undefined,
+        allowedBrands: body.allowedBrands !== undefined ? body.allowedBrands : undefined,
+        fullName: body.fullName !== undefined ? body.fullName : undefined,
+        pid: body.pid !== undefined ? body.pid : undefined,
       });
       return json({ ok: true, account });
     } catch (e) {

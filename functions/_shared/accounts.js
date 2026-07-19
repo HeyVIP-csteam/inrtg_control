@@ -119,15 +119,24 @@ function stripSecret(account) {
 }
 
 // role: "agent" | "admin". allowedBrands: array of brand names, or "all".
-export async function saveAccount(env, { username, password, role, officeId, allowedBrands }) {
+// Any field left `undefined` keeps its EXISTING value (patch semantics) —
+// this matters a lot now that lightweight callers (e.g. just touching
+// lastActiveAt, or just editing fullName/pid) shouldn't have to resend
+// role/officeId/allowedBrands/password just to avoid wiping them out.
+// `passwordChangedBy` is only meaningful when `password` is also given —
+// the username of whoever triggered the change (their own, for
+// self-service; the admin's, for an admin-driven reset).
+export async function saveAccount(env, { username, password, passwordChangedBy, role, officeId, allowedBrands, fullName, pid }) {
   const key = username.toLowerCase();
   const existing = await getAccount(env, key);
   let salt = existing?.salt;
   let hash = existing?.hash;
+  let lastPasswordChange = existing?.lastPasswordChange || null;
   if (password) {
     const hashed = await hashPassword(password);
     salt = hashed.salt;
     hash = hashed.hash;
+    lastPasswordChange = { at: new Date().toISOString(), by: passwordChangedBy || key };
   }
   if (!salt || !hash) throw new Error("A password is required for a new account.");
 
@@ -135,9 +144,15 @@ export async function saveAccount(env, { username, password, role, officeId, all
     username: key,
     salt,
     hash,
-    role: role === "admin" ? "admin" : "agent",
-    officeId: officeId || null,
-    allowedBrands: allowedBrands === "all" ? "all" : (Array.isArray(allowedBrands) ? allowedBrands : []),
+    role: role !== undefined ? (role === "admin" ? "admin" : "agent") : (existing?.role || "agent"),
+    officeId: officeId !== undefined ? (officeId || null) : (existing?.officeId ?? null),
+    allowedBrands: allowedBrands !== undefined
+      ? (allowedBrands === "all" ? "all" : (Array.isArray(allowedBrands) ? allowedBrands : []))
+      : (existing?.allowedBrands ?? []),
+    fullName: fullName !== undefined ? fullName : (existing?.fullName || ""),
+    pid: pid !== undefined ? pid : (existing?.pid || ""),
+    lastActiveAt: existing?.lastActiveAt || null,
+    lastPasswordChange,
   };
   await env.THREADS_KV.put(`account:${key}`, JSON.stringify(account));
   if (!existing) {
@@ -170,6 +185,23 @@ export function requestIP(request) {
   return request.headers.get("CF-Connecting-IP") || "";
 }
 
+// Cheap "last seen" tracking — throttled to at most one KV write per
+// account per 5 minutes, otherwise every single poll/request from every
+// logged-in agent would each cost a write and blow through KV's free-tier
+// daily write limit fast. This means Last Active Time in Agent Profile is
+// "accurate to within ~5 minutes", not to-the-second — an acceptable
+// trade for how it's actually used (spotting accounts that have gone
+// quiet, not a real-time presence indicator).
+async function touchLastActive(env, account) {
+  const now = Date.now();
+  const last = account.lastActiveAt ? new Date(account.lastActiveAt).getTime() : 0;
+  if (now - last < 5 * 60 * 1000) return;
+  const fresh = await getAccount(env, account.username);
+  if (!fresh) return;
+  fresh.lastActiveAt = new Date(now).toISOString();
+  await env.THREADS_KV.put(`account:${account.username}`, JSON.stringify(fresh));
+}
+
 /**
  * Verifies the X-Agent-User / X-Agent-Pass headers on an incoming request:
  * password hash match AND the request's real IP is in that account's
@@ -196,6 +228,7 @@ export async function verifyRequest(request, env) {
     if (!office || !office.allowedIPs.length || !office.allowedIPs.includes(ip)) return null;
   }
 
+  await touchLastActive(env, account);
   return stripSecret(account);
 }
 

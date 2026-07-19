@@ -84,6 +84,7 @@
         <div class="sidebar-subitem" id="subCreateAccount" style="display:none;"><span class="sub-icon">➕</span> Create Account</div>
         <div class="sidebar-subitem" id="subWhitelistIp" style="display:none;"><span class="sub-icon">🌐</span> Whitelist IP</div>
         <div class="sidebar-subitem" id="subResetPassword"><span class="sub-icon">🔑</span> Reset Password</div>
+        <div class="sidebar-subitem" id="subAgentProfile" style="display:none;"><span class="sub-icon">🪪</span> Agent Profile</div>
       </div>
     </aside>
     <main class="hub-main">
@@ -295,6 +296,7 @@
     const isAdmin = authInfo && authInfo.role === "admin";
     document.getElementById("subCreateAccount").style.display = isAdmin ? "flex" : "none";
     document.getElementById("subWhitelistIp").style.display = isAdmin ? "flex" : "none";
+    document.getElementById("subAgentProfile").style.display = isAdmin ? "flex" : "none";
 
     const acctToggle = document.getElementById("acctMgmtToggle");
     const acctSubitems = document.getElementById("acctMgmtSubitems");
@@ -306,6 +308,7 @@
     document.getElementById("subCreateAccount").addEventListener("click", () => openAcctModal("create"));
     document.getElementById("subWhitelistIp").addEventListener("click", () => openAcctModal("whitelist"));
     document.getElementById("subResetPassword").addEventListener("click", () => openAcctModal("reset"));
+    document.getElementById("subAgentProfile").addEventListener("click", () => openAcctModal("profile"));
 
     const acctBackdrop = document.getElementById("acctModalBackdrop");
     const acctTitle = document.getElementById("acctModalTitle");
@@ -323,11 +326,26 @@
       acctNote.className = "edit-modal-note" + (cls ? " " + cls : "");
     }
 
+    function timeAgoLocal(iso) {
+      if (!iso) return "—";
+      const diffMs = Date.now() - new Date(iso).getTime();
+      const mins = Math.floor(diffMs / 60000);
+      if (mins < 1) return "just now";
+      if (mins < 60) return `${mins}m ago`;
+      const hrs = Math.floor(mins / 60);
+      if (hrs < 24) return `${hrs}h ago`;
+      const days = Math.floor(hrs / 24);
+      return `${days}d ago`;
+    }
+
     async function openAcctModal(mode) {
       acctMode = mode;
       setAcctNote("");
       acctBody.innerHTML = '<p class="edit-modal-note">Loading…</p>';
       acctBackdrop.classList.add("is-open");
+      const modalEl = acctBackdrop.querySelector(".edit-modal");
+      modalEl.classList.toggle("wide", mode === "profile");
+      document.getElementById("acctModalSave").style.display = mode === "profile" ? "none" : "";
 
       if (mode === "create") {
         acctTitle.textContent = "Create Account";
@@ -339,6 +357,8 @@
         acctBody.innerHTML = `
           <div class="field"><label>Username</label><input type="text" id="am_username" autocomplete="off" /></div>
           <div class="field"><label>Password</label><input type="password" id="am_password" autocomplete="new-password" /></div>
+          <div class="field"><label>Full Name</label><input type="text" id="am_fullname" autocomplete="off" placeholder="e.g. Daniel Tan" /></div>
+          <div class="field"><label>PID</label><input type="text" id="am_pid" autocomplete="off" placeholder="e.g. PID-014" /></div>
           <div class="field"><label>Role</label><select id="am_role"><option value="agent">agent</option><option value="admin">admin</option></select></div>
           <div class="field"><label>Office</label><select id="am_office"><option value="">— none —</option>${officeOptions}</select></div>
           <div class="field">
@@ -386,7 +406,72 @@
           <div class="field"><label>Confirm New Password</label><input type="password" id="am_reset_confirm" autocomplete="new-password" /></div>
           <p class="edit-modal-note">You can only change your own password here.</p>`;
       }
+
+      if (mode === "profile") {
+        acctTitle.textContent = "Agent Profile";
+        await loadAgentProfileTable();
+      }
     }
+
+    async function loadAgentProfileTable() {
+      const res = await window.AgentAuth.authFetch("/api/admin/accounts");
+      const data = await res.json();
+      acctAccounts = data.ok ? data.accounts : [];
+      renderAgentProfileTable();
+    }
+
+    function renderAgentProfileTable() {
+      const rows = acctAccounts.map((a) => {
+        const pwBy = a.lastPasswordChange
+          ? `${timeAgoLocal(a.lastPasswordChange.at)}<span class="pw-by">by ${acctEsc(a.lastPasswordChange.by)}</span>`
+          : "—";
+        return `
+          <tr data-username="${acctEsc(a.username)}">
+            <td>${acctEsc(a.username)}<br/><span class="role-tag">${acctEsc(a.role)}</span></td>
+            <td class="cell-fullname">${acctEsc(a.fullName || "—")}</td>
+            <td class="cell-pid">${acctEsc(a.pid || "—")}</td>
+            <td>${timeAgoLocal(a.lastActiveAt)}</td>
+            <td>${pwBy}</td>
+            <td><button type="button" class="row-btn" data-edit="${acctEsc(a.username)}" title="Edit name/PID">✏️</button></td>
+          </tr>`;
+      }).join("");
+      acctBody.innerHTML = `
+        <div class="agent-profile-table-wrap">
+          <table class="agent-profile-table">
+            <thead><tr><th>Account</th><th>Full Name</th><th>PID</th><th>Last Active</th><th>Password Changed</th><th></th></tr></thead>
+            <tbody>${rows || '<tr><td colspan="6" style="color:var(--ink-soft);">No accounts yet.</td></tr>'}</tbody>
+          </table>
+        </div>`;
+      acctBody.querySelectorAll("[data-edit]").forEach((btn) => {
+        btn.addEventListener("click", () => editAgentProfileRow(btn.dataset.edit));
+      });
+    }
+
+    function editAgentProfileRow(username) {
+      const account = acctAccounts.find((a) => a.username === username);
+      if (!account) return;
+      const row = acctBody.querySelector(`tr[data-username="${CSS.escape(username)}"]`);
+      row.querySelector(".cell-fullname").innerHTML = `<input type="text" class="edit-fullname" value="${acctEsc(account.fullName || "")}" />`;
+      row.querySelector(".cell-pid").innerHTML = `<input type="text" class="edit-pid" value="${acctEsc(account.pid || "")}" />`;
+      const btnCell = row.lastElementChild;
+      btnCell.innerHTML = `<button type="button" class="row-btn" title="Save">✅</button><button type="button" class="row-btn" title="Cancel">✖️</button>`;
+      const [saveBtn, cancelBtn] = btnCell.querySelectorAll("button");
+      saveBtn.addEventListener("click", () => saveAgentProfileRow(username, row));
+      cancelBtn.addEventListener("click", renderAgentProfileTable);
+    }
+
+    async function saveAgentProfileRow(username, row) {
+      const fullName = row.querySelector(".edit-fullname").value.trim();
+      const pid = row.querySelector(".edit-pid").value.trim();
+      const res = await window.AgentAuth.authFetch("/api/admin/accounts", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "save", username, fullName, pid }),
+      });
+      const data = await res.json();
+      if (!data.ok) { alert(data.error || "Save failed."); return; }
+      await loadAgentProfileTable();
+    }
+
 
     function closeAcctModal() {
       acctBackdrop.classList.remove("is-open");
@@ -448,6 +533,8 @@
           role: document.getElementById("am_role").value,
           officeId: document.getElementById("am_office").value || null,
           allowedBrands,
+          fullName: document.getElementById("am_fullname").value.trim(),
+          pid: document.getElementById("am_pid").value.trim(),
         }),
       });
       const data = await res.json();

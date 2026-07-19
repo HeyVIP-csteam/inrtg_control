@@ -80,6 +80,38 @@ QA / Account Issue / Risk Issue / Promotion Request / Daily Report / Genie
 Issue — same as before. Sidebar descriptions were shortened this session
 (e.g. "OTP & Domain issue etc.", "Account verify & otp etc.").
 
+### Promotion Request — Telegram message format unified across all brands
+Previously 3 different row layouts depending on brand+promotion (one for
+Crickex/Betjili/Mostplay Birthday Bonus, one for BetVisa/Jeetway with an
+extra Tier Level row, one for the Review-type bonuses). Business owner
+wanted ONE format everywhere — `PROMOTION_ROWS_UNIFIED` in
+`functions/_shared/routing.js` now backs all 8 brand+promotion
+combinations (verified by code that they're literally the same array
+reference, not just visually identical copies). Exact casing/punctuation
+was specified and must NOT be "cleaned up":
+
+```
+Particular information
+TID:
+Date:
+Username:
+Amount to be Added:
+Remarks:
+NID NO:
+Processed BY:
+Platform:
+To be added:
+```
+
+Tier Level (BetVisa/Jeetway) and Number of Deposits (Betjili/Mostplay)
+are still collected on the web form and still auto-fill Amount exactly
+as before — they just no longer get their own row in the Telegram
+message. Google Sheet writes (`PROMOTION_SHEET_CONFIG`) are untouched.
+**Not yet live-tested** — verified by rendering a sample message in Node
+and diffing it character-for-character against the spec above; a real
+BetVisa Birthday Bonus submission hasn't been sent through Telegram yet
+to confirm.
+
 ---
 
 ## TG Reply Threads — fully built this session
@@ -487,6 +519,53 @@ end-to-end against a fake KV (wrong current password rejected, correct
 flow succeeds, old password stops working, new password works, and
 role/office/brands survive the change) — all passing, but the actual
 modals haven't been clicked through in a browser yet.
+
+### Agent Profile (this session, 4th Account Management sub-item)
+New admin-only sub-item under the Home sidebar's Account Management —
+opens a wide table modal listing every account with:
+- **Full Name** and **PID** — free-text profile fields, editable inline
+  per row (pencil icon → inputs appear in that row → ✅ saves, ✖️
+  cancels). Also addable at account-creation time now (Create Account
+  modal has both fields), and shown/editable in `accounts-admin.html`'s
+  full account table too.
+- **Last Active Time** — updates from `functions/_shared/accounts.js`'s
+  `verifyRequest()`, the same function every single protected endpoint
+  already calls. **Throttled to at most once per 5 minutes per
+  account** — writing on literally every request (a logged-in agent's
+  tab polls every 6s) would blow through Cloudflare KV's free-tier daily
+  write limit fast with more than a couple of active agents. This means
+  Last Active is accurate to within ~5 minutes, not to-the-second —
+  fine for "has this account gone quiet", not meant as a live presence
+  indicator.
+- **Password Changed** — timestamp + **who changed it**, not just when.
+  Self-service changes (`/api/account/change-password`) record the
+  account's own username; an admin-driven reset (via the Reset Password
+  modal or `accounts-admin.html`) records the **admin's** username
+  instead. Both paths funnel through the same `saveAccount()` — the
+  caller just says who's responsible via `passwordChangedBy`.
+
+**Underlying refactor worth knowing about:** `saveAccount()` in
+`accounts.js` changed from "rebuild the whole record every call" to
+proper **patch/merge semantics** — any field left `undefined` now keeps
+its existing value instead of being reset to a default. This is what
+makes "just update fullName/pid" or "just touch lastActiveAt" safe
+without those callers having to also resend role/officeId/allowedBrands/
+password to avoid wiping them. Re-verified the full 20-check account
+system test suite plus 10 new checks specific to this (patch semantics
+preserve unrelated fields, admin-reset records the admin not the
+target, throttled lastActiveAt doesn't rewrite on rapid repeated calls)
+— all 30/30 passing against a fake KV. **Not yet live-tested.**
+
+**Explicitly paused, not built:** the business owner's original ask also
+included being able to see an agent's *actual current password* at any
+time, even after they change it themselves. That requires storing
+passwords reversibly (encrypted or plaintext) instead of the one-way
+PBKDF2 hash used everywhere else in this system — a real security
+trade-off, not just a feature flag. Flagged this explicitly and the
+business owner said to pause it for now; nothing password-visibility
+related was built. If revisited, the discussion to have is exactly that
+trade-off (who could read plaintext passwords if this were added, and
+whether that's acceptable for this internal tool).
 
 ### Not yet done / explicitly deferred (account system)
 - `public/index.html`'s "TG Reply Threads" home card doesn't mention
