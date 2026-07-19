@@ -7,19 +7,41 @@
  *
  * Backed by Cloudflare KV (binding: THREADS_KV — see wrangler.toml).
  * Two kinds of keys:
- *   thread:<id>          → full thread record (JSON)
+ *   thread:<id>          → full thread record (JSON), with a lightweight
+ *                           summary attached as this key's KV *metadata*
  *   msgid:<chatId>:<mid>  → thread id (string) — lets the Telegram webhook
  *                           find which thread a reply belongs to in O(1)
- *   index                → JSON array of lightweight summaries, newest
- *                           first, used to render the sidebar without
- *                           fetching every full thread record
  *
- * AUTO-CLEANUP — controls how many KV "writes" you burn per day (see the
- * free-plan limits: 1,000 writes/day, 1,000 deletes/day). Adjust the two
- * numbers below to change how long tickets stick around; set either to
- * `Infinity` to disable that rule entirely. Cleanup runs opportunistically
- * (piggy-backing on normal reads/writes) rather than on a schedule, since
- * Cloudflare Pages Functions don't support Cron Triggers.
+ * NO SHARED "index" KEY ANYMORE. Every write used to also rewrite one
+ * single `"index"` JSON blob (the sidebar's data source) — but Cloudflare
+ * KV allows at most 1 write/sec to the SAME key, and every reply/submit/
+ * solve-toggle/edit was hitting that one key, so concurrent agents could
+ * genuinely 429 each other. Instead, each thread's own summary now rides
+ * along as *metadata* on that thread's own `put()` — a different key per
+ * thread, so two agents touching two different tickets never contend with
+ * each other at all (only two edits to the exact same ticket in the same
+ * second still could, which is a much smaller, much rarer surface). The
+ * sidebar is built with `THREADS_KV.list({ prefix: "thread:" })`, which
+ * returns every thread's metadata without fetching the full record —
+ * cheap, and there's no per-key limit on reads, only writes.
+ *
+ * Trade-off: `list()` is only *eventually* consistent across Cloudflare's
+ * edge (per Cloudflare's docs, propagation is usually fast but isn't
+ * instant/global like a single-key read), so a brand-new ticket can take
+ * a little longer to appear in someone else's sidebar than it used to.
+ * Given the previous alternative was writes silently dropped/delayed
+ * under contention, this is a straightforward trade in the sidebar's
+ * favor. Any `thread:<id>` key saved before this change has no metadata
+ * yet — `listThreads()` below transparently falls back to reading that
+ * one thread's full record and re-saves it with metadata attached so it
+ * only ever needs to do that once per pre-existing ticket.
+ *
+ * AUTO-CLEANUP — controls how many KV "writes"/"deletes" you burn per day
+ * (see the free-plan limits: 1,000 writes/day, 1,000 deletes/day). Adjust
+ * the two numbers below to change how long tickets stick around; set
+ * either to `Infinity` to disable that rule entirely. Cleanup runs
+ * opportunistically (piggy-backing on normal reads), since Cloudflare
+ * Pages Functions don't support Cron Triggers.
  */
 
 // Solved tickets older than this many days are auto-deleted.
@@ -28,25 +50,14 @@ const SOLVED_RETENTION_DAYS = 30;
 // auto-deleted as a safety net, so a never-solved ticket can't sit forever.
 const STALE_RETENTION_DAYS = 90;
 
-const INDEX_KEY = "index";
-const MAX_INDEX_SIZE = 500;
-
 function newId() {
   return `t_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 }
 
-// Cloudflare KV hard limit: at most 1 write per second to the SAME key
-// (https://developers.cloudflare.com/kv/api/write-key-value-pairs/) —
-// writes faster than that throw a 429. Every reply/submission/solve-
-// toggle/edit writes the SAME "index" key (that's what the sidebar reads),
-// so under real load two of those can easily land in the same second.
-// Without a retry, that write is silently lost (the thread record itself
-// is already saved by the time this runs — only the sidebar summary goes
-// stale) until the next successful write to that same thread. A short
-// retry-with-backoff turns "silently dropped under load" into "arrives
-// a few hundred ms later" for the cases that are just transient
-// contention, without adding a request-shaped delay in the common case
-// where the first write just succeeds.
+// Still used for the low-frequency admin deletion log (one shared key, but
+// only written on an actual delete/recall action — nowhere near the write
+// volume that made "index" a problem, so it's left as a single key with a
+// retry instead of also being broken apart).
 async function kvPutWithRetry(env, key, value, attempts = 3) {
   let lastErr;
   for (let i = 0; i < attempts; i++) {
@@ -65,20 +76,30 @@ function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-async function readIndex(env) {
-  const raw = await env.THREADS_KV.get(INDEX_KEY);
-  return raw ? JSON.parse(raw) : [];
+// Cloudflare KV metadata is capped at 1024 bytes (serialized) per key —
+// well clear of what a sidebar row needs, but title/submitter are free-
+// text and `extraSearchText` folds in every custom form-field value, so
+// both are hard-capped defensively rather than trusting upstream length.
+function clip(str, max) {
+  const s = String(str || "");
+  return s.length > max ? s.slice(0, max) : s;
 }
 
-async function writeIndex(env, list) {
-  await kvPutWithRetry(env, INDEX_KEY, JSON.stringify(list.slice(0, MAX_INDEX_SIZE)));
-}
-
+// Lightweight summary of a thread — this is what actually gets stored as
+// this key's KV metadata (see saveThread) and is all the sidebar needs to
+// render a row without fetching the full record. msgIds/chatId/topicId are
+// deliberately NOT included: they're only needed once an agent opens a
+// specific thread, which fetches the full `thread:<id>` record anyway.
 function summarize(thread) {
-  const searchText = [thread.title, thread.submitter, thread.brand, ...(thread.summary || []).map((s) => s.value)]
-    .filter(Boolean)
-    .join(" ")
-    .toLowerCase();
+  // Extra searchable text beyond title/submitter/brand (which are already
+  // their own metadata fields, so listThreads() can match them without
+  // needing them duplicated in here too) — e.g. an account ID typed into
+  // one of the module's custom fields. Capped hard so a ticket with many/
+  // long custom fields can never push this key's metadata near the limit.
+  const extraSearchText = clip(
+    (thread.summary || []).map((s) => s.value).filter(Boolean).join(" ").toLowerCase(),
+    300
+  );
   return {
     id: thread.id,
     module: thread.module,
@@ -86,33 +107,38 @@ function summarize(thread) {
     icon: thread.icon,
     accent: thread.accent,
     brand: thread.brand,
-    title: thread.title,
-    submitter: thread.submitter,
+    title: clip(thread.title, 200),
+    submitter: clip(thread.submitter, 100),
     submittedAt: thread.submittedAt,
     lastActivity: thread.lastActivity,
     solved: thread.solved,
     solvedAt: thread.solvedAt,
-    deleted: thread.deleted,
+    deleted: !!thread.deleted,
     replyCount: thread.messages.length,
-    chatId: thread.chatId,
-    topicId: thread.topicId,
-    msgIds: thread.msgIds,
-    searchText,
+    extraSearchText,
   };
+}
+
+// Every write to a thread's own record goes through this — saves the full
+// JSON as the value, and the lightweight summary as this key's metadata,
+// in one KV write. No second key touched, so no shared hot key.
+async function saveThread(env, thread) {
+  await env.THREADS_KV.put(`thread:${thread.id}`, JSON.stringify(thread), {
+    metadata: summarize(thread),
+  });
 }
 
 // Deletes a thread's KV record plus every msgid: pointer that leads to it
 // (the root submission message, and any reply sent back out from the
-// dashboard). Does NOT touch the index — callers manage that separately.
-// Parallelized (Promise.all) instead of one-at-a-time — these are all
-// different keys, so there's no per-key rate limit to worry about here,
-// only wall-clock time, and a thread with many messages/attachments could
-// otherwise mean a long chain of sequential round-trips.
-async function purgeThread(env, summaryOrThread) {
-  const ids = summaryOrThread.msgIds || [];
+// dashboard). Parallelized (Promise.all) instead of one-at-a-time — these
+// are all different keys, so there's no per-key rate limit to worry about
+// here, only wall-clock time, and a thread with many messages/attachments
+// could otherwise mean a long chain of sequential round-trips.
+async function purgeThread(env, thread) {
+  const ids = thread.msgIds || [];
   await Promise.all([
-    env.THREADS_KV.delete(`thread:${summaryOrThread.id}`),
-    ...ids.map((mid) => env.THREADS_KV.delete(`msgid:${summaryOrThread.chatId}:${mid}`)),
+    env.THREADS_KV.delete(`thread:${thread.id}`),
+    ...ids.map((mid) => env.THREADS_KV.delete(`msgid:${thread.chatId}:${mid}`)),
   ]);
 }
 
@@ -123,46 +149,33 @@ function isExpired(t, now) {
   return false;
 }
 
-// Sweeps the in-memory index for expired entries and deletes their KV
-// records. Used to run on EVERY single index write — under real load
-// (many replies close together) that meant every write was also doing a
-// full date-check pass over up to 500 entries AND, whenever anything was
-// actually expired, a chain of extra deletes, all on the hot path that's
-// already fighting for the same rate-limited "index" key. Cleanup doesn't
-// need to be that eager — retention is measured in DAYS
-// (SOLVED_RETENTION_DAYS / STALE_RETENTION_DAYS), so running this on
-// roughly 1 in 20 writes instead of every write is still more than
-// prompt enough, and cuts the common-case write down to just the cheap
-// filter/sort/put it actually needs to do.
+// Sweeps a batch of summaries for expired entries and deletes their KV
+// records (full record fetched first, since purging needs msgIds which
+// aren't in the summary — see summarize() above). Runs on a sample of
+// listThreads() calls rather than every one, since retention windows are
+// measured in DAYS, not seconds, and this is a read-path cost now (no
+// hot-key write to protect), so it's kept cheap mainly to avoid doing
+// extra KV round-trips on every single sidebar refresh.
 const SWEEP_SAMPLE_RATE = 0.05;
 
 async function sweepExpired(env, list) {
   if (Math.random() >= SWEEP_SAMPLE_RATE) return list;
   const now = Date.now();
   const keep = [];
-  const toPurge = [];
+  const expiredIds = [];
   for (const t of list) {
-    if (!t.deleted && isExpired(t, now)) toPurge.push(t);
+    if (!t.deleted && isExpired(t, now)) expiredIds.push(t.id);
     else keep.push(t);
   }
-  if (toPurge.length) await Promise.all(toPurge.map((t) => purgeThread(env, t)));
+  if (expiredIds.length) {
+    await Promise.all(
+      expiredIds.map(async (id) => {
+        const thread = await getThread(env, id);
+        if (thread) await purgeThread(env, thread);
+      })
+    );
+  }
   return keep;
-}
-
-async function upsertIndexEntry(env, thread) {
-  const list = await readIndex(env);
-  const filtered = list.filter((t) => t.id !== thread.id);
-  filtered.unshift(summarize(thread));
-  filtered.sort((a, b) => new Date(b.lastActivity) - new Date(a.lastActivity));
-
-  // Anything pushed past MAX_INDEX_SIZE would otherwise leak — actually
-  // delete it instead of just dropping it from the visible list.
-  // Parallelized for the same reason as purgeThread above.
-  const overflow = filtered.slice(MAX_INDEX_SIZE);
-  if (overflow.length) await Promise.all(overflow.map((t) => purgeThread(env, t)));
-
-  const swept = await sweepExpired(env, filtered.slice(0, MAX_INDEX_SIZE));
-  await writeIndex(env, swept);
 }
 
 export async function createThread(env, { module: moduleId, moduleName, icon, accent, brand, title, submitter, chatId, topicId, rootMessageId, rootText, hasMedia, summary }) {
@@ -193,10 +206,9 @@ export async function createThread(env, { module: moduleId, moduleName, icon, ac
     deleted: false,
   };
   await Promise.all([
-    env.THREADS_KV.put(`thread:${thread.id}`, JSON.stringify(thread)),
+    saveThread(env, thread),
     env.THREADS_KV.put(`msgid:${thread.chatId}:${rootMessageId}`, thread.id),
   ]);
-  await upsertIndexEntry(env, thread);
   return thread;
 }
 
@@ -209,14 +221,45 @@ export async function findThreadIdByMessage(env, chatId, messageId) {
   return env.THREADS_KV.get(`msgid:${chatId}:${messageId}`);
 }
 
+// Sidebar list — walks every `thread:*` key via KV's list() (metadata
+// only, no full-record fetch) instead of reading one shared "index" key.
+// Keys saved before this change have no metadata yet; those are healed
+// on the fly (fetch once, re-save with metadata) so it's only ever a
+// one-time cost per pre-existing ticket.
 export async function listThreads(env, { q } = {}) {
-  const list = await readIndex(env);
-  const visible = list.filter((t) => !t.deleted);
+  const results = [];
+  let cursor;
+  do {
+    const page = await env.THREADS_KV.list({ prefix: "thread:", cursor, limit: 1000 });
+    for (const key of page.keys) {
+      if (key.metadata) {
+        results.push(key.metadata);
+        continue;
+      }
+      // Pre-migration key (or a metadata write that failed once) — fall
+      // back to the full record just this once, then self-heal it.
+      const raw = await env.THREADS_KV.get(key.name);
+      if (!raw) continue;
+      const thread = JSON.parse(raw);
+      const meta = summarize(thread);
+      results.push(meta);
+      try {
+        await env.THREADS_KV.put(key.name, raw, { metadata: meta });
+      } catch {
+        // Non-fatal — it'll just get healed again on a future list().
+      }
+    }
+    cursor = page.list_complete ? undefined : page.cursor;
+  } while (cursor);
+
+  const swept = await sweepExpired(env, results);
+  const visible = swept.filter((t) => !t.deleted);
+  visible.sort((a, b) => new Date(b.lastActivity) - new Date(a.lastActivity));
+
   if (!q) return visible;
   const needle = q.toLowerCase();
   return visible.filter((t) => {
-    if (t.searchText) return t.searchText.includes(needle);
-    // Older index entries created before searchText existed — fall back.
+    if ((t.extraSearchText || "").includes(needle)) return true;
     return (
       (t.submitter || "").toLowerCase().includes(needle) ||
       (t.title || "").toLowerCase().includes(needle) ||
@@ -244,12 +287,11 @@ export async function appendMessage(env, threadId, message) {
   if (message.messageId) {
     thread.msgIds = [...(thread.msgIds || [thread.rootMessageId]), message.messageId];
   }
-  const writes = [env.THREADS_KV.put(`thread:${thread.id}`, JSON.stringify(thread))];
+  const writes = [saveThread(env, thread)];
   if (message.messageId) {
     writes.push(env.THREADS_KV.put(`msgid:${thread.chatId}:${message.messageId}`, thread.id));
   }
   await Promise.all(writes);
-  await upsertIndexEntry(env, thread);
   return thread;
 }
 
@@ -258,8 +300,7 @@ export async function setSolved(env, threadId, solved) {
   if (!thread) return null;
   thread.solved = solved;
   thread.solvedAt = solved ? new Date().toISOString() : null;
-  await env.THREADS_KV.put(`thread:${thread.id}`, JSON.stringify(thread));
-  await upsertIndexEntry(env, thread);
+  await saveThread(env, thread);
   return thread;
 }
 
@@ -274,14 +315,16 @@ export async function updateRootText(env, threadId, text) {
   thread.rootText = text;
   thread.rootEdited = true;
   thread.lastActivity = new Date().toISOString();
-  await env.THREADS_KV.put(`thread:${thread.id}`, JSON.stringify(thread));
-  await upsertIndexEntry(env, thread);
+  await saveThread(env, thread);
   return thread;
 }
 
 // ---- Deletion history — every "delete/recall" action, kept separately
-// from the thread index so it survives even after a thread itself is
-// gone. Not linked from anywhere in the agent-facing UI.
+// from thread storage so it survives even after a thread itself is gone.
+// Not linked from anywhere in the agent-facing UI. Low-frequency
+// (admin-only actions), so left as one shared key with a retry — see the
+// note on kvPutWithRetry above for why this one's different from the old
+// "index" key.
 const DELETION_LOG_KEY = "deletion-log";
 const MAX_LOG_SIZE = 500;
 
@@ -306,8 +349,7 @@ export async function markRootRecalled(env, threadId) {
   if (!thread) return null;
   thread.rootRecalled = true;
   thread.lastActivity = new Date().toISOString();
-  await env.THREADS_KV.put(`thread:${thread.id}`, JSON.stringify(thread));
-  await upsertIndexEntry(env, thread);
+  await saveThread(env, thread);
   return thread;
 }
 
@@ -319,8 +361,7 @@ export async function editMessageInThread(env, threadId, messageId, text) {
   if (!msg) return null;
   msg.text = text;
   msg.editedAt = new Date().toISOString();
-  await env.THREADS_KV.put(`thread:${thread.id}`, JSON.stringify(thread));
-  await upsertIndexEntry(env, thread);
+  await saveThread(env, thread);
   return thread;
 }
 
@@ -330,8 +371,7 @@ export async function removeMessageFromThread(env, threadId, messageId) {
   const thread = await getThread(env, threadId);
   if (!thread) return null;
   thread.messages = thread.messages.filter((m) => !(m.self && m.messageId === messageId));
-  await env.THREADS_KV.put(`thread:${thread.id}`, JSON.stringify(thread));
-  await upsertIndexEntry(env, thread);
+  await saveThread(env, thread);
   return thread;
 }
 
@@ -339,7 +379,5 @@ export async function softDeleteThread(env, threadId) {
   const thread = await getThread(env, threadId);
   if (!thread) return null;
   await purgeThread(env, thread);
-  const list = await readIndex(env);
-  await writeIndex(env, list.filter((t) => t.id !== threadId));
   return thread;
 }

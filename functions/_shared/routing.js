@@ -24,13 +24,10 @@
  */
 
 export const BRANDS = {
-  betvisa: {
-    name: "BetVisa",
-    // The long ID in the sheet's URL: https://docs.google.com/spreadsheets/d/<THIS PART>/edit
-    // Leave "" to disable sheet logging entirely for this brand.
-    sheetId: "17wXVfUS8QywtiT8AiHxBr3iycKnWCR5vAJbCcboLJUs",
+  crickex: {
+    name: "Crickex",
+    sheetId: "10vMJWW7XLbvRV47Q_tqqTV_U13oA_3VGpHSo-df9I54",
     telegram: {
-      // Used when a module has no specific entry below.
       default: { chatId: "-1004488354399", topicId: null },
       qa: { chatId: "-1004488354399", topicId: 3 },
       account_issue: { chatId: "-1004488354399", topicId: 10 },
@@ -53,10 +50,26 @@ export const BRANDS = {
       genie_issue: { chatId: "-1004488354399", topicId: 24 },
     },
   },
-  crickex: {
-    name: "Crickex",
-    sheetId: "10vMJWW7XLbvRV47Q_tqqTV_U13oA_3VGpHSo-df9I54",
+  mostplay: {
+    name: "Mostplay",
+    sheetId: "1Phq6Fsw4ouoJumW2iz54y2YnfQzDp8hBdRL3h-cu5M4",
     telegram: {
+      default: { chatId: "-1004488354399", topicId: null },
+      qa: { chatId: "-1004488354399", topicId: 3 },
+      account_issue: { chatId: "-1004488354399", topicId: 10 },
+      risk_issue: { chatId: "-1004488354399", topicId: 17 },
+      promotion_request: { chatId: "-1003844665813", topicId: 30 },
+      daily_report: { chatId: "-1004488354399", topicId: 22 },
+      genie_issue: { chatId: "-1004488354399", topicId: 24 },
+    },
+  },
+  betvisa: {
+    name: "BetVisa",
+    // The long ID in the sheet's URL: https://docs.google.com/spreadsheets/d/<THIS PART>/edit
+    // Leave "" to disable sheet logging entirely for this brand.
+    sheetId: "17wXVfUS8QywtiT8AiHxBr3iycKnWCR5vAJbCcboLJUs",
+    telegram: {
+      // Used when a module has no specific entry below.
       default: { chatId: "-1004488354399", topicId: null },
       qa: { chatId: "-1004488354399", topicId: 3 },
       account_issue: { chatId: "-1004488354399", topicId: 10 },
@@ -69,19 +82,6 @@ export const BRANDS = {
   jeetway: {
     name: "Jeetway",
     sheetId: "1tQdhnCwSl-ybwlIFGcK2oPVaApnU9vsloHboaFtsb_4",
-    telegram: {
-      default: { chatId: "-1004488354399", topicId: null },
-      qa: { chatId: "-1004488354399", topicId: 3 },
-      account_issue: { chatId: "-1004488354399", topicId: 10 },
-      risk_issue: { chatId: "-1004488354399", topicId: 17 },
-      promotion_request: { chatId: "-1003844665813", topicId: 30 },
-      daily_report: { chatId: "-1004488354399", topicId: 22 },
-      genie_issue: { chatId: "-1004488354399", topicId: 24 },
-    },
-  },
-  mostplay: {
-    name: "Mostplay",
-    sheetId: "1Phq6Fsw4ouoJumW2iz54y2YnfQzDp8hBdRL3h-cu5M4",
     telegram: {
       default: { chatId: "-1004488354399", topicId: null },
       qa: { chatId: "-1004488354399", topicId: 3 },
