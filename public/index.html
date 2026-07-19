@@ -42,7 +42,16 @@
 
   <div class="edit-modal-backdrop" id="acctModalBackdrop">
     <div class="edit-modal">
-      <p class="edit-modal-title" id="acctModalTitle">Account Management</p>
+      <div class="edit-modal-header-row">
+        <p class="edit-modal-title" id="acctModalTitle">Account Management</p>
+        <select id="acctProfileRoleFilter" class="acct-role-filter" style="display:none;">
+          <option value="all">All roles</option>
+          <option value="agent">Agent</option>
+          <option value="senior">Senior</option>
+          <option value="admin">Admin</option>
+          <option value="superadmin">SuperAdmin</option>
+        </select>
+      </div>
       <div id="acctModalBody"></div>
       <p class="edit-modal-note" id="acctModalNote"></p>
       <div class="edit-modal-actions">
@@ -289,6 +298,7 @@
     document.getElementById("subTgRoutes").addEventListener("click", () => openAcctModal("tgroutes"));
     document.getElementById("subResetPassword").addEventListener("click", () => openAcctModal("reset"));
     document.getElementById("subAgentProfile").addEventListener("click", () => openAcctModal("profile"));
+    document.getElementById("acctProfileRoleFilter").addEventListener("change", () => renderAgentProfileTable());
 
 
     const acctBackdrop = document.getElementById("acctModalBackdrop");
@@ -330,6 +340,9 @@
       // instead of one global footer Save (too many independently-
       // editable rows for a single "Save" to mean anything useful).
       document.getElementById("acctModalSave").style.display = mode === "profile" || mode === "tgroutes" ? "none" : "";
+      const roleFilterEl = document.getElementById("acctProfileRoleFilter");
+      roleFilterEl.style.display = mode === "profile" ? "" : "none";
+      if (mode === "profile") roleFilterEl.value = "all";
 
       if (mode === "create") {
         acctTitle.textContent = "Create Account";
@@ -518,15 +531,28 @@
       renderTgRoutes();
     }
 
+    let acctOfficesById = {};
+
     async function loadAgentProfileTable() {
-      const res = await window.AgentAuth.authFetch("/api/admin/accounts");
-      const data = await res.json();
-      acctAccounts = data.ok ? data.accounts : [];
+      const [accountsRes, officesRes] = await Promise.all([
+        window.AgentAuth.authFetch("/api/admin/accounts"),
+        window.AgentAuth.authFetch("/api/admin/offices"),
+      ]);
+      const accountsData = await accountsRes.json();
+      const officesData = await officesRes.json();
+      acctAccounts = accountsData.ok ? accountsData.accounts : [];
+      acctOfficesById = {};
+      if (officesData.ok) {
+        officesData.offices.forEach((o) => { acctOfficesById[o.id] = o; });
+      }
       renderAgentProfileTable();
     }
 
     function renderAgentProfileTable() {
-      const rows = acctAccounts.map((a) => {
+      const roleFilter = document.getElementById("acctProfileRoleFilter").value || "all";
+      const visibleAccounts = roleFilter === "all" ? acctAccounts : acctAccounts.filter((a) => a.role === roleFilter);
+
+      const rows = visibleAccounts.map((a) => {
         const pwBy = a.lastPasswordChange
           ? `${timeAgoLocal(a.lastPasswordChange.at)}<span class="pw-by">by ${acctEsc(a.lastPasswordChange.by)}</span>`
           : "—";
@@ -534,10 +560,25 @@
         const editCell = isAdmin
           ? `<button type="button" class="row-btn" data-edit="${acctEsc(a.username)}" title="Edit name/PSD${isSuperAdmin ? "/role" : ""}">✏️</button>`
           : "";
+        // Office / IP — SuperAdmin can log in from anywhere with no office
+        // bound (intentional); every other role now REQUIRES one to log in
+        // at all (see _shared/accounts.js officeIpCheckPasses()), so a
+        // non-SuperAdmin account with no office is flagged as broken, not
+        // just "unrestricted".
+        const office = a.officeId ? acctOfficesById[a.officeId] : null;
+        let officeCell;
+        if (office) {
+          officeCell = acctEsc(office.name);
+        } else if (a.role === "superadmin") {
+          officeCell = `<span class="office-none">— no office (unrestricted, OK for SuperAdmin)</span>`;
+        } else {
+          officeCell = `<span class="office-missing">⚠️ No office — can't log in</span>`;
+        }
         return `
           <tr data-username="${acctEsc(a.username)}">
             <td>${acctEsc(a.username)}</td>
             <td class="cell-role"><span class="role-tag">${acctEsc(a.role)}</span></td>
+            <td class="cell-office">${officeCell}</td>
             <td class="cell-fullname">${acctEsc(a.fullName || "—")}</td>
             <td class="cell-pid">${acctEsc(a.pid || "—")}</td>
             <td>${timeAgoLocal(a.lastActiveAt)}</td>
@@ -548,8 +589,8 @@
       acctBody.innerHTML = `
         <div class="agent-profile-table-wrap">
           <table class="agent-profile-table">
-            <thead><tr><th>Username</th><th>Role</th><th>Full Name</th><th>PSD</th><th>Last Log In Time</th><th>Password Changed</th><th></th></tr></thead>
-            <tbody>${rows || '<tr><td colspan="7" style="color:var(--ink-soft);">No accounts yet.</td></tr>'}</tbody>
+            <thead><tr><th>Username</th><th>Role</th><th>Office</th><th>Full Name</th><th>PSD</th><th>Last Log In Time</th><th>Password Changed</th><th></th></tr></thead>
+            <tbody>${rows || '<tr><td colspan="8" style="color:var(--ink-soft);">No accounts match this filter.</td></tr>'}</tbody>
           </table>
         </div>
         ${isAdmin ? "" : '<p class="edit-modal-note">View only.</p>'}`;

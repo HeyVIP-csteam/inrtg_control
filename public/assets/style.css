@@ -234,7 +234,12 @@ a { color: inherit; text-decoration: none; }
   transition: transform 0.18s ease;
 }
 .edit-modal-backdrop.is-open .edit-modal { transform: scale(1) translateY(0); }
-.edit-modal-title { font-family: var(--font-display); font-weight: 600; font-size: 16px; margin: 0 0 14px; }
+.edit-modal-header-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 0 0 14px; }
+.edit-modal-title { font-family: var(--font-display); font-weight: 600; font-size: 16px; margin: 0; }
+.acct-role-filter {
+  background: var(--field-bg); border: 1.5px solid var(--border); border-radius: 8px;
+  padding: 6px 10px; font-size: 12px; font-weight: 600; color: var(--ink); font-family: inherit; cursor: pointer;
+}
 .edit-modal-note { min-height: 16px; font-size: 12px; font-weight: 600; color: var(--ink-soft); margin: 0 0 10px; }
 .edit-modal-note.ok { color: #1a9c6e; }
 .edit-modal-note.err { color: #e0577a; }
@@ -269,6 +274,8 @@ a { color: inherit; text-decoration: none; }
   padding: 2px 6px; border-radius: 6px; background: var(--field-bg); color: var(--ink-soft);
 }
 .agent-profile-table .pw-by { color: var(--ink-soft); font-size: 10.5px; display: block; }
+.agent-profile-table .office-missing { color: #e0577a; font-weight: 700; font-size: 11.5px; }
+.agent-profile-table .office-none { color: var(--ink-soft); font-size: 11.5px; }
 .agent-profile-table .row-btn { background: none; border: none; cursor: pointer; font-size: 13px; padding: 2px 4px; }
 
 /* ---- TG Group / Channel (live-editable Telegram routing) ---- */
