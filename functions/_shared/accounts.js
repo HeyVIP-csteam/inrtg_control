@@ -219,12 +219,30 @@ async function touchLastActive(env, account) {
 }
 
 /**
+ * Whether an account passes the office/IP check for a given request.
+ * SuperAdmin is the ONE deliberate exception — every other role MUST be
+ * bound to an office with a matching IP; an account with no officeId that
+ * isn't SuperAdmin now fails this outright instead of silently skipping
+ * the check. Shared by verifyRequest() (every protected endpoint) AND
+ * auth/login.js (the login form itself, which can't just call
+ * verifyRequest() since there's no verified identity yet at that point)
+ * so the two can never drift out of sync with each other.
+ */
+export async function officeIpCheckPasses(env, account, request) {
+  if (account.role === "superadmin") return true;
+  if (!account.officeId) return false;
+  const office = await getOffice(env, account.officeId);
+  const ip = requestIP(request);
+  return !!(office && office.allowedIPs.length && office.allowedIPs.includes(ip));
+}
+
+/**
  * Verifies the X-Agent-User / X-Agent-Pass headers on an incoming request:
- * password hash match AND the request's real IP is in that account's
- * office's allowed list. Returns the (secret-stripped) account on success,
- * or null on any failure — callers should treat null as "not authorized"
- * without leaking which specific check failed (bad username vs bad
- * password vs bad IP all look the same from outside).
+ * password hash match AND the office/IP rule above. Returns the (secret-
+ * stripped) account on success, or null on any failure — callers should
+ * treat null as "not authorized" without leaking which specific check
+ * failed (bad username vs bad password vs bad IP vs no office all look
+ * the same from outside).
  */
 export async function verifyRequest(request, env) {
   if (!env.THREADS_KV) return null;
@@ -238,11 +256,7 @@ export async function verifyRequest(request, env) {
   const passwordOk = await verifyPassword(password, account.salt, account.hash);
   if (!passwordOk) return null;
 
-  if (account.officeId) {
-    const office = await getOffice(env, account.officeId);
-    const ip = requestIP(request);
-    if (!office || !office.allowedIPs.length || !office.allowedIPs.includes(ip)) return null;
-  }
+  if (!(await officeIpCheckPasses(env, account, request))) return null;
 
   await touchLastActive(env, account);
   return stripSecret(account);

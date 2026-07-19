@@ -2,15 +2,17 @@
  * POST /api/auth/login   body: { username, password }
  *
  * No session is created — this just validates the credentials + the
- * request's IP against the account's office (see accounts.js for why).
- * On success, returns the account's public info (role, allowedBrands)
- * so the frontend can decide what to show; the frontend then re-sends
- * the same username/password as X-Agent-User / X-Agent-Pass headers on
- * every subsequent request, and every protected endpoint re-verifies
- * them independently — this endpoint is really just a "does this work"
- * check for the login form, not a source of trust by itself.
+ * office/IP rule (see _shared/accounts.js officeIpCheckPasses() — every
+ * role except SuperAdmin must be bound to an office with a matching IP;
+ * an account with no office is rejected outright now, not silently let
+ * through). On success, returns the account's public info (role,
+ * allowedBrands) so the frontend can decide what to show; the frontend
+ * then re-sends the same username/password as X-Agent-User / X-Agent-Pass
+ * headers on every subsequent request, and every protected endpoint
+ * re-verifies them independently — this endpoint is really just a "does
+ * this work" check for the login form, not a source of trust by itself.
  */
-import { getAccount, getOffice, requestIP, verifyPassword } from "../../_shared/accounts.js";
+import { getAccount, verifyPassword, officeIpCheckPasses } from "../../_shared/accounts.js";
 
 export async function onRequestPost(context) {
   try {
@@ -43,11 +45,7 @@ async function handleLogin({ request, env }) {
   const passwordOk = await verifyPassword(password, account.salt, account.hash);
   if (!passwordOk) return fail();
 
-  if (account.officeId) {
-    const office = await getOffice(env, account.officeId);
-    const ip = requestIP(request);
-    if (!office || !office.allowedIPs.length || !office.allowedIPs.includes(ip)) return fail();
-  }
+  if (!(await officeIpCheckPasses(env, account, request))) return fail();
 
   return json({
     ok: true,

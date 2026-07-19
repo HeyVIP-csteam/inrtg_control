@@ -355,11 +355,33 @@ TG Reply Threads now requires login, with real per-agent accounts:
   normal use (locked screens, agents leaving for lunch); a real
   server-enforced expiry would need the heavier session/token tier that
   was discussed and deliberately not chosen.
-- **IMPORTANT caveat, not obvious from the UI:** an account with **no
-  office assigned** (`officeId: null`) has **no IP restriction at all**
-  — it can log in from anywhere. Intentional (e.g. a remote admin), but
-  easy to forget and accidentally leave an account wide open. Always
-  assign an office unless that's specifically wanted.
+- **✅ Changed this session — office is now REQUIRED for every role except
+  SuperAdmin.** The old behavior (below, kept here for history) was
+  raised directly by the business owner as a concern once they realized
+  it wasn't obvious from the UI:
+
+  > an account with no office assigned (`officeId: null`) has no IP
+  > restriction at all — it can log in from anywhere. Intentional (e.g. a
+  > remote admin), but easy to forget and accidentally leave an account
+  > wide open.
+
+  New rule (`officeIpCheckPasses()` in `_shared/accounts.js`, shared by
+  both `verifyRequest()` and `auth/login.js` so they can't drift out of
+  sync with each other): **SuperAdmin is the one deliberate exception** —
+  can log in from anywhere, office or not, same as before. **Every other
+  role (Agent/Senior/Admin) with no office now fails to log in outright**
+  instead of silently getting unrestricted access. Discussed explicitly
+  with the business owner, including the real trade-off: this removes
+  the "remote admin" escape hatch for anyone below SuperAdmin, and if the
+  very first Admin-tier account (before any SuperAdmin exists) has no
+  office, that account is now locked out of everything, including its
+  own SuperAdmin self-promotion path — there's no recovery from inside
+  the app at that point, only a direct Cloudflare KV edit. Business owner
+  accepted that trade-off explicitly, in exchange for closing what was
+  effectively a silent "forgot to assign an office = wide open" trap for
+  ordinary accounts. **Always assign an office to every non-SuperAdmin
+  account now — it's not just recommended anymore, login will fail
+  without one.**
 
 ### What's gated now
 | Surface | Before this session | Now |
