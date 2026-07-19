@@ -25,6 +25,7 @@
 
   <div class="edit-modal-backdrop" id="editModalBackdrop">
     <div class="edit-modal">
+      <button type="button" class="modal-close-btn" id="editModalClose" title="Close" aria-label="Close">✕</button>
       <p class="edit-modal-title" id="editModalTitle">Edit brand</p>
       <div class="field">
         <label>Link (opens when the pill is clicked)</label>
@@ -32,7 +33,6 @@
       </div>
       <p class="edit-modal-note" id="editModalNote"></p>
       <div class="edit-modal-actions">
-        <button type="button" class="btn-secondary" id="editCancel">Cancel</button>
         <button type="button" class="btn-submit" id="editSave">Save</button>
       </div>
     </div>
@@ -42,6 +42,7 @@
 
   <div class="edit-modal-backdrop" id="acctModalBackdrop">
     <div class="edit-modal">
+      <button type="button" class="modal-close-btn" id="acctModalClose" title="Close" aria-label="Close">✕</button>
       <div class="edit-modal-header-row">
         <p class="edit-modal-title" id="acctModalTitle">Account Management</p>
         <select id="acctProfileRoleFilter" class="acct-role-filter" style="display:none;">
@@ -54,8 +55,7 @@
       </div>
       <div id="acctModalBody"></div>
       <p class="edit-modal-note" id="acctModalNote"></p>
-      <div class="edit-modal-actions">
-        <button type="button" class="btn-secondary" id="acctModalCancel">Cancel</button>
+      <div class="edit-modal-actions" id="acctModalActions">
         <button type="button" class="btn-submit" id="acctModalSave">Save</button>
       </div>
     </div>
@@ -215,7 +215,7 @@
       backdrop.classList.remove("is-open");
       editingBrand = null;
     }
-    document.getElementById("editCancel").addEventListener("click", closeEditModal);
+    document.getElementById("editModalClose").addEventListener("click", closeEditModal);
     backdrop.addEventListener("click", (e) => { if (e.target === backdrop) closeEditModal(); });
 
     document.getElementById("editSave").addEventListener("click", async () => {
@@ -339,7 +339,12 @@
       // Both "profile" and "tgroutes" use per-row inline save buttons
       // instead of one global footer Save (too many independently-
       // editable rows for a single "Save" to mean anything useful).
-      document.getElementById("acctModalSave").style.display = mode === "profile" || mode === "tgroutes" ? "none" : "";
+      // With Cancel removed (closing is via the X button now), the whole
+      // actions row would otherwise just be dead space when Save is
+      // hidden — hide the row itself, not just the button inside it.
+      const showFooterSave = mode !== "profile" && mode !== "tgroutes";
+      document.getElementById("acctModalSave").style.display = showFooterSave ? "" : "none";
+      document.getElementById("acctModalActions").style.display = showFooterSave ? "" : "none";
       const roleFilterEl = document.getElementById("acctProfileRoleFilter");
       roleFilterEl.style.display = mode === "profile" ? "" : "none";
       if (mode === "profile") roleFilterEl.value = "all";
@@ -389,6 +394,7 @@
           document.getElementById("am_office_ips").value = office ? (office.allowedIPs || []).join("\n") : "";
         });
         document.getElementById("acctModalSave").style.display = isSuperAdmin ? "" : "none";
+        document.getElementById("acctModalActions").style.display = isSuperAdmin ? "" : "none";
       }
 
       if (mode === "reset" && isSenior) {
@@ -483,7 +489,8 @@
           <div class="tgroute-brands">${brandListHtml}</div>
           <div class="tgroute-modules">${moduleRowsHtml}</div>
         </div>
-        <p class="edit-modal-note">Changes apply to the very next form submission — no redeploy needed. "default" rows are still using the value built into the code; "custom" rows have been overridden here.</p>`;
+        <hr class="tgroute-divider" />
+        <p class="edit-modal-note tgroute-footnote">Changes apply to the very next form submission — no redeploy needed. "default" rows are still using the value built into the code; "custom" rows have been overridden here.</p>`;
 
       acctBody.querySelectorAll(".tgroute-brand").forEach((el) => {
         el.addEventListener("click", () => {
@@ -638,7 +645,7 @@
       acctBackdrop.classList.remove("is-open");
       acctMode = null;
     }
-    document.getElementById("acctModalCancel").addEventListener("click", closeAcctModal);
+    document.getElementById("acctModalClose").addEventListener("click", closeAcctModal);
     acctBackdrop.addEventListener("click", (e) => { if (e.target === acctBackdrop) closeAcctModal(); });
 
     document.getElementById("acctModalSave").addEventListener("click", async () => {
