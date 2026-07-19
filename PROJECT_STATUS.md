@@ -96,6 +96,33 @@ unified Telegram message format (`PROMOTION_ROWS_UNIFIED` in
 
 ## TG Reply Threads
 
+### ✅ Root-caused and fixed this session — Telegram replies weren't
+syncing in at all ("must refresh, and even then some never show up")
+
+This was chased for a long time under the assumption it was the same KV/
+CPU issue above (it looked identical from the dashboard: things just
+"don't show up"). It wasn't — this was a third, completely separate
+problem, found by checking Telegram's own side via `getWebhookInfo`:
+**the webhook was never actually registered (`"url":""`), with 277
+updates queued up and undelivered.** Root cause: `TELEGRAM_WEBHOOK_SECRET`
+contained characters Telegram's `secret_token` parameter doesn't allow
+(letters/digits/`_`/`-` only) — every `setWebhook` call was failing with
+`400 Bad Request: secret token contains unallowed characters`, so the
+webhook silently never got (re-)registered. Likely made worse by
+Telegram auto-clearing a webhook registration after enough consecutive
+delivery failures during the CPU-limit 503 episode above, compounding
+into "no webhook at all" rather than just "some updates dropped."
+
+**Fixed:** replaced the secret with a compliant alphanumeric value, updated
+`TELEGRAM_WEBHOOK_SECRET` in Cloudflare (Settings → Environment variables
+→ Production), redeployed so it actually took effect, then re-ran
+`setWebhook` — confirmed via `getWebhookInfo` showing the correct `url`
+and `pending_update_count: 0`. **If this ever needs to be regenerated
+again: keep it alphanumeric, no spaces/symbols/non-ASCII, and always wait
+for the deploy to finish (green in Deployments) before calling
+`setWebhook`** — calling it during the deploy window can 403 once
+(transient, self-resolves, but confusing to see mid-verification).
+
 ### What it does
 Every form submission creates a tracked "thread". Telegram replies to that
 ticket sync into a chat-style dashboard (`/threads.html`) in near-real-time,
@@ -510,17 +537,14 @@ of the current 6-second poll).
 2. **Brand logo** — deliberately removed, no replacement plan chosen.
 3. **`GET /api/screenshot/<key>` and `GET /api/brand-config`** — no login
    gate, pre-existing, flagged for awareness only.
-4. **Site is deployed to `inrtg-control.pages.dev`, but this session's two
-   changes (brand order reorder in `routing.js`, and the `threads.js`
-   rewrite removing the shared `"index"` KV key in favor of `list()` +
-   metadata) have NOT been clicked through live yet.** The `list()`/
-   metadata rewrite in particular touches every read/write path in TG
-   Reply Threads (submit, reply, solve, edit, recall, delete, search) —
-   syntax-checked (`node --check` on every touched file) and reasoned
-   through carefully, but not yet exercised against real Cloudflare KV in
-   production. **Re-test the TG Reply Threads dashboard end-to-end after
-   the next deploy** (submit a ticket, reply from Telegram, reply from the
-   dashboard, solve/reopen, search, delete) before trusting it fully.
+4. **Live-tested end-to-end this session, after a long real-production
+   debugging round** — submit, Telegram reply sync (both directions),
+   solve/reopen-on-reply, sidebar updates, and the account/login path all
+   confirmed working against the real Cloudflare deployment (not just
+   syntax-checked). See the three root-caused-and-fixed writeups above
+   (KV index contention, PBKDF2 CPU limit, webhook secret format) for
+   what was actually broken and how each was found — this is no longer a
+   "reasoned through, not yet verified" item.
 
 ## Recurring non-code gotcha (still true)
 GitHub web upload can cause duplicate files or misplaced content if the

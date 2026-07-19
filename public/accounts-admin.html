@@ -23,9 +23,13 @@
   .admin-card h3 { font-family: var(--font-display); font-size: 14.5px; margin: 0 0 12px; color: var(--ink); }
 
   .admin-table { width: 100%; border-collapse: collapse; font-size: 13px; }
-  .admin-table th { text-align: left; font-size: 10.5px; text-transform: uppercase; color: var(--ink-soft); padding: 8px 10px; border-bottom: 1px solid var(--border); border-right: 1px solid var(--border); }
+  .admin-table th {
+    text-align: left; font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.03em;
+    color: var(--ink-soft); padding: 8px 12px; white-space: nowrap;
+    border-bottom: 1px solid var(--border); border-right: 1px solid rgba(148, 163, 184, 0.18);
+  }
   .admin-table th:last-child { border-right: none; }
-  .admin-table td { padding: 10px; border-bottom: 1px solid var(--border); vertical-align: top; border-right: 1px solid var(--border); }
+  .admin-table td { padding: 10px 12px; border-bottom: 1px solid var(--border); vertical-align: middle; border-right: 1px solid rgba(148, 163, 184, 0.18); }
   .admin-table td:last-child { border-right: none; }
   .admin-table .row-actions { display: flex; gap: 8px; }
   .admin-table .row-actions button { background: none; border: none; cursor: pointer; font-size: 13px; color: var(--label-blue); }
@@ -46,7 +50,7 @@
   <header class="topbar">
     <div class="topbar-left">
       <img src="/assets/img/logo.webp" alt="HeyVIP" class="logo-img" />
-      <span class="wordmark">INR CS TEAM - TBC</span>
+      <span class="wordmark">CS TEAM - TBC</span>
     </div>
     <div class="topbar-right">
       <span class="clock" id="liveClock"></span>
@@ -149,7 +153,7 @@
       <div class="admin-card">
         <h3>Existing Accounts</h3>
         <table class="admin-table">
-          <thead><tr><th>Username</th><th>Full Name</th><th>PID</th><th>Role</th><th>Office</th><th>Brands</th><th>Last Log In Time</th><th>Password Changed</th><th></th></tr></thead>
+          <thead><tr><th>Username</th><th>Full Name</th><th>PID</th><th>Role</th><th>Office</th><th>Brands</th><th>Last Login</th><th>Pwd Changed</th><th></th></tr></thead>
           <tbody id="accountsTableBody"></tbody>
         </table>
       </div>

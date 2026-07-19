@@ -273,7 +273,7 @@ const MODULES = [
       { key: "date", label: "Date", type: "date", required: true, defaultToday: true },
       { key: "username", label: "Username", type: "text", required: true, placeholder: "Player username..." },
       {
-        key: "tid", label: "TID", type: "text", required: true, placeholder: "e.g. BVINRBB1020",
+        key: "tid", label: "TID", type: "text", required: true, placeholder: "e.g. BVXXXBB1020",
         generate: true, // shows a button that fetches the next TID from the sheet
       },
       {

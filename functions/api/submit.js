@@ -216,7 +216,7 @@ function buildPromotionRequestMessage(rows, { brandName, fieldMap, reporter }) {
   rows.forEach((item) => {
     let value;
     if (typeof item.key === "object") value = item.key.fixed;
-    else if (item.key === "brand") value = brandInrLabel(brandName);
+    else if (item.key === "brand") value = brandCurrencyLabel(brandName);
     else if (item.key === "pic") value = reporter;
     else value = fieldMap[item.key];
     lines.push(`<b>${escapeHtml(item.label)}:</b> ${escapeHtml(value || "-")}`);
@@ -277,7 +277,7 @@ function resolveFieldValue(item, { brandName, fieldMap, reporter, screenshotLink
     const [, fallbackKeys] = Object.entries(item.key)[0];
     return fallbackKeys.map((k) => fieldMap[k]).find((v) => v);
   }
-  if (item.key === "brand") return brandInrLabel(brandName);
+  if (item.key === "brand") return brandCurrencyLabel(brandName);
   if (item.key === "screenshotLink") return screenshotLink;
   if (item.key === "pic") return reporter;
   if (item.key === "dateShift") return formatDateShift(fieldMap.reportDate, fieldMap.shift);
@@ -332,7 +332,7 @@ function formatDateDDMMYYYY(isoDate) {
 // a hand-written template for all 11 issue types up front.
 function buildRiskIssueDynamicMessage({ brandName, fields, fieldMap, reporter }) {
   const lines = [`⚠️ <b>Risk Issue — ${escapeHtml(fieldMap.issueType || "-")}</b>`, ""];
-  lines.push(`🎮 <b>Brand/Platform:</b> ${escapeHtml(brandInrLabel(brandName))}`);
+  lines.push(`🎮 <b>Brand/Platform:</b> ${escapeHtml(brandCurrencyLabel(brandName))}`);
   lines.push(`👤 <b>Username:</b> ${escapeHtml(fieldMap.uid || "-")}`);
 
   const middleFields = fields.filter((f) => !["issueType", "uid", "remark"].includes(f.key) && f.value);
@@ -358,7 +358,7 @@ function buildRiskIssueDynamicMessage({ brandName, fields, fieldMap, reporter })
 // blank line before Remark and another before PIC.
 function buildAccountIssueDynamicMessage({ brandName, fields, fieldMap, reporter }) {
   const lines = [`🔑 <b>Account Issue — ${escapeHtml(fieldMap.issueType || "-")}</b>`, ""];
-  lines.push(`🎮 <b>Brand/Platform:</b> ${escapeHtml(brandInrLabel(brandName))}`);
+  lines.push(`🎮 <b>Brand/Platform:</b> ${escapeHtml(brandCurrencyLabel(brandName))}`);
   lines.push(`👤 <b>Username:</b> ${escapeHtml(fieldMap.uid || "-")}`);
 
   fields
@@ -517,14 +517,20 @@ function escapeHtml(str) {
 }
 
 // Business owner wants every TG-message "Platform"/"Brand" labeled ROW to
-// read "<Brand> INR" (e.g. "Crickex INR") — NOT the Sheet columns, and NOT
-// the "New X — Brand" title/header lines, both of which stay as the plain
-// brand name. Used at the three spots that render a labeled brand row:
-// buildPromotionRequestMessage, resolveFieldValue (the MESSAGE_TEMPLATE
-// row renderer used by QA/Risk Issue/Genie Issue/Daily Report), and
-// buildAccountIssueDynamicMessage.
-function brandInrLabel(name) {
-  return name ? `${name} INR` : name;
+// read "<Brand> <CURRENCY>" (e.g. "Crickex XYZ") — NOT the Sheet columns,
+// and NOT the "New X — Brand" title/header lines, both of which stay as
+// the plain brand name. Used at the three spots that render a labeled
+// brand row: buildPromotionRequestMessage, resolveFieldValue (the
+// MESSAGE_TEMPLATE row renderer used by QA/Risk Issue/Genie Issue/Daily
+// Report), and buildAccountIssueDynamicMessage.
+//
+// ONE PLACE TO EDIT when reusing this project for a different currency
+// market — change CURRENCY_LABEL below and every outgoing Telegram
+// message updates automatically. Leave it as "" to drop the suffix
+// entirely and show just the plain brand name.
+const CURRENCY_LABEL = "";
+function brandCurrencyLabel(name) {
+  return name && CURRENCY_LABEL ? `${name} ${CURRENCY_LABEL}` : name;
 }
 
 function json(obj, status = 200) {

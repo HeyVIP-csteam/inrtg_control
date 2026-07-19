@@ -197,7 +197,7 @@ function columnLetter(index) {
 /**
  * Reads the last non-empty value in a column (e.g. TID) and increments its
  * trailing number, keeping the same prefix and zero-padding width.
- * "BVINRBB1019" -> "BVINRBB1020". Used for the TID "generate next" button.
+ * "BVXXXBB1019" -> "BVXXXBB1020". Used for the TID "generate next" button.
  */
 export async function getNextSequenceValue(env, sheetId, tab, column) {
   const token = await getAccessToken(env);

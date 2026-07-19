@@ -11,8 +11,20 @@
  * headers on every subsequent request, and every protected endpoint
  * re-verifies them independently — this endpoint is really just a "does
  * this work" check for the login form, not a source of trust by itself.
+ *
+ * ERROR MESSAGES — deliberately generic for username/password ("Wrong
+ * username or password") since those two failures happen BEFORE we know
+ * the credentials are real, and blending them avoids confirming to
+ * whoever's typing whether a given username even exists. Once the
+ * password has actually verified correctly, though, the ONLY thing left
+ * that can fail is the office/IP rule — at that point whoever's logging
+ * in has already proven they know a real password, so there's nothing
+ * left to protect by staying vague, and a specific "your IP isn't
+ * whitelisted for your office" message (with the actual IP, so an admin
+ * can immediately go add it) is much more useful than the same generic
+ * line. Requested directly by the business owner.
  */
-import { getAccount, verifyPassword, officeIpCheckPasses } from "../../_shared/accounts.js";
+import { getAccount, verifyPassword, officeIpCheckPasses, getOffice, requestIP } from "../../_shared/accounts.js";
 
 export async function onRequestPost(context) {
   try {
@@ -35,17 +47,23 @@ async function handleLogin({ request, env }) {
   const password = body.password || "";
   if (!username || !password) return json({ ok: false, error: "Username and password are required." }, 400);
 
-  // Same generic error whether the username doesn't exist, the password
-  // is wrong, or the IP doesn't match — don't help narrow down which.
-  const fail = () => json({ ok: false, error: "Wrong username, password, or you're not on an approved network." }, 401);
+  const badCreds = () => json({ ok: false, error: "Wrong username or password." }, 401);
 
   const account = await getAccount(env, username);
-  if (!account) return fail();
+  if (!account) return badCreds();
 
   const passwordOk = await verifyPassword(password, account.salt, account.hash, account.iterations);
-  if (!passwordOk) return fail();
+  if (!passwordOk) return badCreds();
 
-  if (!(await officeIpCheckPasses(env, account, request))) return fail();
+  if (!(await officeIpCheckPasses(env, account, request))) {
+    const ip = requestIP(request) || "unknown";
+    if (!account.officeId) {
+      return json({ ok: false, error: `Your account has no office assigned, so it can't log in from anywhere. Ask an admin to assign you an office (your current IP: ${ip}).` }, 401);
+    }
+    const office = await getOffice(env, account.officeId);
+    const officeName = office?.name || "your office";
+    return json({ ok: false, error: `Your IP address (${ip}) isn't on the approved list for ${officeName}. Ask an admin to whitelist it under Account Management → Whitelist IP.` }, 401);
+  }
 
   return json({
     ok: true,
