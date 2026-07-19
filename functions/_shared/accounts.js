@@ -34,20 +34,54 @@ const VALID_ROLES = Object.keys(ROLE_RANK);
 export function rankOf(role) { return ROLE_RANK[role] ?? ROLE_RANK.agent; }
 
 // ---- password hashing (PBKDF2 via Web Crypto, available in Workers) ----
+//
+// ITERATION COUNT — lowered this session, see below for why.
+//
+// This system has no session/token (see the design note above): every
+// single request re-verifies the password from scratch via
+// verifyPassword(), including every 6-second sidebar poll. Cloudflare
+// Workers' Free plan caps CPU time at 10ms per request — and PBKDF2 at
+// the OLD count (100,000 iterations) was landing right at or over that
+// ceiling on every authenticated call, especially once you add the rest
+// of the request's own JS work on top. Cloudflare's own docs flag
+// exactly this: "heavier workloads that handle authentication... typically
+// use 10-20ms" of CPU time on Free — this is a documented, known way to
+// blow the Free plan's budget, not a misconfiguration on our end. When a
+// request exceeds the CPU limit, Cloudflare kills the isolate at the
+// platform level — that's NOT a catchable JS exception, so none of the
+// try/catch safety nets added earlier this session could ever have caught
+// it; it surfaces to the browser as a bare network-level 503, no JSON
+// body, which matches exactly what showed up in testing.
+//
+// Lowering the iteration count directly cuts that CPU cost. Every
+// EXISTING account's password hash was computed at the OLD count and
+// will only ever verify correctly against that count — so instead of a
+// single global constant, each account record stores the iteration count
+// that was actually used for IT specifically (`iterations` field, added
+// this session). New accounts / password resets from now on get the new
+// lower count; every account created before this change keeps working
+// unmodified, verified at the count it was actually hashed with. Nothing
+// needs a forced password reset.
+const PBKDF2_ITERATIONS_CURRENT = 10000; // used for any password hashed from now on
+const PBKDF2_ITERATIONS_LEGACY_FALLBACK = 100000; // only for account records saved before this session, which predate the `iterations` field
 
-async function hashPassword(password, saltB64) {
+async function hashPassword(password, saltB64, iterations = PBKDF2_ITERATIONS_CURRENT) {
   const salt = saltB64 ? base64ToBytes(saltB64) : crypto.getRandomValues(new Uint8Array(16));
   const keyMaterial = await crypto.subtle.importKey("raw", new TextEncoder().encode(password), "PBKDF2", false, ["deriveBits"]);
   const bits = await crypto.subtle.deriveBits(
-    { name: "PBKDF2", salt, iterations: 100000, hash: "SHA-256" },
+    { name: "PBKDF2", salt, iterations, hash: "SHA-256" },
     keyMaterial,
     256
   );
-  return { salt: bytesToBase64(salt), hash: bytesToBase64(new Uint8Array(bits)) };
+  return { salt: bytesToBase64(salt), hash: bytesToBase64(new Uint8Array(bits)), iterations };
 }
 
-export async function verifyPassword(password, salt, expectedHash) {
-  const { hash } = await hashPassword(password, salt);
+// `iterations` MUST be the count that particular account's hash was
+// actually created with (account.iterations) — falls back to the old
+// hardcoded value only for account records saved before this field
+// existed, so nothing that already worked breaks.
+export async function verifyPassword(password, salt, expectedHash, iterations = PBKDF2_ITERATIONS_LEGACY_FALLBACK) {
+  const { hash } = await hashPassword(password, salt, iterations);
   return timingSafeEqual(hash, expectedHash);
 }
 
@@ -121,7 +155,7 @@ export async function getAccount(env, username) {
 }
 
 function stripSecret(account) {
-  const { salt, hash, ...rest } = account;
+  const { salt, hash, iterations, ...rest } = account;
   return rest;
 }
 
@@ -138,11 +172,15 @@ export async function saveAccount(env, { username, password, passwordChangedBy, 
   const existing = await getAccount(env, key);
   let salt = existing?.salt;
   let hash = existing?.hash;
+  // Pre-existing accounts saved before this field existed are implicitly
+  // the old iteration count — see the note above hashPassword().
+  let iterations = existing?.iterations || PBKDF2_ITERATIONS_LEGACY_FALLBACK;
   let lastPasswordChange = existing?.lastPasswordChange || null;
   if (password) {
     const hashed = await hashPassword(password);
     salt = hashed.salt;
     hash = hashed.hash;
+    iterations = hashed.iterations;
     lastPasswordChange = { at: new Date().toISOString(), by: passwordChangedBy || key };
   }
   if (!salt || !hash) throw new Error("A password is required for a new account.");
@@ -151,6 +189,7 @@ export async function saveAccount(env, { username, password, passwordChangedBy, 
     username: key,
     salt,
     hash,
+    iterations,
     role: role !== undefined ? (VALID_ROLES.includes(role) ? role : "agent") : (existing?.role || "agent"),
     officeId: officeId !== undefined ? (officeId || null) : (existing?.officeId ?? null),
     allowedBrands: allowedBrands !== undefined
@@ -253,7 +292,7 @@ export async function verifyRequest(request, env) {
   const account = await getAccount(env, username);
   if (!account) return null;
 
-  const passwordOk = await verifyPassword(password, account.salt, account.hash);
+  const passwordOk = await verifyPassword(password, account.salt, account.hash, account.iterations);
   if (!passwordOk) return null;
 
   if (!(await officeIpCheckPasses(env, account, request))) return null;

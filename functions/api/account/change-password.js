@@ -50,7 +50,7 @@ async function handleChangePassword({ request, env }) {
   const full = await getAccount(env, authed.username);
   if (!full) return json({ ok: false, error: "Account not found." }, 404);
 
-  const currentOk = await verifyPassword(currentPassword, full.salt, full.hash);
+  const currentOk = await verifyPassword(currentPassword, full.salt, full.hash, full.iterations);
   if (!currentOk) return json({ ok: false, error: "Current password is incorrect." }, 403);
 
   await saveAccount(env, {

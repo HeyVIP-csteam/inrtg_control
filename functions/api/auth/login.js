@@ -42,7 +42,7 @@ async function handleLogin({ request, env }) {
   const account = await getAccount(env, username);
   if (!account) return fail();
 
-  const passwordOk = await verifyPassword(password, account.salt, account.hash);
+  const passwordOk = await verifyPassword(password, account.salt, account.hash, account.iterations);
   if (!passwordOk) return fail();
 
   if (!(await officeIpCheckPasses(env, account, request))) return fail();

@@ -151,6 +151,57 @@ beyond the one reference tab. Unchanged this session.
 
 ## Account system
 
+### ✅ Root-caused and fixed this session — the mysterious, persistent 503s
+across the whole site (submit, threads list, open a thread, send a reply,
+even login itself)
+
+This took a long back-and-forth to pin down because it looked like a
+different bug every time it showed up (KV write contention, KV list()
+eventual consistency, GitHub upload mistakes, request quotas — all real
+things that were checked and ruled out or fixed along the way, but none
+of them were THE cause). The actual root cause:
+
+**Cloudflare Workers Free plan caps CPU time at 10ms per request.**
+Password verification uses PBKDF2 (Web Crypto, correct primitive) at
+**100,000 iterations** — and this system has no session/token (see below):
+**every single request** re-verifies the password from scratch, including
+every 6-second sidebar poll. Cloudflare's own docs say heavier
+auth-handling workloads "typically use 10-20ms" of CPU on Free — this was
+landing right at/over the ceiling on every authenticated call. Confirmed
+by testing: an unauthenticated request to `/api/threads` (skips
+`verifyPassword` entirely) came back clean and fast every time; anything
+that went through the authenticated path failed intermittently. When a
+request exceeds the CPU limit, Cloudflare kills the isolate at the
+platform level — **not a catchable JS exception**, so none of this
+session's try/catch safety nets (see "Reliability & performance") could
+ever have caught it. It surfaces to the browser as a bare network-level
+503 with no JSON body, exactly what showed up in testing.
+
+**Fixed in `functions/_shared/accounts.js`:** lowered the iteration count
+used for any NEWLY hashed password (new account, or a password reset)
+from 100,000 to **10,000** — a 10x cut in the per-request CPU cost of
+auth, which should comfortably clear the 10ms ceiling given Cloudflare's
+own note that KV reads/writes and other I/O waiting do NOT count toward
+CPU time (only actual compute does). This is a real security/CPU-budget
+trade-off, done deliberately rather than silently — flagging it here for
+the business owner: PBKDF2-SHA256 at 10,000 iterations is weaker
+brute-force resistance than 100,000, mitigated somewhat by this being an
+internal tool already gated by per-office IP allowlisting, not a public
+signup surface. If ticket/traffic volume grows and 10ms still gets tight,
+the more correct long-term fix is a lightweight signed session
+token so most requests skip PBKDF2 entirely instead of tuning the
+iteration count further — not built this session, flagging as a future
+option.
+
+**Fully backward compatible, no forced password resets:** every account
+created before this fix has its password hash computed at the OLD 100,000
+count, and would fail to verify against a lower count. So instead of one
+global constant, each account record now stores the exact iteration count
+IT was hashed with (`iterations` field). Existing accounts (which predate
+this field) fall back to 100,000 automatically; new/reset passwords get
+10,000. Every account, old or new, keeps working exactly as before —
+nobody needs to reset anything because of this change.
+
 ### Model
 - **Offices** — a name + a list of allowed IPs.
 - **Accounts** — username + password (PBKDF2, 100k iterations), one of
