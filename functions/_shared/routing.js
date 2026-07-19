@@ -255,57 +255,51 @@ export const PROMOTION_SHEET_CONFIG = {
 };
 
 /**
- * Promotion Request only: the Telegram message rows per (brand + promotion)
- * combination — same key format as PROMOTION_SHEET_CONFIG. No emoji/header,
- * just "Particular information" + labeled rows, matching the reference
- * format. `key` can be a field key, "brand", "pic", or { fixed: "..." } for
- * a literal value (e.g. "To be added" is always "Manually").
+ * Promotion Request only: the Telegram message rows, now the SAME for
+ * every (brand + promotion) combination — business owner explicitly
+ * wants one unified TG format across all brands (Google Sheet writes and
+ * the web form itself are untouched, this only changes what the
+ * Telegram message looks like). Casing/punctuation on every label below
+ * must match exactly what was specified — do not "fix" or restyle it:
+ *
+ *   Particular information
+ *   TID:
+ *   Date:
+ *   Username:
+ *   Amount to be Added:
+ *   Remarks:
+ *   NID NO:
+ *   Processed BY:
+ *   Platform:
+ *   To be added:
+ *
+ * Tier Level (BetVisa/Jeetway) and Number of Deposits (Betjili/Mostplay)
+ * are still collected on the form and still auto-fill Amount as before —
+ * they just no longer get their own row in the Telegram message.
+ * `key` can be a field key, "brand", "pic", or { fixed: "..." } for a
+ * literal value (e.g. "To be added" is always "Manually").
  */
-const PROMOTION_ROWS_BIRTHDAY_A = [ // Crickex / Betjili / Mostplay Birthday Bonus
+const PROMOTION_ROWS_UNIFIED = [
   { label: "TID", key: "tid" },
   { label: "Date", key: "date" },
   { label: "Username", key: "username" },
   { label: "Amount to be Added", key: "amount" },
   { label: "Remarks", key: "promotion" },
   { label: "NID NO", key: "nid" },
+  { label: "Processed BY", key: "pic" },
   { label: "Platform", key: "brand" },
   { label: "To be added", key: { fixed: "Manually" } },
-  { label: "Processed by", key: "pic" },
-];
-
-const PROMOTION_ROWS_BIRTHDAY_B = [ // BetVisa / Jeetway Birthday Bonus (has Tier Level)
-  { label: "TID", key: "tid" },
-  { label: "Date", key: "date" },
-  { label: "Username", key: "username" },
-  { label: "Remarks", key: "promotion" },
-  { label: "NID No", key: "nid" },
-  { label: "Tier Level", key: "tier" },
-  { label: "Amount to be Added", key: "amount" },
-  { label: "Platform", key: "brand" },
-  { label: "To be added", key: { fixed: "Manually" } },
-  { label: "Processed by", key: "pic" },
-];
-
-const PROMOTION_ROWS_REVIEW = [ // Betjili / Mostplay / Jeetway review-type bonuses
-  { label: "TID", key: "tid" },
-  { label: "Username", key: "username" },
-  { label: "Date", key: "date" },
-  { label: "Amount to be Added", key: "amount" },
-  { label: "Remarks", key: "promotion" },
-  { label: "Platform", key: "brand" },
-  { label: "To be added", key: { fixed: "Manually" } },
-  { label: "Processed by", key: "pic" },
 ];
 
 export const PROMOTION_MESSAGE_TEMPLATE = {
-  "crickex|Birthday Bonus": PROMOTION_ROWS_BIRTHDAY_A,
-  "betjili|Birthday Bonus": PROMOTION_ROWS_BIRTHDAY_A,
-  "mostplay|Birthday Bonus": PROMOTION_ROWS_BIRTHDAY_A,
-  "betvisa|Birthday Bonus": PROMOTION_ROWS_BIRTHDAY_B,
-  "jeetway|Birthday Bonus": PROMOTION_ROWS_BIRTHDAY_B,
-  "betjili|Review Bonus": PROMOTION_ROWS_REVIEW,
-  "mostplay|Facebook Review Free Bonus": PROMOTION_ROWS_REVIEW,
-  "jeetway|Review Bonus": PROMOTION_ROWS_REVIEW,
+  "crickex|Birthday Bonus": PROMOTION_ROWS_UNIFIED,
+  "betjili|Birthday Bonus": PROMOTION_ROWS_UNIFIED,
+  "mostplay|Birthday Bonus": PROMOTION_ROWS_UNIFIED,
+  "betvisa|Birthday Bonus": PROMOTION_ROWS_UNIFIED,
+  "jeetway|Birthday Bonus": PROMOTION_ROWS_UNIFIED,
+  "betjili|Review Bonus": PROMOTION_ROWS_UNIFIED,
+  "mostplay|Facebook Review Free Bonus": PROMOTION_ROWS_UNIFIED,
+  "jeetway|Review Bonus": PROMOTION_ROWS_UNIFIED,
 };
 
 /**
