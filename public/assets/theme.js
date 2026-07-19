@@ -29,7 +29,14 @@
       const day = now.toLocaleDateString(undefined, { weekday: "long" });
       const date = now.toLocaleDateString(undefined, { day: "2-digit", month: "2-digit", year: "numeric" });
       const time = now.toLocaleTimeString(undefined, { hour12: false });
-      el.textContent = `${day} · ${date} · ${time}`;
+      // Colored segments (day/date/time) + a real vertical-bar divider
+      // between each, instead of the previous single plain-text string.
+      el.innerHTML =
+        `<span class="clock-day">${day}</span>` +
+        `<span class="clock-divider"></span>` +
+        `<span class="clock-date">${date}</span>` +
+        `<span class="clock-divider"></span>` +
+        `<span class="clock-time">${time}</span>`;
     };
     tick();
     setInterval(tick, 1000);

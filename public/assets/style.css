@@ -212,6 +212,16 @@ a { color: inherit; text-decoration: none; }
   background: var(--pill-bg); border: 1px solid var(--pill-border);
   padding: 7px 12px; border-radius: 999px;
   white-space: nowrap;
+  display: inline-flex; align-items: center; gap: 8px;
+}
+/* Day / date / time each get their own color; a real vertical-bar
+   divider (not just a "·" character) sits between each segment. */
+.clock-day { color: #39ff88; text-shadow: 0 0 6px rgba(57, 255, 136, 0.55); }
+.clock-date { color: #4fa8e8; }
+.clock-time { color: var(--ink); font-weight: 700; }
+.clock-divider {
+  display: inline-block; width: 1px; height: 12px;
+  background: rgba(148, 163, 184, 0.55);
 }
 .theme-pill {
   display: flex; align-items: center; gap: 6px;

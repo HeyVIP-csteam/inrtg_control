@@ -19,8 +19,9 @@
  * through the POST endpoint, an existing default logo is left alone (not
  * overwritten with nothing).
  *
- * Jeetway has no logo file yet (not supplied) — falls back to colored
- * initials like every brand did before this session, same as ever.
+ * Jeetway's logo is its live-chat bubble icon (confirmed by the business
+ * owner) — small source image (60×60), upscaled to match the others;
+ * looks fine at the 24px pill size this actually renders at.
  */
 import { verifyRequest } from "../_shared/accounts.js";
 
@@ -29,7 +30,7 @@ const DEFAULT_LOGOS = {
   betjili: "/assets/img/brands/betjili.png",
   mostplay: "/assets/img/brands/mostplay.png",
   betvisa: "/assets/img/brands/betvisa.png",
-  // jeetway: intentionally absent — no logo file supplied yet.
+  jeetway: "/assets/img/brands/jeetway.png",
 };
 
 export async function onRequestGet(context) {

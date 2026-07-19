@@ -529,8 +529,11 @@ previous session
   The old file-upload path never worked in production and was ripped out
   in an earlier session ("Logo 之后再想办法"). This session, the business
   owner supplied logo image files directly instead: checked into the repo
-  at `public/assets/img/brands/<brandId>.png` (Crickex, Betjili, Mostplay,
-  BetVisa — 160×160, resized/optimized from the originals). Simple —
+  at `public/assets/img/brands/<brandId>.png` (all 5 brands — Crickex,
+  Betjili, Mostplay, BetVisa, Jeetway — 160×160, resized/optimized from
+  the originals; Jeetway's is its live-chat bubble icon, confirmed by the
+  business owner, upscaled from a small 60×60 source but looks fine at
+  the 24px size it actually renders at). Simple —
   the images just deploy with the site like any other static asset, no
   R2 upload, no admin UI to rebuild.
   `functions/api/brand-config.js`'s `DEFAULT_LOGOS` map ties each brand
@@ -539,12 +542,7 @@ previous session
   `{ [brandId]: { logoUrl, link } }` shape and the pill-rendering code in
   `index.html` (`buildBrandPill()`) needed ZERO changes; they already
   checked for `entry.logoUrl` and just silently had nothing to show
-  before.
-  **Jeetway has no logo file yet** — not supplied — so it still falls
-  back to a colored-initials avatar like every brand did before this
-  session. Add `public/assets/img/brands/jeetway.png` and the
-  `DEFAULT_LOGOS` entry for it once that file exists; nothing else needs
-  to change.
+  before. **All 5 brands now have a logo — nothing pending here.**
   The "Edit brand" modal still only has a Link field — no logo UPLOAD
   control was rebuilt (deliberately; static files checked into the repo
   are simpler and were what actually got used), but logos now render
@@ -685,11 +683,9 @@ of the current 6-second poll).
 1. **Promo Code Search** — "Start On" column has no source data (always
    "—"); "all 11 tabs share the same A–N layout" is unverified beyond one
    reference tab.
-2. **Brand logos** — ✅ done this session for 4 of 5 brands (Crickex,
-   Betjili, Mostplay, BetVisa) — see "Brand pill Link editor" section
-   below for how. **Jeetway still needs its logo file supplied** — until
-   then it keeps showing the colored-initials fallback like all 5 did
-   before this session.
+2. ~~**Brand logos**~~ — ✅ all 5 done this session (Crickex, Betjili,
+   Mostplay, BetVisa, Jeetway — see "Brand pill Link editor" section
+   below for how). Nothing pending here anymore.
 3. **`GET /api/screenshot/<key>` and `GET /api/brand-config`** — no login
    gate, pre-existing, flagged for awareness only.
 4. **Live-tested end-to-end this session, after a long real-production
