@@ -8,13 +8,29 @@
  * Config is a small JSON blob stored in the R2 bucket (env.SCREENSHOTS_BUCKET)
  * at key "brand-config.json": { [brandId]: { logoUrl, link } }.
  *
- * Logo image editing was removed this session — the file-upload path never
- * actually worked in production, so it's been taken out rather than left as
- * a broken control. `logoUrl` stays in the data shape (untouched, just
- * nothing currently writes it) so brand pills that have no logo simply show
- * colored initials until logo handling is redesigned.
+ * Logo image UPLOADING was removed in an earlier session — the file-upload
+ * path never actually worked in production, so it was taken out rather than
+ * left as a broken control. Real logos came back a different way this
+ * session: static files checked into the repo
+ * (public/assets/img/brands/<brandId>.png) with DEFAULT_LOGOS below mapping
+ * each brand to its file. readConfig() fills in a brand's `logoUrl` from
+ * this map whenever R2 doesn't already have one set for it — so nothing
+ * needs to be "uploaded" through the app, and if `link`-only edits happen
+ * through the POST endpoint, an existing default logo is left alone (not
+ * overwritten with nothing).
+ *
+ * Jeetway has no logo file yet (not supplied) — falls back to colored
+ * initials like every brand did before this session, same as ever.
  */
 import { verifyRequest } from "../_shared/accounts.js";
+
+const DEFAULT_LOGOS = {
+  crickex: "/assets/img/brands/crickex.png",
+  betjili: "/assets/img/brands/betjili.png",
+  mostplay: "/assets/img/brands/mostplay.png",
+  betvisa: "/assets/img/brands/betvisa.png",
+  // jeetway: intentionally absent — no logo file supplied yet.
+};
 
 export async function onRequestGet(context) {
   try {
@@ -63,14 +79,24 @@ async function handlePost({ request, env }) {
 
 async function readConfig(env) {
   const bucket = env.SCREENSHOTS_BUCKET;
-  if (!bucket) return {};
-  try {
-    const obj = await bucket.get("brand-config.json");
-    if (!obj) return {};
-    return JSON.parse(await obj.text());
-  } catch {
-    return {};
+  let config = {};
+  if (bucket) {
+    try {
+      const obj = await bucket.get("brand-config.json");
+      if (obj) config = JSON.parse(await obj.text());
+    } catch {
+      config = {};
+    }
   }
+  // Fill in each brand's default logo (from the static files checked into
+  // the repo) whenever R2 doesn't already have a logoUrl set for it — see
+  // the file header for why this replaced the old upload-based approach.
+  for (const [brandId, logoUrl] of Object.entries(DEFAULT_LOGOS)) {
+    const entry = config[brandId] || {};
+    if (!entry.logoUrl) entry.logoUrl = logoUrl;
+    config[brandId] = entry;
+  }
+  return config;
 }
 
 function json(obj, status = 200) {

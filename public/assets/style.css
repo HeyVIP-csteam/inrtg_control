@@ -76,6 +76,54 @@ body {
   transition: background 0.2s ease, color 0.2s ease;
 }
 
+/* ---- Animated space-photo background (dark theme only) ----
+   Injected by assets/starfield.js as #starfieldRoot, prepended to
+   <body>. Sits behind everything (negative z-index) — real page
+   content (topbar, cards, sidebars) is completely unaffected and
+   keeps using its own backgrounds; this only shows through the empty
+   space around/behind them, same as the plain gradient it replaces in
+   dark theme. Not present at all in light theme (starfield.js handles
+   that) or when prefers-reduced-motion is set (the .sf-static variant
+   below — same photo, no zoom/parallax/stars/meteors). */
+#starfieldRoot { position: fixed; inset: 0; z-index: -2; overflow: hidden; pointer-events: none; }
+.sf-bgwrap { position: fixed; inset: -4%; overflow: hidden; }
+.sf-bgimg {
+  position: absolute; inset: -3%;
+  background-image: url('/assets/img/bg-space.jpg');
+  background-size: cover; background-position: center;
+  animation: sf-breathe 28s ease-in-out infinite;
+  transition: transform 0.4s ease-out;
+}
+@keyframes sf-breathe {
+  0%, 100% { transform: scale(1.0); }
+  50% { transform: scale(1.055); }
+}
+.sf-shade {
+  position: fixed; inset: 0;
+  background: linear-gradient(180deg, rgba(3,4,13,0.35) 0%, rgba(3,4,13,0.55) 55%, rgba(3,4,13,0.75) 100%);
+}
+.sf-stars { position: fixed; inset: 0; }
+.sf-star { position: absolute; border-radius: 50%; background: #fff; animation: sf-twinkle linear infinite; }
+@keyframes sf-twinkle { 0%, 100% { opacity: var(--sf-min-op, 0.15); } 50% { opacity: var(--sf-max-op, 1); } }
+.sf-meteors { position: fixed; inset: 0; }
+.sf-meteor {
+  position: absolute; top: 0; left: 0; width: 120px; height: 2px;
+  background: linear-gradient(90deg, rgba(255,255,255,0.9), rgba(255,255,255,0));
+  filter: drop-shadow(0 0 4px rgba(255,255,255,0.7));
+  opacity: 0; animation: sf-meteor-fall linear infinite;
+}
+@keyframes sf-meteor-fall {
+  0% { opacity: 0; transform: translate(0,0) rotate(30deg); }
+  3% { opacity: 1; } 45% { opacity: 1; }
+  52% { opacity: 0; transform: translate(480px, 300px) rotate(30deg); }
+  100% { opacity: 0; transform: translate(480px, 300px) rotate(30deg); }
+}
+/* prefers-reduced-motion — starfield.js skips generating stars/meteors
+   and adds this class; belt-and-suspenders in CSS too in case markup
+   ever ends up present regardless. */
+.sf-static .sf-bgimg { animation: none; }
+.sf-static .sf-star, .sf-static .sf-meteor { display: none; }
+
 /* threads.html only — locks the whole page to the viewport so the only
    thing that ever scrolls is the conversation area, and the reply bar
    stays genuinely pinned regardless of browser zoom level. */

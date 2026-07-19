@@ -62,6 +62,8 @@ routing admin page ("TG Group / Channel"). Deployed on Cloudflare Pages.
 | `public/assets/app.js` | Renders the submission form dynamically from schemas.js; every input/textarea has `autocomplete="off"` |
 | `public/assets/style.css` | All styling — dark starfield / light glass theme, Space Grotesk display font, gold accent, TG Reply Threads chat panel, TG Group/Channel panel, modal close-button styling |
 | `public/assets/theme.js` | Theme toggle (dark/light) + live clock |
+| `public/assets/starfield.js` | Animated space-photo background — new this session, see "Animated background" below |
+| `public/assets/img/bg-space.jpg` | The space photo the animated background is built on (user-supplied, compressed to ~250KB) |
 | `public/index.html` | Hub page — topbar, brand pills, sidebar, Home cards, Account Management sidebar (Create Account / Whitelist IP / TG Group Channel / Reset Password / Agent Profile) |
 | `public/form.html` | Generic form page, driven by `?module=<id>` |
 | `public/threads.html` | TG Reply Threads dashboard — full chat-panel UI |
@@ -519,16 +521,34 @@ future, remember the other one needs a matching edit by hand.
 
 ---
 
-## Brand pill Link editor (`/api/brand-config`) — logo removed, password
-removed this session
+## Brand pill Link editor (`/api/brand-config`) — logo REBUILT this
+session (static files, not an upload feature), password removed a
+previous session
 
-- **Logo image upload removed entirely.** It never actually worked in
-  production; rather than debug it, it was deleted. The "Edit brand"
-  modal now has exactly ONE field: Link (opens when the pill is
-  clicked). No logo control at all for now — brand pills show colored-
-  initials avatars until logo handling is redesigned. Business owner's
-  words: "Logo 之后再想办法" (revisit later) — **no replacement plan has
-  been chosen yet.**
+- **Logo images are back — via static files, not the old upload flow.**
+  The old file-upload path never worked in production and was ripped out
+  in an earlier session ("Logo 之后再想办法"). This session, the business
+  owner supplied logo image files directly instead: checked into the repo
+  at `public/assets/img/brands/<brandId>.png` (Crickex, Betjili, Mostplay,
+  BetVisa — 160×160, resized/optimized from the originals). Simple —
+  the images just deploy with the site like any other static asset, no
+  R2 upload, no admin UI to rebuild.
+  `functions/api/brand-config.js`'s `DEFAULT_LOGOS` map ties each brand
+  ID to its file, and `readConfig()` fills in `logoUrl` from that map for
+  any brand that doesn't already have one set in R2 — so the existing
+  `{ [brandId]: { logoUrl, link } }` shape and the pill-rendering code in
+  `index.html` (`buildBrandPill()`) needed ZERO changes; they already
+  checked for `entry.logoUrl` and just silently had nothing to show
+  before.
+  **Jeetway has no logo file yet** — not supplied — so it still falls
+  back to a colored-initials avatar like every brand did before this
+  session. Add `public/assets/img/brands/jeetway.png` and the
+  `DEFAULT_LOGOS` entry for it once that file exists; nothing else needs
+  to change.
+  The "Edit brand" modal still only has a Link field — no logo UPLOAD
+  control was rebuilt (deliberately; static files checked into the repo
+  are simpler and were what actually got used), but logos now render
+  correctly via the default-file mechanism above regardless.
 - **`BRAND_EDIT_PASSWORD` gate removed from this endpoint.** Replaced
   with the same `verifyRequest()` login check every other endpoint uses
   — any logged-in agent (any role) can edit a brand's link now, same
@@ -665,7 +685,11 @@ of the current 6-second poll).
 1. **Promo Code Search** — "Start On" column has no source data (always
    "—"); "all 11 tabs share the same A–N layout" is unverified beyond one
    reference tab.
-2. **Brand logo** — deliberately removed, no replacement plan chosen.
+2. **Brand logos** — ✅ done this session for 4 of 5 brands (Crickex,
+   Betjili, Mostplay, BetVisa) — see "Brand pill Link editor" section
+   below for how. **Jeetway still needs its logo file supplied** — until
+   then it keeps showing the colored-initials fallback like all 5 did
+   before this session.
 3. **`GET /api/screenshot/<key>` and `GET /api/brand-config`** — no login
    gate, pre-existing, flagged for awareness only.
 4. **Live-tested end-to-end this session, after a long real-production
@@ -682,3 +706,63 @@ GitHub web upload can cause duplicate files or misplaced content if the
 wrong folder depth is dragged in. Always sanity-check file contents after
 upload if something looks broken post-deploy, before assuming the code
 itself is wrong.
+
+## Animated background (built this session)
+
+The site-wide background (dark theme only) is now the business owner's
+own space photo (`public/assets/img/bg-space.jpg`, compressed from a
+~2.8MB original to ~250KB), brought to life with layered effects rather
+than a static image:
+- Very slow "breathing" zoom (scale 1 → 1.055 → 1 over 28s)
+- Subtle mouse-parallax drift (the photo shifts slightly opposite the
+  cursor)
+- A twinkling star overlay (60 stars, independently randomized size/
+  twinkle speed/position, regenerated fresh on every page load)
+- A meteor shower overlay (22 streaking meteors, randomized start point/
+  speed/delay — raised from an initial 6 after the business owner asked
+  for it denser)
+- A dark shading gradient so foreground cards stay readable regardless
+  of which part of the photo sits behind them
+
+**Architecture:** one shared script, `public/assets/starfield.js`,
+included via `<script src="/assets/starfield.js" defer></script>` in all
+6 pages' `<head>` (right after `theme.js`) — it injects the background
+markup into `<body>` itself rather than duplicating it as HTML in every
+page. It watches `<html data-theme="...">` via a `MutationObserver`, so
+toggling the theme live mounts/unmounts the whole thing instantly, no
+page reload needed.
+
+**Light theme:** deliberately untouched — a space photo doesn't suit the
+light theme's lavender/blue look, so `starfield.js` simply does nothing
+there; light theme keeps the original `--page-bg` gradient exactly as it
+was.
+
+**`prefers-reduced-motion` respected:** if set, the photo still shows
+(as a plain static background) but with zero animation — no zoom, no
+parallax, no stars, no meteors.
+
+**Explored and explicitly NOT built, so it doesn't get re-proposed
+later:**
+- *Pure-CSS drawn planets/nebula (no photo)* — built as an earlier
+  preview iteration (glowing gradient "planets," nebula color washes,
+  CSS-only). Superseded once the business owner supplied their own
+  photo instead — a real photo reads far more "real" than CSS-drawn
+  spheres, so this direction was dropped in favor of animating the
+  supplied photo. Not present in the final code at all.
+- *Planet-collision / explosion sequence* (Earth + Mars drifting
+  together, impact flash, shockwave rings, debris) — built and shown as
+  a preview, explicitly flagged as a real distraction risk for a
+  work-focused CS dashboard (a recurring bright flash behind a ticketing
+  tool that agents stare at all day), and NOT adopted. If this comes up
+  again: the working preview code existed (Earth/Mars approach +
+  collision animation), it just isn't in the shipped site — could be
+  revived, but reconsider the distraction trade-off first, and consider
+  making it a rare/toggleable event rather than a fixed loop if it is
+  revived.
+- *"6D" effects* — clarified with the business owner that this is a
+  cinema/attraction marketing term (motion seats, wind, water, smell),
+  not a real graphics capability; a browser background can only ever be
+  visual. Interpreted as wanting stronger depth/parallax instead, which
+  is what the mouse-parallax + shading layers already provide.
+
+
