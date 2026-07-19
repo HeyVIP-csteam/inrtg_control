@@ -713,12 +713,15 @@ whether that's acceptable for this internal tool).
   Report), and the Account Issue / Risk Issue dynamic-fallback message
   builders. Verified by rendering sample output in Node — not yet sent
   through a live Telegram message.
-- **Still pending, waiting on the business owner:** unifying each
-  module's Telegram routing (QA, Account Issue, Risk Issue, Daily
-  Report, Genie Issue) so all 5 brands go to ONE fixed group/topic per
-  module — same treatment already done for Promotion Request earlier
-  this session. Need a `t.me/c/.../N` link (or just the group link if no
-  topic) for each of those modules before this can be done.
+- **Done:** all 5 modules unified across all 5 brands — QA (topic 3),
+  Account Issue (topic 10), Risk Issue (topic 17), Daily Report (topic
+  22), Genie Issue (topic 24), all in chat `-1004488354399`; Promotion
+  Request stays in the separate group/topic set up earlier this session
+  (`-1003844665813` / topic 30). No more `-100XXXXXXXXXX` placeholders
+  left anywhere in `BRANDS`. BetVisa's Risk Issue topic changed from 26
+  to 17 to match the new shared value (was the only brand with a real
+  value before, and it didn't match what the business owner gave for
+  the unified setup).
 
 ## Recurring non-code gotcha (from the original handoff, still true)
 GitHub web upload can cause duplicate files or misplaced content if the
