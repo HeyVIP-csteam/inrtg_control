@@ -42,6 +42,11 @@
   .admin-table .row-actions { display: flex; align-items: center; gap: 8px; }
   .admin-table .row-actions button { background: none; border: none; cursor: pointer; font-size: 13px; color: var(--label-blue); }
   .admin-table .row-actions button.danger { color: #e0577a; }
+  .admin-table .row-actions button.unlock-btn { color: #1a9c6e; }
+  .locked-badge {
+    display: inline-flex; align-items: center; gap: 3px; font-size: 11.5px; font-weight: 700;
+    color: #e0577a; background: rgba(224, 87, 122, 0.12); border-radius: 6px; padding: 2px 7px;
+  }
 
   .brand-checks { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 6px; }
   .brand-checks label { display: inline-flex; align-items: center; gap: 5px; font-size: 12.5px; background: var(--field-bg); border: 1px solid var(--border); border-radius: 20px; padding: 4px 10px; cursor: pointer; }
@@ -161,7 +166,7 @@
       <div class="admin-card">
         <h3>Existing Accounts</h3>
         <table class="admin-table">
-          <thead><tr><th>Username</th><th>Full Name</th><th>PID</th><th>Role</th><th>Office</th><th>Brands</th><th>Last Login</th><th>Pwd Changed</th><th>Actions</th></tr></thead>
+          <thead><tr><th>Username</th><th>Full Name</th><th>PID</th><th>Role</th><th>Office</th><th>Brands</th><th>Status</th><th>Last Login</th><th>Pwd Changed</th><th>Actions</th></tr></thead>
           <tbody id="accountsTableBody"></tbody>
         </table>
       </div>
@@ -397,12 +402,21 @@
 
     function renderAccountsTable() {
       const body = document.getElementById("accountsTableBody");
+      const isSuperAdmin = getAuth()?.role === "superadmin" || !!bootstrapPassword;
       body.innerHTML = accounts.map((a) => {
         const officeName = offices.find((o) => o.id === a.officeId)?.name || "—";
         const brands = a.allowedBrands === "all" ? "All" : (a.allowedBrands || []).join(", ") || "—";
         const pwChanged = a.lastPasswordChange
           ? `${timeAgo(a.lastPasswordChange.at)} <span style="color:var(--ink-soft); font-size:11px;">by ${escapeHtml(a.lastPasswordChange.by)}</span>`
           : "—";
+        const statusCell = a.locked
+          ? `<span class="locked-badge" title="${escapeHtml(a.lockedReason || "Locked")}">🔒 Locked</span>`
+          : `<span style="color:var(--ink-soft);">Active</span>`;
+        const lockBtn = isSuperAdmin
+          ? (a.locked
+              ? `<button class="unlock-btn" data-unlock-account="${escapeHtml(a.username)}">Unlock</button>`
+              : `<button class="danger" data-lock-account="${escapeHtml(a.username)}">Lock</button>`)
+          : "";
         return `
         <tr>
           <td>${escapeHtml(a.username)}</td>
@@ -411,16 +425,20 @@
           <td>${escapeHtml(a.role)}</td>
           <td>${escapeHtml(officeName)}</td>
           <td>${escapeHtml(brands)}</td>
+          <td>${statusCell}</td>
           <td>${timeAgo(a.lastActiveAt)}</td>
           <td>${pwChanged}</td>
           <td class="row-actions">
             <button data-edit-account="${a.username}">Edit</button>
+            ${lockBtn}
             <button class="danger" data-delete-account="${a.username}">Delete</button>
           </td>
         </tr>`;
-      }).join("") || `<tr><td colspan="9" style="color:var(--ink-soft);">No accounts yet.</td></tr>`;
+      }).join("") || `<tr><td colspan="10" style="color:var(--ink-soft);">No accounts yet.</td></tr>`;
       body.querySelectorAll("[data-edit-account]").forEach((b) => b.addEventListener("click", () => editAccount(b.dataset.editAccount)));
       body.querySelectorAll("[data-delete-account]").forEach((b) => b.addEventListener("click", () => deleteAccount(b.dataset.deleteAccount)));
+      body.querySelectorAll("[data-lock-account]").forEach((b) => b.addEventListener("click", () => setAccountLock(b.dataset.lockAccount, true)));
+      body.querySelectorAll("[data-unlock-account]").forEach((b) => b.addEventListener("click", () => setAccountLock(b.dataset.unlockAccount, false)));
     }
 
     function editAccount(username) {
@@ -493,6 +511,18 @@
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action: "delete", username }),
       });
+      loadAccounts();
+    }
+
+    async function setAccountLock(username, locked) {
+      const verb = locked ? "Lock" : "Unlock";
+      if (!confirm(`${verb} account "${username}"?${locked ? " They won't be able to log in (or keep using an already-open session) until unlocked." : ""}`)) return;
+      const res = await adminFetch("/api/admin/accounts", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: locked ? "lock" : "unlock", username }),
+      });
+      const data = await res.json();
+      if (!data.ok) { alert(data.error || `${verb} failed.`); return; }
       loadAccounts();
     }
   </script>

@@ -34,6 +34,24 @@
  * multiple IPs that are ALL already on the approved list never alerts at
  * all (officeIpCheckPasses() passes, this whole block is skipped).
  *
+ * ACCOUNT AUTO-LOCK — also requested directly. Two independent triggers,
+ * either one locks the account (sets `locked: true` via
+ * setAccountLocked() in _shared/accounts.js — see that file for what
+ * locking actually does to every other endpoint, not just this one):
+ *   1. 5 CONSECUTIVE wrong-password attempts (counter in KV, reset to 0
+ *      the moment a correct password comes in — this is about repeated
+ *      wrong guesses, not lifetime attempts).
+ *   2. 5 DIFFERENT unrecognized IPs within a rolling 1-hour window (KV-
+ *      stored timestamped list, pruned to the last hour on every check —
+ *      repeatedly retrying from the SAME bad IP doesn't count multiple
+ *      times toward this, only genuinely different IPs do).
+ * Once locked, the account can't log in (or use any already-open browser
+ * session — see verifyRequest() in _shared/accounts.js) until a
+ * SuperAdmin manually unlocks it (accounts-admin.html, or Agent Profile
+ * on the Home sidebar). A separate Telegram alert fires the moment an
+ * account gets auto-locked, distinct from the per-attempt IP-warning
+ * message above.
+ *
  * NOT YET CONFIGURED: set SECURITY_ALERTS_CHAT_ID (and optionally
  * SECURITY_ALERTS_TOPIC_ID) as Cloudflare environment variables once
  * there's a Telegram group/topic picked out for these — until then this
@@ -41,8 +59,12 @@
  * so this ships now without breaking anything or requiring the group to
  * exist yet.
  */
-import { getAccount, verifyPassword, officeIpCheckPasses, getOffice, requestIP } from "../../_shared/accounts.js";
+import { getAccount, verifyPassword, officeIpCheckPasses, getOffice, requestIP, setAccountLocked } from "../../_shared/accounts.js";
 import { sendTelegramMessage } from "../../_shared/telegram.js";
+
+const PASSWORD_FAIL_LOCK_THRESHOLD = 5;
+const IP_FAIL_LOCK_DISTINCT_THRESHOLD = 5;
+const IP_FAIL_WINDOW_MS = 60 * 60 * 1000; // 1 hour
 
 export async function onRequestPost(context) {
   try {
@@ -70,8 +92,23 @@ async function handleLogin({ request, env, waitUntil }) {
   const account = await getAccount(env, username);
   if (!account) return badCreds();
 
+  // Checked before the (CPU-costly) password hash — see the matching
+  // note in verifyRequest() in _shared/accounts.js.
+  if (account.locked) {
+    return json({ ok: false, error: `This account is locked${account.lockedReason ? ` (${account.lockedReason})` : ""}. Contact a SuperAdmin to unlock it.` }, 403);
+  }
+
   const passwordOk = await verifyPassword(password, account.salt, account.hash, account.iterations);
-  if (!passwordOk) return badCreds();
+  if (!passwordOk) {
+    const { locked, count } = await recordFailedPassword(env, account.username);
+    if (locked && waitUntil) {
+      waitUntil(notifyAccountLocked(env, { account, reason: `${count} consecutive wrong password attempts` }));
+    }
+    return badCreds();
+  }
+  // Correct password — whatever streak of wrong guesses existed before
+  // this is over; don't let it carry forward toward a future lockout.
+  await clearFailedPassword(env, account.username);
 
   if (!(await officeIpCheckPasses(env, account, request))) {
     const ip = requestIP(request) || "unknown";
@@ -79,6 +116,13 @@ async function handleLogin({ request, env, waitUntil }) {
     // rejection response, and a Telegram hiccup here can't turn into a
     // broken login flow (notifyUnrecognizedIp swallows its own errors).
     if (waitUntil) waitUntil(notifyUnrecognizedIp(env, { account, ip, request }));
+
+    const distinctIpCount = await recordFailedIp(env, account.username, ip);
+    if (distinctIpCount >= IP_FAIL_LOCK_DISTINCT_THRESHOLD) {
+      await setAccountLocked(env, account.username, true, `${distinctIpCount} different unrecognized IPs within 1 hour`);
+      if (waitUntil) waitUntil(notifyAccountLocked(env, { account, reason: `${distinctIpCount} different unrecognized IPs within 1 hour` }));
+    }
+
     if (!account.officeId) {
       return json({ ok: false, error: `Your account has no office assigned, so it can't log in from anywhere. Ask an admin to assign you an office (your current IP: ${ip}).` }, 401);
     }
@@ -91,6 +135,60 @@ async function handleLogin({ request, env, waitUntil }) {
     ok: true,
     account: { username: account.username, role: account.role, allowedBrands: account.allowedBrands, officeId: account.officeId },
   });
+}
+
+// ---- consecutive-wrong-password tracking (trigger #1 for auto-lock) ----
+
+async function recordFailedPassword(env, username) {
+  const key = `pwfail:${username}`;
+  const raw = await env.THREADS_KV.get(key);
+  const count = (parseInt(raw || "0", 10) || 0) + 1;
+  if (count >= PASSWORD_FAIL_LOCK_THRESHOLD) {
+    await setAccountLocked(env, username, true, `${count} consecutive wrong password attempts`);
+    await env.THREADS_KV.delete(key); // fresh count if this account is ever unlocked and tried again
+    return { locked: true, count };
+  }
+  await env.THREADS_KV.put(key, String(count));
+  return { locked: false, count };
+}
+
+async function clearFailedPassword(env, username) {
+  await env.THREADS_KV.delete(`pwfail:${username}`).catch(() => {});
+}
+
+// ---- distinct-unrecognized-IPs-per-hour tracking (trigger #2) ----
+
+async function recordFailedIp(env, username, ip) {
+  const key = `ipfail:${username}`;
+  const raw = await env.THREADS_KV.get(key);
+  const now = Date.now();
+  let entries = raw ? JSON.parse(raw) : [];
+  entries = entries.filter((e) => now - e.ts < IP_FAIL_WINDOW_MS);
+  entries.push({ ip, ts: now });
+  entries = entries.slice(-100); // defensive cap, well above what 1 hour of real attempts would ever produce
+  await env.THREADS_KV.put(key, JSON.stringify(entries));
+  return new Set(entries.map((e) => e.ip)).size;
+}
+
+async function notifyAccountLocked(env, { account, reason }) {
+  try {
+    const lines = [
+      `🔒<b>Account Auto-Locked</b>🔒`,
+      ``,
+      `👤 User: ${escapeHtml(account.username)}`,
+      `📋 Reason: ${escapeHtml(reason)}`,
+      `🕒 Colombo Time: ${formatInZone(new Date(), "Asia/Colombo")} (GMT+5:30)`,
+      ``,
+      `🔑 This account can no longer log in (or use any already-open session) until a SuperAdmin unlocks it under Account Management → Agent Profile, or accounts-admin.html.`,
+    ];
+    await sendTelegramMessage(env, {
+      chatId: env.SECURITY_ALERTS_CHAT_ID,
+      topicId: env.SECURITY_ALERTS_TOPIC_ID,
+      text: lines.join("\n"),
+    });
+  } catch {
+    // Never let a notification hiccup affect anything else.
+  }
 }
 
 async function notifyUnrecognizedIp(env, { account, ip, request }) {
@@ -108,7 +206,7 @@ async function notifyUnrecognizedIp(env, { account, ip, request }) {
 
     const now = new Date();
     const lines = [
-      `⚠️<b>登录提醒（IP异常）</b>⚠️`,
+      `⚠️<b>Login Warning (Abnormal IP Address)</b>⚠️`,
       ``,
       `👤 User: ${escapeHtml(account.username)}`,
       `🌐 IP: ${escapeHtml(ip)}`,

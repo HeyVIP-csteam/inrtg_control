@@ -199,6 +199,14 @@ export async function saveAccount(env, { username, password, passwordChangedBy, 
     pid: pid !== undefined ? pid : (existing?.pid || ""),
     lastActiveAt: existing?.lastActiveAt || null,
     lastPasswordChange,
+    // Lock state is intentionally NOT a parameter of saveAccount() — it's
+    // only ever touched by setAccountLocked() below (manual SuperAdmin
+    // action, or the auto-lock triggers in api/auth/login.js), so a
+    // routine profile-field save can never accidentally lock/unlock
+    // someone as a side effect.
+    locked: existing?.locked || false,
+    lockedAt: existing?.lockedAt || null,
+    lockedReason: existing?.lockedReason || null,
   };
   await env.THREADS_KV.put(`account:${key}`, JSON.stringify(account));
   if (!existing) {
@@ -210,6 +218,22 @@ export async function saveAccount(env, { username, password, passwordChangedBy, 
     }
   }
   return stripSecret(account);
+}
+
+// Dedicated lock/unlock — deliberately separate from saveAccount() (see
+// note above) so this is the ONLY code path that ever changes lock
+// state, whether triggered by a SuperAdmin's manual click or by one of
+// the auto-lock triggers in api/auth/login.js (too many distinct
+// unrecognized IPs in an hour, or too many consecutive wrong passwords).
+export async function setAccountLocked(env, username, locked, reason) {
+  const key = username.toLowerCase();
+  const existing = await getAccount(env, key);
+  if (!existing) return null;
+  existing.locked = !!locked;
+  existing.lockedAt = locked ? new Date().toISOString() : null;
+  existing.lockedReason = locked ? (reason || "Locked") : null;
+  await env.THREADS_KV.put(`account:${key}`, JSON.stringify(existing));
+  return stripSecret(existing);
 }
 
 export async function deleteAccount(env, username) {
@@ -291,6 +315,15 @@ export async function verifyRequest(request, env) {
 
   const account = await getAccount(env, username);
   if (!account) return null;
+
+  // Checked BEFORE the password hash — a locked account should be
+  // rejected on every single request (there's no session/token, so a
+  // browser that was already logged in before the lock would otherwise
+  // keep working via its cached credentials), and skipping straight past
+  // PBKDF2 for an account we already know is locked saves real CPU time
+  // on every subsequent request it makes (see the PBKDF2/CPU-limit
+  // writeup under "Account system" in PROJECT_STATUS.md).
+  if (account.locked) return null;
 
   const passwordOk = await verifyPassword(password, account.salt, account.hash, account.iterations);
   if (!passwordOk) return null;

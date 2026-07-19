@@ -79,7 +79,7 @@ routing admin page ("TG Group / Channel"). Deployed on Cloudflare Pages.
 | `functions/_shared/threads.js` | TG Reply Threads KV storage layer — create/read/update threads, auto-cleanup, deletion log. This session: removed the shared `"index"` KV key (was a write-contention hot spot under concurrent agents) in favor of `THREADS_KV.list()` + per-key metadata — see "Reliability & performance" below. |
 | `functions/_shared/accounts.js` | Office/Account KV storage, password hashing, per-request auth (`verifyRequest`), role ranks, and the shared `officeIpCheckPasses()` office/IP rule |
 | `functions/api/auth/login.js` | `POST /api/auth/login` — uses the same `officeIpCheckPasses()` as every other endpoint |
-| `functions/api/admin/offices.js`, `functions/api/admin/accounts.js` | Admin-only Office/Account CRUD |
+| `functions/api/admin/offices.js`, `functions/api/admin/accounts.js` | Admin-only Office/Account CRUD; `accounts.js` also has SuperAdmin-only lock/unlock (see Account system below) |
 | `functions/api/account/change-password.js` | Self-service password change |
 | `functions/api/telegram-webhook.js` | Receives Telegram messages, matches replies to threads |
 | `functions/api/threads.js` | `GET /api/threads` — list active/solved threads, search, login-gated, brand-filtered |
@@ -183,23 +183,90 @@ beyond the one reference tab. Unchanged this session.
 
 ## Account system
 
-### 🆕 Unrecognized-IP login alerts (built this session, needs one config
-step before it's live)
+### 🆕 Account locking — manual + two auto-lock triggers (built this
+session)
+
+A `locked` boolean (plus `lockedAt`, `lockedReason`) now lives on every
+account record. A locked account is rejected everywhere — login
+(`api/auth/login.js`) AND every already-open browser session on every
+subsequent request (`verifyRequest()` in `_shared/accounts.js`, since
+this system has no session/token — see the design note at the top of
+that file — a browser that was logged in before the lock would otherwise
+keep working via its cached credentials). The locked check runs BEFORE
+the password hash in both places, which also saves real CPU time on
+every request against a known-locked account (see the PBKDF2/CPU-limit
+writeup above).
+
+**Three ways an account gets locked:**
+1. **Manual** — SuperAdmin only (no delegation to Admin/Senior, unlike
+   most account actions), via a 🔒/🔓 button: Home sidebar → Account
+   Management → Agent Profile, or the hidden `/accounts-admin.html`.
+   `POST /api/admin/accounts { action: "lock"|"unlock", username }`.
+2. **Auto — 5 consecutive wrong passwords.** Counter in KV
+   (`pwfail:<username>`), reset to 0 the instant a correct password comes
+   in — this is about a wrong-guess STREAK, not a lifetime total.
+3. **Auto — 5 different unrecognized IPs within a rolling 1 hour.**
+   Timestamped list in KV (`ipfail:<username>`), pruned to the last hour
+   on every check. Retrying from the SAME bad IP repeatedly doesn't add
+   up toward this — only genuinely different IPs do. **This trigger can
+   never affect SuperAdmin accounts**, because SuperAdmin bypasses the
+   office/IP check entirely (`officeIpCheckPasses()`) — the whole
+   IP-related block in login.js is skipped for them, same as it always
+   was.
+
+Each auto-lock also fires its own distinct Telegram alert (🔒 Account
+Auto-Locked), separate from the per-attempt ⚠️ IP-warning message — both
+go to the same `SECURITY_ALERTS_CHAT_ID`/`SECURITY_ALERTS_TOPIC_ID` (see
+below).
+
+**⚠️ Known risk, flagged rather than solved (matches the existing
+"account with no office = locked out, no in-app recovery" trade-off
+documented elsewhere in this file):** the wrong-password auto-lock
+trigger (#2 above) is NOT exempted for SuperAdmin. If someone (or a
+brute-force attempt) enters 5 wrong passwords against the only existing
+SuperAdmin account, THAT account locks too, and since unlocking requires
+a SuperAdmin, this can dead-end with no in-app recovery — only a direct
+Cloudflare KV edit (`account:<username>` → set `"locked": false`). Worth
+deciding deliberately: exempt SuperAdmin from this specific trigger, or
+accept the risk given how it's a much narrower window than the old
+no-office trap (5 WRONG guesses in a row, not just "no office set"). Not
+changed without being asked, per the pattern in the rest of this doc.
+
+### 🆕 Unrecognized-IP login alerts + auto-lock notifications (built this
+session, needs one config step before it's live)
 
 When a real account (correct username + password) tries to log in from
-an IP that's NOT on its office's approved list, a Telegram alert can fire
-to a security/alerts chat — username, role, the IP, office name, raw
-User-Agent string (best available "device" info — Cloudflare/browsers
-don't expose real device details, just what the browser reports about
-itself), and a timestamp. **Login is still blocked exactly as before —
-this only adds visibility, it does not loosen the office/IP rule.**
-
-De-duplication was considered (only alert once per account+IP) but the
-business owner specifically wants a count of how many times an account
-has tried from unapproved networks — **so this notifies on EVERY single
-failed-IP attempt, deliberately not de-duplicated.** Sent via
+an IP that's NOT on its office's approved list, a Telegram alert fires to
+a security/alerts chat — user, IP, assigned office, browser/device (best
+available — Cloudflare/browsers don't expose real device details, just
+what the browser reports about itself), country/city/ISP (from
+Cloudflare's own edge geo data on the request — `request.cf`, no extra
+API call, no added latency), and both Colombo and Malaysia local time.
+**Login is still blocked exactly as before — this only adds visibility.**
+Notifies on EVERY such attempt, deliberately NOT de-duplicated — the
+business owner wants a count of how many times an account has tried from
+unapproved networks, not just a one-time flag. Switching between IPs that
+are ALL already whitelisted never triggers this at all. Sent via
 `context.waitUntil()` so it never adds latency to the (still instant)
 rejection response, and a Telegram hiccup can't break login.
+
+Message format (exact wording/emoji requested directly by the business
+owner):
+```
+⚠️Login Warning (Abnormal IP Address)⚠️
+
+👤 User: <username>
+🌐 IP: <ip>
+🏢 Assigned office: <office name or "none">
+📱 Browser/device: <raw User-Agent string>
+🗺️ Country: <spelled out via Intl.DisplayNames, e.g. "LK" -> "Sri Lanka">
+🏙️ City: <from request.cf.city>
+📡 ISP: <from request.cf.asOrganization>
+🕒 Colombo Time: <YYYY-MM-DD HH:mm> (GMT+5:30)
+🕗 Malaysia Time: <YYYY-MM-DD HH:mm> (GMT+8:00)
+
+🚫 Login was blocked as usual — this is just a heads-up.
+```
 
 **Not fully wired up yet — one thing still needed:** set
 `SECURITY_ALERTS_CHAT_ID` (and optionally `SECURITY_ALERTS_TOPIC_ID` if
@@ -207,8 +274,7 @@ it should go to a specific topic, not just the group's General) as
 Cloudflare environment variables once a Telegram group/topic exists for
 this. Until then, `sendTelegramMessage()` in `_shared/telegram.js` sees
 no chat ID configured and silently no-ops — nothing breaks, alerts just
-don't go anywhere yet. Business owner hasn't decided which chat to use —
-revisit once that's picked.
+don't go anywhere yet.
 
 ### ✅ Root-caused and fixed this session — the mysterious, persistent 503s
 across the whole site (submit, threads list, open a thread, send a reply,
@@ -293,6 +359,7 @@ below my rank" comparison:
 | Delete an Admin/SuperAdmin account | ❌ | ❌ | ❌ | ✅ |
 | View Whitelist IP (Offices) | ❌ | ❌ | 👁️ view only | ✅ view + edit |
 | View / edit TG Group Channel routing | ❌ | ❌ | ❌ | ✅ only |
+| Lock / unlock an account (manual) | ❌ | ❌ | ❌ | ✅ only |
 | View Agent Profile table | ❌ | ❌ | ✅ view | ✅ view |
 | Edit Agent Profile fullName/PID | ❌ | ❌ | ✅ | ✅ |
 | Edit Agent Profile Role | ❌ | ❌ | ❌ | ✅ |

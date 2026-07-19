@@ -10,6 +10,12 @@
  *     semantics).
  *   POST { action:"delete", username }   -> requires rank >= admin, and
  *     scoped the same way as create/reset below.
+ *   POST { action:"lock"|"unlock", username, reason? } -> SuperAdmin ONLY,
+ *     no delegation to Admin/Senior (unlike everything else in this
+ *     file). Manual override in either direction for the auto-lock
+ *     feature in api/auth/login.js (5 consecutive wrong passwords, or 5
+ *     different unrecognized IPs within an hour, both lock the account
+ *     automatically) — see that file's header for the full writeup.
  *
  * Permission matrix (see PROJECT_STATUS.md "Role hierarchy" for the
  * full writeup) — each tier's "manage scope" is a literal allow-list,
@@ -28,7 +34,7 @@
  *   - Editing fullName / pid (profile fields) on an EXISTING account:
  *     rank >= admin (Admin and SuperAdmin both allowed — Senior is not).
  */
-import { listAccounts, saveAccount, deleteAccount, getAccount, authenticateStaff, anySuperAdminExists, ROLE_RANK, rankOf } from "../../_shared/accounts.js";
+import { listAccounts, saveAccount, deleteAccount, getAccount, authenticateStaff, anySuperAdminExists, setAccountLocked, ROLE_RANK, rankOf } from "../../_shared/accounts.js";
 
 // Literal allow-lists, not a rank comparison — see file header.
 const MANAGE_SCOPE = {
@@ -157,6 +163,23 @@ async function handlePost({ request, env }) {
     }
     await deleteAccount(env, body.username);
     return json({ ok: true });
+  }
+
+  if (body.action === "lock" || body.action === "unlock") {
+    // Manual lock/unlock — SuperAdmin only, no exceptions (unlike
+    // delete/create which follow the tiered MANAGE_SCOPE allow-list,
+    // locking someone out of the whole hub is treated as sensitive
+    // enough to not delegate down to Admin). Requested directly by the
+    // business owner alongside the auto-lock triggers in
+    // api/auth/login.js — see that file for what actually causes an
+    // automatic lock; this is just the manual override either direction.
+    if (actorRank < ROLE_RANK.superadmin) return json({ ok: false, error: "Only SuperAdmin can lock or unlock an account." }, 403);
+    if (!body.username) return json({ ok: false, error: "Missing username." }, 400);
+    const target = await getAccount(env, body.username);
+    if (!target) return json({ ok: false, error: "Account not found." }, 404);
+    const locked = body.action === "lock";
+    const account = await setAccountLocked(env, body.username, locked, locked ? (body.reason || `Manually locked by ${actorUsername}`) : null);
+    return json({ ok: true, account });
   }
 
   return json({ ok: false, error: `Unknown action "${body.action}".` }, 400);
