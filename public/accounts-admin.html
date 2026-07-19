@@ -8,7 +8,7 @@
 <script src="/assets/theme.js"></script>
 <script src="/assets/schemas.js"></script>
 <style>
-  .admin-shell { max-width: 980px; margin: 0 auto; padding: 24px 20px 80px; }
+  .admin-shell { max-width: 1360px; margin: 0 auto; padding: 24px 20px 80px; }
   .admin-tabs { display: flex; gap: 8px; margin-bottom: 18px; }
   .admin-tab {
     padding: 9px 16px; border-radius: 12px; font-size: 13px; font-weight: 700;
@@ -39,7 +39,7 @@
   .admin-table tbody tr:last-child { border-bottom: none; }
   .admin-table td { padding: 10px 12px; vertical-align: middle; border-right: 1px solid rgba(148, 163, 184, 0.18); }
   .admin-table td:last-child { border-right: none; }
-  .admin-table .row-actions { display: flex; align-items: center; gap: 8px; }
+  .admin-table .row-actions { display: flex; align-items: center; gap: 6px; white-space: nowrap; }
   .admin-table .row-actions button { background: none; border: none; cursor: pointer; font-size: 13px; color: var(--label-blue); }
   .admin-table .row-actions button.danger { color: #e0577a; }
   .admin-table .row-actions button.unlock-btn { color: #1a9c6e; }
@@ -165,10 +165,12 @@
       </div>
       <div class="admin-card">
         <h3>Existing Accounts</h3>
+        <div style="overflow-x:auto;">
         <table class="admin-table">
           <thead><tr><th>Username</th><th>Full Name</th><th>PID</th><th>Role</th><th>Office</th><th>Brands</th><th>Status</th><th>Last Login</th><th>Pwd Changed</th><th>Actions</th></tr></thead>
           <tbody id="accountsTableBody"></tbody>
         </table>
+        </div>
       </div>
     </div>
   </div>
