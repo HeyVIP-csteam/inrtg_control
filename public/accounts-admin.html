@@ -269,10 +269,14 @@
       }
     }
 
-    function enterAdminShell() {
+    async function enterAdminShell() {
       document.getElementById("loginOverlay").classList.remove("open");
       document.getElementById("adminShell").style.display = "block";
-      loadOffices();
+      // loadAccounts()'s render looks up office names from the `offices`
+      // array — must be populated FIRST, or accounts loading faster than
+      // offices (a real race, not guaranteed either way) renders every
+      // Office column as "—" even for accounts that do have one set.
+      await loadOffices();
       loadAccounts();
     }
 

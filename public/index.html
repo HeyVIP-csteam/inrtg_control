@@ -591,6 +591,7 @@
         const statusCell = a.locked
           ? `<span class="office-missing" title="${acctEsc(a.lockedReason || "Locked")}">🔒 Locked</span>`
           : `<span style="color:var(--ink-soft);">Active</span>`;
+        const brandsCell = a.allowedBrands === "all" ? "All" : ((a.allowedBrands || []).join(", ") || "—");
         const lockBtn = isSuperAdmin
           ? (a.locked
               ? `<button type="button" class="row-btn" data-unlock="${acctEsc(a.username)}" title="Unlock this account">🔓</button>`
@@ -601,6 +602,7 @@
             <td>${acctEsc(a.username)}</td>
             <td class="cell-role"><span class="role-tag">${acctEsc(a.role)}</span></td>
             <td class="cell-office">${officeCell}</td>
+            <td class="cell-brands">${acctEsc(brandsCell)}</td>
             <td>${statusCell}</td>
             <td class="cell-fullname">${acctEsc(a.fullName || "—")}</td>
             <td class="cell-pid">${acctEsc(a.pid || "—")}</td>
@@ -612,8 +614,8 @@
       acctBody.innerHTML = `
         <div class="agent-profile-table-wrap">
           <table class="agent-profile-table">
-            <thead><tr><th>Username</th><th>Role</th><th>Office</th><th>Status</th><th>Full Name</th><th>PSD</th><th>Last Log In Time</th><th>Password Changed</th><th></th></tr></thead>
-            <tbody>${rows || '<tr><td colspan="9" style="color:var(--ink-soft);">No accounts match this filter.</td></tr>'}</tbody>
+            <thead><tr><th>Username</th><th>Role</th><th>Office</th><th>Brands</th><th>Status</th><th>Full Name</th><th>PSD</th><th>Last Log In Time</th><th>Password Changed</th><th></th></tr></thead>
+            <tbody>${rows || '<tr><td colspan="10" style="color:var(--ink-soft);">No accounts match this filter.</td></tr>'}</tbody>
           </table>
         </div>
         ${isAdmin ? "" : '<p class="edit-modal-note">View only.</p>'}`;
