@@ -101,6 +101,59 @@
     let pollTimer = null;
     let searchTimer = null;
 
+    // ---- Local "optimistic" sidebar patches --------------------------
+    // The sidebar list comes from THREADS_KV.list() (see threads.js),
+    // which Cloudflare documents as *eventually* consistent across their
+    // edge — writing a thread's new metadata (e.g. solved:true) doesn't
+    // guarantee list() reflects it on the very next call. But any action
+    // WE just took (solve/unsolve/delete/reply) already hands us that
+    // thread's true fresh state straight from the POST response — no
+    // reason to wait for list() to catch up just to show it. So: patch
+    // it into the local sidebar arrays immediately, and keep protecting
+    // that entry from being clobbered by a stale server response for a
+    // short window, long enough for KV to actually propagate.
+    const localPatches = new Map(); // id -> { summary: {...}|null, expiresAt }
+    const PATCH_TTL_MS = 20000;
+
+    function summaryFromThread(t) {
+      return {
+        id: t.id, module: t.module, moduleName: t.moduleName, icon: t.icon, accent: t.accent,
+        brand: t.brand, title: t.title, submitter: t.submitter, submittedAt: t.submittedAt,
+        lastActivity: t.lastActivity, solved: t.solved, solvedAt: t.solvedAt,
+        replyCount: t.messages.length,
+      };
+    }
+
+    // Call right after a solve/unsolve/reply/edit/recall action succeeds —
+    // `t` is the fresh thread record the server just handed back.
+    function patchLocalThread(t) {
+      localPatches.set(t.id, { summary: summaryFromThread(t), expiresAt: Date.now() + PATCH_TTL_MS });
+      applyLocalPatches();
+      renderLists();
+    }
+
+    // Call right after a delete succeeds.
+    function removeLocalThread(id) {
+      localPatches.set(id, { summary: null, expiresAt: Date.now() + PATCH_TTL_MS });
+      applyLocalPatches();
+      renderLists();
+    }
+
+    // Re-applies every still-valid local patch on top of whatever
+    // activeThreads/solvedThreads currently hold (freshly fetched from the
+    // server, or just patched) — expired patches (KV has had plenty of
+    // time to catch up by then) are dropped so the server becomes the
+    // source of truth again.
+    function applyLocalPatches() {
+      const now = Date.now();
+      for (const [id, patch] of Array.from(localPatches.entries())) {
+        if (patch.expiresAt < now) { localPatches.delete(id); continue; }
+        activeThreads = activeThreads.filter((t) => t.id !== id);
+        solvedThreads = solvedThreads.filter((t) => t.id !== id);
+        if (patch.summary) (patch.summary.solved ? solvedThreads : activeThreads).unshift(patch.summary);
+      }
+    }
+
     const activeList = document.getElementById("activeList");
     const solvedList = document.getElementById("solvedList");
     const activeCount = document.getElementById("activeCount");
@@ -275,6 +328,7 @@
         if (!data.ok) return;
         activeThreads = data.active || [];
         solvedThreads = data.solved || [];
+        applyLocalPatches();
         renderLists();
       } catch {
         // Network hiccup — keep showing the last known list, try again next poll.
@@ -518,13 +572,15 @@
       if (data.ok) {
         selectedThread = data.thread;
         updateThreadContent(selectedThread, true);
+        patchLocalThread(selectedThread);
         loadList();
       }
     }
 
     async function deleteThread() {
       if (!confirm("Delete this tracking record? Telegram and the Sheet are untouched — this only removes it from the dashboard.")) return;
-      const res = await authFetch(`/api/threads/${selectedThread.id}`, {
+      const deletedId = selectedThread.id;
+      const res = await authFetch(`/api/threads/${deletedId}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action: "delete" }),
@@ -537,6 +593,7 @@
       selectedId = null;
       selectedThread = null;
       main.innerHTML = `<div class="threads-placeholder">Pick a thread on the left, or submit a form to start one.</div>`;
+      removeLocalThread(deletedId);
       loadList();
     }
 
@@ -574,6 +631,7 @@
         renderReplyTargetBanner();
         document.getElementById("replyFileInput").value = "";
         updateThreadContent(selectedThread, true);
+        patchLocalThread(selectedThread);
         loadList();
       } catch {
         alert("❌ Send failed: network error.\n\nYour message wasn't sent — try again.");
@@ -599,6 +657,7 @@
       if (!res.ok) return alert(res.error || "Recall failed.");
       selectedThread = res.thread;
       updateThreadContent(selectedThread);
+      patchLocalThread(selectedThread);
       loadList();
     }
 

@@ -34,7 +34,13 @@
  * favor. Any `thread:<id>` key saved before this change has no metadata
  * yet — `listThreads()` below transparently falls back to reading that
  * one thread's full record and re-saves it with metadata attached so it
- * only ever needs to do that once per pre-existing ticket.
+ * only ever needs to do that once per pre-existing ticket. That healing is
+ * capped per call (MAX_HEAL_PER_CALL, near listThreads() below) — right
+ * after this ships, EVERY pre-existing ticket needs healing at once, and
+ * Cloudflare caps how many subrequests one call can make, so healing them
+ * all in a single call risked 503ing the whole page (this actually
+ * happened during testing). The sidebar catches up over a few 6-second
+ * polls instead — a one-time, self-resolving cost.
  *
  * AUTO-CLEANUP — controls how many KV "writes"/"deletes" you burn per day
  * (see the free-plan limits: 1,000 writes/day, 1,000 deletes/day). Adjust
@@ -221,36 +227,54 @@ export async function findThreadIdByMessage(env, chatId, messageId) {
   return env.THREADS_KV.get(`msgid:${chatId}:${messageId}`);
 }
 
+// One-time migration cost, per pre-existing ticket: fetch its full record
+// once and re-save it with metadata attached, so future list() calls can
+// read it cheaply. Isolated into its own function so listThreads() can
+// run a bounded batch of these in parallel (see MAX_HEAL_PER_CALL below).
+async function healThread(env, keyName) {
+  const raw = await env.THREADS_KV.get(keyName);
+  if (!raw) return null;
+  const thread = JSON.parse(raw);
+  const meta = summarize(thread);
+  try {
+    await env.THREADS_KV.put(keyName, raw, { metadata: meta });
+  } catch {
+    // Non-fatal — it'll just get healed again on a future list().
+  }
+  return meta;
+}
+
+// Cloudflare caps how many subrequests a single Function invocation can
+// make (well under what a naive "heal every pre-existing ticket in one
+// pass" loop can hit). Right after this metadata-based sidebar first
+// ships, EVERY existing `thread:*` key needs healing at once — with
+// enough tickets, healing them all serially (or even all in parallel) in
+// ONE call risks tripping that limit and 503ing the whole page, which is
+// exactly what showed up in testing. Capping how many get healed per
+// call bounds the damage to a small, fixed number of extra KV round
+// trips; whatever's left over just gets picked up on the NEXT list() —
+// since polling runs every 6s, the sidebar fully catches up within a
+// handful of cycles after a fresh deploy, and every call after that is
+// cheap again (nothing left to heal).
+const MAX_HEAL_PER_CALL = 15;
+
 // Sidebar list — walks every `thread:*` key via KV's list() (metadata
 // only, no full-record fetch) instead of reading one shared "index" key.
-// Keys saved before this change have no metadata yet; those are healed
-// on the fly (fetch once, re-save with metadata) so it's only ever a
-// one-time cost per pre-existing ticket.
 export async function listThreads(env, { q } = {}) {
-  const results = [];
+  const withMeta = [];
+  const needsHeal = [];
   let cursor;
   do {
     const page = await env.THREADS_KV.list({ prefix: "thread:", cursor, limit: 1000 });
     for (const key of page.keys) {
-      if (key.metadata) {
-        results.push(key.metadata);
-        continue;
-      }
-      // Pre-migration key (or a metadata write that failed once) — fall
-      // back to the full record just this once, then self-heal it.
-      const raw = await env.THREADS_KV.get(key.name);
-      if (!raw) continue;
-      const thread = JSON.parse(raw);
-      const meta = summarize(thread);
-      results.push(meta);
-      try {
-        await env.THREADS_KV.put(key.name, raw, { metadata: meta });
-      } catch {
-        // Non-fatal — it'll just get healed again on a future list().
-      }
+      if (key.metadata) withMeta.push(key.metadata);
+      else needsHeal.push(key.name);
     }
     cursor = page.list_complete ? undefined : page.cursor;
   } while (cursor);
+
+  const healed = await Promise.all(needsHeal.slice(0, MAX_HEAL_PER_CALL).map((name) => healThread(env, name)));
+  const results = [...withMeta, ...healed.filter(Boolean)];
 
   const swept = await sweepExpired(env, results);
   const visible = swept.filter((t) => !t.deleted);
