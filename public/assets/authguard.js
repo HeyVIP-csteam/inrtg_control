@@ -101,6 +101,20 @@
     authFetch: authFetch,
     renderWhoami: renderWhoami,
     logout: function () { clearAuth(); location.href = "/login.html"; },
+    // Filters a list of { id, name, ... } brand entries (e.g.
+    // window.BRANDS from schemas.js) down to only the ones the logged-in
+    // agent is actually allowed to see — used everywhere a brand
+    // picker/list is rendered client-side (Home page brand pills, the
+    // submission form's Brand/Platform dropdown) so an agent scoped to
+    // one brand never even sees the names of brands they can't touch,
+    // not just gets blocked after picking one. `allowedBrands === "all"`
+    // (or not logged in yet) returns the full list unfiltered.
+    filterAllowedBrands: function (brands) {
+      const a = getAuth();
+      if (!a || a.allowedBrands === "all") return brands;
+      const allowed = new Set(a.allowedBrands || []);
+      return (brands || []).filter(function (b) { return allowed.has(b.name); });
+    },
     // After a successful self-service password change, the browser's
     // saved credentials are now stale (still hold the OLD password) —
     // this patches them in place instead of forcing an immediate

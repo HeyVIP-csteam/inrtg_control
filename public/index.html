@@ -148,13 +148,19 @@
 
     function renderBrandRow() {
       brandRowTrack.innerHTML = "";
+      // Only the brands this logged-in agent is actually allowed to see —
+      // an agent scoped to one brand shouldn't see the other brands'
+      // pills at all, not just get blocked after clicking one.
+      const visibleBrands = window.AgentAuth ? window.AgentAuth.filterAllowedBrands(window.BRANDS) : window.BRANDS;
       // Rendered twice back-to-back so the marquee (translateX(-50%) then
       // snap back to 0) loops seamlessly — the end of copy 1 flows
       // straight into the identical copy 2 with no visible jump. Edit
       // clicks work the same from either copy, both point at the same
-      // brand object.
+      // brand object. (If there's only one visible brand, the marquee
+      // animation just won't have much to scroll — that's fine, it's not
+      // disabled, just less noticeable with one/two pills.)
       for (let copy = 0; copy < 2; copy++) {
-        window.BRANDS.forEach((b, i) => brandRowTrack.appendChild(buildBrandPill(b, i)));
+        visibleBrands.forEach((b, i) => brandRowTrack.appendChild(buildBrandPill(b, i)));
       }
     }
 
@@ -246,8 +252,9 @@
     });
 
     const hubStats = document.getElementById("hubStats");
+    const visibleBrandCount = (window.AgentAuth ? window.AgentAuth.filterAllowedBrands(window.BRANDS) : window.BRANDS).length;
     hubStats.innerHTML = `
-      <div class="stat"><b>${window.BRANDS.length}</b><span>Brands</span></div>
+      <div class="stat"><b>${visibleBrandCount}</b><span>Brands</span></div>
       <div class="stat"><b>${window.MODULES.length}</b><span>Modules</span></div>
       <div class="stat"><b>24/7</b><span>Live routing</span></div>
     `;

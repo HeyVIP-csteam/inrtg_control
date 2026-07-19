@@ -26,10 +26,14 @@
   document.getElementById("reporterLabelText").textContent = module.reporterLabel || "Agent Name";
 
   // ---- Brand dropdown ----
+  // Only the brands this logged-in agent is actually allowed to see —
+  // an agent scoped to one brand shouldn't even see other brands' names
+  // in the picker, not just get blocked after choosing one.
   const brandSelect = document.querySelector('select[name="brand"]');
+  const visibleBrands = window.AgentAuth ? window.AgentAuth.filterAllowedBrands(window.BRANDS) : window.BRANDS;
   brandSelect.innerHTML =
     `<option value="" disabled selected>Select brand</option>` +
-    window.BRANDS.map((b) => `<option value="${b.id}">${b.name}</option>`).join("");
+    visibleBrands.map((b) => `<option value="${b.id}">${b.name}</option>`).join("");
 
   // ---- Dynamic fields (with emphasize box + showIf conditionals) ----
   const container = document.getElementById("dynamicFields");

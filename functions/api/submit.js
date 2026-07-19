@@ -2,7 +2,7 @@ import { BRANDS, RECORD_TO_SHEET, MODULE_META, SHEET_LAYOUT, MESSAGE_TEMPLATE, S
 import { appendRowToSheet, appendRowByColumns, writeRowForDate } from "../_shared/googleSheets.js";
 import { uploadAttachmentToR2, screenshotUrl } from "../_shared/r2.js";
 import { createThread } from "../_shared/threads.js";
-import { verifyRequest } from "../_shared/accounts.js";
+import { verifyRequest, canSeeBrand } from "../_shared/accounts.js";
 import { getRouteOverride } from "../_shared/routes.js";
 
 const VALID_MODULES = Object.keys(MODULE_META);
@@ -44,6 +44,14 @@ async function handleSubmit({ request, env }) {
   const brand = BRANDS[brandId];
   if (!brand) {
     return json({ ok: false, error: `Unknown brand "${brandId}".` }, 400);
+  }
+  // Real enforcement, not just hiding it from the dropdown — an agent
+  // scoped to specific brands (account.allowedBrands) can't submit for
+  // any other brand even by calling this endpoint directly. The form's
+  // Brand/Platform dropdown (app.js) already only shows brands they're
+  // allowed to see; this is the server-side half that actually matters.
+  if (!canSeeBrand(account, brand.name)) {
+    return json({ ok: false, error: `You don't have access to submit tickets for ${brand.name}.` }, 403);
   }
   if (!reporter || !Array.isArray(fields)) {
     return json({ ok: false, error: "Missing reporter or fields." }, 400);

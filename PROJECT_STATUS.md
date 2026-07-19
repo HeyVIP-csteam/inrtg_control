@@ -97,6 +97,38 @@ Issue — 6 modules, same as always. Promotion Request uses a single
 unified Telegram message format (`PROMOTION_ROWS_UNIFIED` in
 `functions/_shared/routing.js`) across all 8 brand+promotion combinations.
 
+### ✅ Fixed this session — brand-restricted agents could see (and even
+submit for) every brand, not just the ones assigned to them
+
+Two separate gaps, both fixed:
+1. **Client-side visibility** — the Home page's brand pills
+   (`index.html`) and every submission form's Brand/Platform dropdown
+   (`form.html` via `app.js`) rendered ALL 5 brands unconditionally, even
+   for an agent whose account is scoped to just one (`allowedBrands`).
+   Added `window.AgentAuth.filterAllowedBrands()` in `authguard.js` (one
+   shared helper, used by both places) — an agent scoped to Crickex only
+   now only ever sees "Crickex" as an option, doesn't just get blocked
+   after picking a different one. `allowedBrands === "all"` (or admin/
+   superadmin ranks, per `canSeeBrand()`) still see everything, unchanged.
+2. **Server-side enforcement (the real gap)** — `functions/api/submit.js`
+   never actually checked `allowedBrands` at all; the dropdown hiding a
+   brand was the ONLY thing stopping a restricted agent from submitting
+   for it — calling the API directly (or editing the page) would have
+   worked regardless of the account's brand scope. Added a real
+   `canSeeBrand(account, brand.name)` check right after the brand is
+   resolved, before anything gets sent to Telegram/Sheets — returns 403
+   if the account isn't allowed to touch that brand. This is the fix that
+   actually matters; the dropdown filtering above is just the UX half.
+
+**Deliberately NOT touched:** `/promo.html` (Promo Code Search) — it
+searches across the shared Promo Code Sheet's regional tabs (BDT/PKR/INR/
+etc.), which don't map 1:1 to the 5 brands, so this brand-scoping model
+doesn't apply there the same way; the business owner confirmed this is
+intentionally different. `/threads.html` (TG Reply Threads) needed no
+change — it already filters server-side via `canSeeBrand()` in
+`functions/api/threads.js` (confirmed still correct, not part of this
+session's fix, just verified while investigating this).
+
 ---
 
 ## TG Reply Threads
