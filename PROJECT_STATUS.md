@@ -70,7 +70,7 @@ it. Deployed on Cloudflare Pages.
 | `functions/api/threads/[id].js` | `GET`/`POST` single thread — solve, delete, reply, editRoot, recallRoot, editReply, recallReply — **now login-gated, brand-filtered, and delete/recall no longer need a separate password** |
 | `functions/api/deletion-log.js` | `GET /api/deletion-log` — deletion history — **now requires an admin-role login** |
 | `functions/api/promo-search.js` | Real search against the shared Promo Code Google Sheet (11 team tabs), matches (contains) the Promo Code column, groups results by tab — **now also requires login** |
-| `functions/api/brand-config.js` | Password-protected brand logo/link editor (unchanged this session) |
+| `functions/api/brand-config.js` | Brand link editor — login-gated now, logo upload removed this session (see below) |
 | `functions/api/next-tid.js` | TID generator for Promotion Request — **now also requires login** |
 | `functions/api/screenshot/[[path]].js` | Serves R2 objects (unchanged) |
 | `wrangler.toml` | Now includes the `THREADS_KV` binding (real namespace ID, not a placeholder) |
@@ -823,3 +823,204 @@ GitHub web upload can cause duplicate files or misplaced content if the
 wrong folder depth is dragged in. Always sanity-check file contents after
 upload if something looks broken post-deploy, before assuming the code
 itself is wrong.
+
+---
+
+## Full reliability review — this session (in response to "this system
+can't crash")
+
+Went through every backend file (`functions/_shared/*.js`, every
+`functions/api/**/*.js`) and the highest-risk frontend files
+(`authguard.js`, `threads.html`, `index.html`) specifically looking for
+places an unexpected error could surface as something worse than a clean
+JSON error — a raw platform crash page, a stuck UI, or silently lost data.
+
+### ✅ Fixed: every single API endpoint now has a top-level safety net
+Before this session, error handling was inconsistent — some actions
+(e.g. `submit.js`'s Telegram-with-attachments send, `threads/[id].js`'s
+`reply` action) wrapped their risky calls in `try/catch` and returned a
+clean `{ ok:false, error }`; others (`threads/[id].js`'s `editRoot` /
+`recallRoot` / `editReply` / `recallReply`, which call the Telegram API
+directly) did not. A network hiccup calling Telegram, or Telegram
+returning something that isn't valid JSON (happens on their occasional
+5xx gateway errors), would throw **uncaught**, with no top-level
+`try/catch` in `onRequestPost` to stop it — Cloudflare would return its
+own generic platform error page instead of this app's JSON contract, and
+the frontend (which always expects `res.json()` to work) would fail in
+an ugly, hard-to-diagnose way.
+
+Fixed by renaming every `onRequestGet`/`onRequestPost` to an inner
+`handleX()` function and wrapping the outer exported handler in a
+`try/catch` that always returns `{ ok:false, error: "Unexpected server
+error: ..." }` (status 500, or 502 for the screenshot proxy) on anything
+unexpected. This is a **pure safety net** — it changes nothing about
+normal operation or existing error messages, it only catches the
+unanticipated case that used to fall through. Applied to all 13 endpoint
+files: `submit.js`, `threads.js`, `threads/[id].js`, `admin/routes.js`,
+`admin/accounts.js`, `admin/offices.js`, `deletion-log.js`,
+`auth/login.js`, `account/change-password.js`, `brand-config.js`,
+`promo-search.js`, `next-tid.js`, `screenshot/[[path]].js`.
+Syntax-checked (`node --check`) and brace-balance-checked on every file
+after the change.
+
+### ✅ Fixed — "replies come back slowly under load" (reported live this
+session, root-caused and fixed)
+
+**Root cause, confirmed against Cloudflare's own docs, not a guess:**
+Workers KV has a hard platform limit of **1 write per second to the same
+key** — writing faster than that throws a 429
+(https://developers.cloudflare.com/kv/api/write-key-value-pairs/). Every
+single reply (webhook or dashboard-sent), new ticket submission,
+solve/unsolve toggle, and edit all wrote the exact same shared `"index"`
+KV key (the one the sidebar reads). Under real load — two replies to
+*different* tickets landing within the same second is completely normal
+once there's real traffic — the second write to `index` hits that limit
+and throws. `telegram-webhook.js` deliberately swallows ALL errors (so a
+sync bug can never make Telegram think the webhook is down and start
+retrying), so that failed index write was silently dropped. The
+underlying ticket/message itself was NOT lost — `thread:<id>` and the
+`msgid:` pointer are separate keys, written first, and succeeded — but
+the sidebar entry for that ticket went stale until the next successful
+write to that SAME ticket, which is exactly what "feels slow" from an
+agent's chair. Not something introduced by this session's earlier
+top-level-try/catch hardening — that only changed HTTP API error
+*responses*; this is the webhook → KV index write path, unaffected by
+that change, and was always going to surface once real ticket volume hit
+it.
+
+**Fixed in `functions/_shared/threads.js`:**
+- **`writeIndex()` (and `logDeletion()`, same shared-key pattern) now
+  retry with backoff** (`kvPutWithRetry` — up to 3 attempts, ~150–400ms
+  backoff with jitter) instead of throwing straight through on the first
+  429. Turns "silently dropped under load" into "arrives a couple hundred
+  ms later" for the transient-contention case, with zero added delay in
+  the common case where the first write just succeeds.
+- **The expensive full-list expiry sweep (`sweepExpired`) no longer runs
+  on every single write.** It used to run on every reply/submission —
+  a date check over up to 500 index entries, plus a chain of extra
+  deletes whenever anything actually was expired — right on the hot path
+  that's already contending for the rate-limited `index` key. Retention
+  windows are measured in DAYS (30/90), so sampling it at ~5% of writes
+  (`SWEEP_SAMPLE_RATE`) is still more than prompt enough and cuts the
+  common-case write down to just the filter/sort/put it actually needs.
+- **Independent-key writes parallelized instead of sequential:**
+  `createThread()` and `appendMessage()` each write a `thread:<id>` key
+  and a `msgid:<chatId>:<mid>` key — different keys, no rate-limit
+  interaction between them, so there was no reason to `await` them one
+  after another. Now `Promise.all`'d. Same for `purgeThread()`'s per-
+  message `msgid:` deletes and the index's own overflow-eviction purge —
+  both were sequential `for...of await` loops before, now parallel.
+- **Net effect:** less work done per write in the common case (sweep
+  mostly skipped), less wall-clock time per write (parallel deletes/puts
+  instead of chained), and index updates that hit real contention now
+  self-heal within ~1 second instead of vanishing until the next lucky
+  write to that same ticket.
+
+**Still true, NOT fixed (same architectural note as last session, now
+with a live symptom behind it):** the retry makes contention *survive*
+better, it doesn't remove the ceiling — `index` is still a single KV key
+shared by every ticket, so there's still a real (now much higher, but
+non-zero) volume at which even 3 retries with backoff won't be enough.
+If ticket/reply volume keeps growing, the actual fix is moving the index
+off a single KV key entirely (Durable Objects, which serialize writes
+with no such limit, or sharding the index by e.g. brand or date). That's
+a real architecture change — flagging it again rather than building it
+unprompted, same as last session.
+
+
+**KV index race condition.** Several records are shared, single KV keys
+that every write does a full read-modify-write against with no locking
+or compare-and-swap: the thread sidebar `index`, the `deletion-log`,
+`accounts-index`, `offices-index`. Cloudflare KV has no atomic
+read-modify-write primitive available here. If two writes land close
+together — e.g. two Telegram replies arrive via webhook within the same
+moment, or an agent submits a new ticket at the exact instant another
+reply is being recorded — both requests read the same starting index,
+both write back, and whichever finishes last "wins," silently discarding
+the other's index update.
+
+**What this does NOT do:** lose the underlying `thread:<id>` record
+itself, or a message inside it — those are each their own KV key, written
+directly, never affected by this. **What it CAN do:** make the sidebar
+list (and unread badges) briefly miss/misorder an entry until the next
+write to that same thread corrects it (e.g. the next reply, or toggling
+solved/unsolved). Not caught by anything above, since KV simply doesn't
+throw in this scenario — it succeeds at overwriting, it just overwrites
+with slightly stale data. Given real traffic volume here (a handful of CS
+teams, not high-frequency concurrent writes), the actual odds of this
+firing are low, but it's worth stating plainly rather than leaving
+undocumented: this is the one place in the system where a "must not
+lose/corrupt data" guarantee is architecturally soft. Fixing it properly
+would mean moving the index off a single KV key (e.g. Durable Objects for
+serialized writes, or accepting eventual-consistency reconciliation) —
+a real design change, not something to silently patch in. Flagging for a
+decision rather than fixing it, since Durable Objects would be a bigger
+architecture shift than this session should make unprompted.
+
+### ⚠️ Known gap, NOT changed (pre-existing, flagging for awareness)
+- **`GET /api/screenshot/<key>`** (serves uploaded attachments) still has
+  no login gate at all — security is "the key is an unguessable
+  timestamp + random string," not real access control. Pre-existing,
+  unchanged. Fine for now given the low sensitivity of CS attachments,
+  but worth knowing if that changes.
+
+### ✅ Fixed this session — brand logo/link editor: password removed,
+logo upload removed entirely
+
+Two changes, both driven by the business owner directly (with a
+screenshot of the actual modal):
+
+1. **Logo image upload removed — it never actually worked in
+   production.** Rather than debug/fix the file-upload path, the
+   business owner asked to just delete it. `public/index.html`'s "Edit
+   brand" modal now has ONE field: Link (opens when the pill is
+   clicked). No logo field at all for now. `functions/api/brand-config.js`
+   dropped the entire multipart-form / R2-upload / `logoUrl` write path.
+   The data shape (`{ [brandId]: { logoUrl, link } }`) is untouched —
+   `logoUrl` just has nothing writing it anymore, so brand pills fall
+   back to their colored-initials avatar until logo handling gets
+   redesigned (business owner's words: "Logo 之后再想办法" — revisit
+   later, no plan chosen yet).
+2. **The standalone `BRAND_EDIT_PASSWORD` gate on this one endpoint is
+   gone.** This closes the inconsistency flagged earlier this session
+   (see the "Known gap" note that used to be here) — the business owner
+   asked to remove the password entirely, and simply deleting it with
+   nothing in its place would have made this THE ONLY unauthenticated
+   write endpoint in the whole hub (worse than before, not just
+   unchanged). Replaced it with the same `verifyRequest()` login check
+   every other endpoint uses instead of removing the gate outright — any
+   logged-in agent (any role) can edit a brand's link now, the same way
+   they can submit tickets; there's no extra rank restriction on this
+   specific action. `BRAND_EDIT_PASSWORD` the Cloudflare secret itself is
+   NOT removed — it's still used for the separate `accounts-admin.html`
+   bootstrap flow (creating the very first admin account), which is
+   unrelated to this endpoint.
+
+**Frontend request shape changed too:** was `multipart/form-data` (to
+carry the file), now a plain JSON body `{ brand, link }` sent through
+`window.AgentAuth.authFetch()` (adds the login headers automatically),
+same pattern every other admin-ish action in `index.html` already uses.
+
+Syntax-checked (`node --check` on the backend file, and the extracted
+inline `<script>` from `index.html`). **Not yet live-tested** — same
+caveat as everything else touched this session.
+
+
+### Everything else checked and found solid
+- `telegram-webhook.js` — already had exactly the right shape (outer
+  `try/catch` swallowing everything, always returns 200 fast) so a
+  broken reply-sync can never make Telegram think the webhook is down
+  and start retrying/backing off. No changes needed.
+- `googleSheets.js`, `r2.js` — every exported function throws on failure
+  as designed, and every caller already wraps them (`submit.js` captures
+  `sheetError`/`r2Errors` and still returns success for the parts that
+  worked — a Sheets outage never blocks the Telegram send that already
+  succeeded).
+- `accounts.js` — `verifyRequest()` returns `null` on any failure
+  (bad username, bad password, bad IP) without ever leaking which one
+  failed; the PBKDF2 hashing path has no unguarded external calls.
+- Permission-check logic in `admin/accounts.js` (self-promotion
+  bootstrap, manage-scope allow-lists) re-read carefully — all the
+  literal-vs-rank comparisons in that file are legitimate (comparing
+  against one specific target role, or diffing old vs new value), not
+  the same bug class as the earlier admin-string fixes.

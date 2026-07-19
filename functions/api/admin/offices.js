@@ -11,14 +11,30 @@
  */
 import { listOffices, saveOffice, deleteOffice, authenticateStaff, ROLE_RANK } from "../../_shared/accounts.js";
 
-export async function onRequestGet({ request, env }) {
+export async function onRequestGet(context) {
+  try {
+    return await handleGet(context);
+  } catch (e) {
+    return json({ ok: false, error: `Unexpected server error: ${String(e && e.message || e)}` }, 500);
+  }
+}
+
+async function handleGet({ request, env }) {
   if (!env.THREADS_KV) return json({ ok: false, error: "THREADS_KV is not bound yet." }, 500);
   const auth = await authenticateStaff(request, env, ROLE_RANK.admin);
   if (!auth.ok) return json({ ok: false, error: "Not authorized." }, 401);
   return json({ ok: true, offices: await listOffices(env) });
 }
 
-export async function onRequestPost({ request, env }) {
+export async function onRequestPost(context) {
+  try {
+    return await handlePost(context);
+  } catch (e) {
+    return json({ ok: false, error: `Unexpected server error: ${String(e && e.message || e)}` }, 500);
+  }
+}
+
+async function handlePost({ request, env }) {
   if (!env.THREADS_KV) return json({ ok: false, error: "THREADS_KV is not bound yet." }, 500);
   // Editing IPs is SuperAdmin-only — Admin can view via GET above but not
   // change the whitelist. The bootstrap password still works here during

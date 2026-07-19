@@ -31,7 +31,15 @@ import { authenticateStaff, ROLE_RANK } from "../../_shared/accounts.js";
 import { getAllRouteOverrides, saveRouteOverride, deleteRouteOverride } from "../../_shared/routes.js";
 import { BRANDS, MODULE_META } from "../../_shared/routing.js";
 
-export async function onRequestGet({ request, env }) {
+export async function onRequestGet(context) {
+  try {
+    return await handleGet(context);
+  } catch (e) {
+    return json({ ok: false, error: `Unexpected server error: ${String(e && e.message || e)}` }, 500);
+  }
+}
+
+async function handleGet({ request, env }) {
   if (!env.THREADS_KV) return json({ ok: false, error: "THREADS_KV is not bound yet." }, 500);
   const auth = await authenticateStaff(request, env, ROLE_RANK.superadmin);
   if (!auth.ok) return json({ ok: false, error: "SuperAdmin required." }, 403);
@@ -60,7 +68,15 @@ export async function onRequestGet({ request, env }) {
   return json({ ok: true, brands, modules, routes });
 }
 
-export async function onRequestPost({ request, env }) {
+export async function onRequestPost(context) {
+  try {
+    return await handlePost(context);
+  } catch (e) {
+    return json({ ok: false, error: `Unexpected server error: ${String(e && e.message || e)}` }, 500);
+  }
+}
+
+async function handlePost({ request, env }) {
   if (!env.THREADS_KV) return json({ ok: false, error: "THREADS_KV is not bound yet." }, 500);
   const auth = await authenticateStaff(request, env, ROLE_RANK.superadmin);
   if (!auth.ok) return json({ ok: false, error: "SuperAdmin required." }, 403);

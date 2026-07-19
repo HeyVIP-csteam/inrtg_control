@@ -7,7 +7,21 @@ import { getRouteOverride } from "../_shared/routes.js";
 
 const VALID_MODULES = Object.keys(MODULE_META);
 
-export async function onRequestPost({ request, env }) {
+// Top-level safety net. Everything below already handles its OWN expected
+// failure modes (bad JSON, missing config, Telegram/Sheets errors) with a
+// clean { ok:false, error } response — this catch is for anything
+// UNEXPECTED (a bug, a malformed routing.js entry, whatever) so a ticket
+// submission never comes back as a raw platform error page. The agent
+// always gets JSON back, even when something we didn't anticipate breaks.
+export async function onRequestPost(context) {
+  try {
+    return await handleSubmit(context);
+  } catch (e) {
+    return json({ ok: false, error: `Unexpected server error: ${String(e && e.message || e)}` }, 500);
+  }
+}
+
+async function handleSubmit({ request, env }) {
   // The whole hub now requires login (business owner's call — previously
   // only TG Reply Threads did). This is the server-side half of that: the
   // frontend redirect to /login.html is the UX, this is what actually

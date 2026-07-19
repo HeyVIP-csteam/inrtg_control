@@ -73,7 +73,15 @@ function normalizeTabName(name) {
     .toLowerCase();
 }
 
-export async function onRequestGet({ request, env }) {
+export async function onRequestGet(context) {
+  try {
+    return await handleSearch(context);
+  } catch (e) {
+    return json({ ok: false, error: `Unexpected server error: ${String(e && e.message || e)}` }, 500);
+  }
+}
+
+async function handleSearch({ request, env }) {
   // Whole hub requires login now — see submit.js for the same note.
   const account = await verifyRequest(request, env);
   if (!account) return json({ ok: false, error: "Login required." }, 401);

@@ -17,7 +17,15 @@
  */
 import { verifyRequest, getAccount, verifyPassword, saveAccount } from "../../_shared/accounts.js";
 
-export async function onRequestPost({ request, env }) {
+export async function onRequestPost(context) {
+  try {
+    return await handleChangePassword(context);
+  } catch (e) {
+    return json({ ok: false, error: `Unexpected server error: ${String(e && e.message || e)}` }, 500);
+  }
+}
+
+async function handleChangePassword({ request, env }) {
   if (!env.THREADS_KV) return json({ ok: false, error: "THREADS_KV is not bound yet." }, 500);
   const authed = await verifyRequest(request, env);
   if (!authed) return json({ ok: false, error: "Login required." }, 401);

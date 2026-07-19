@@ -13,7 +13,15 @@
 import { listThreads } from "../_shared/threads.js";
 import { verifyRequest, canSeeBrand } from "../_shared/accounts.js";
 
-export async function onRequestGet({ request, env }) {
+export async function onRequestGet(context) {
+  try {
+    return await handleGet(context);
+  } catch (e) {
+    return json({ ok: false, error: `Unexpected server error: ${String(e && e.message || e)}` }, 500);
+  }
+}
+
+async function handleGet({ request, env }) {
   if (!env.THREADS_KV) {
     return json({ ok: true, active: [], solved: [], notConfigured: true });
   }

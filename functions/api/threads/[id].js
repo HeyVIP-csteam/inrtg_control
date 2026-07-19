@@ -58,7 +58,23 @@ export async function onRequestGet({ request, env, params }) {
   return json({ ok: true, thread });
 }
 
-export async function onRequestPost({ request, env, params }) {
+// Top-level safety net — same reasoning as submit.js: everything below
+// already handles its own expected failure modes (bad JSON, Telegram
+// errors via callTelegram's tg.ok checks) with a clean { ok:false, error }
+// response, but a handful of actions (editRoot/recallRoot/editReply/
+// recallReply) call the Telegram API directly without their own try/catch
+// — a network hiccup or a non-JSON response from Telegram would otherwise
+// throw uncaught and come back as a raw platform error instead of JSON.
+// This outer catch is the guarantee that never happens.
+export async function onRequestPost(context) {
+  try {
+    return await handleThreadAction(context);
+  } catch (e) {
+    return json({ ok: false, error: `Unexpected server error: ${String(e && e.message || e)}` }, 500);
+  }
+}
+
+async function handleThreadAction({ request, env, params }) {
   if (!env.THREADS_KV) return json({ ok: false, error: "THREADS_KV is not bound yet." }, 500);
   const account = await verifyRequest(request, env);
   if (!account) return json({ ok: false, error: "Login required." }, 401);

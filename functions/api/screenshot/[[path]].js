@@ -3,7 +3,15 @@
  * Streams the object back out of R2. `params.path` is the array of path
  * segments Cloudflare Pages captures for a [[path]] catch-all route.
  */
-export async function onRequestGet({ params, env }) {
+export async function onRequestGet(context) {
+  try {
+    return await handleScreenshot(context);
+  } catch (e) {
+    return new Response(`Unexpected server error: ${String(e && e.message || e)}`, { status: 502 });
+  }
+}
+
+async function handleScreenshot({ params, env }) {
   const bucket = env.SCREENSHOTS_BUCKET;
   if (!bucket) {
     return new Response("Server is missing the SCREENSHOTS_BUCKET R2 binding.", { status: 500 });

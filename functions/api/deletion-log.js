@@ -17,7 +17,15 @@
 import { listDeletions } from "../_shared/threads.js";
 import { authenticateAdmin } from "../_shared/accounts.js";
 
-export async function onRequestGet({ request, env }) {
+export async function onRequestGet(context) {
+  try {
+    return await handleGet(context);
+  } catch (e) {
+    return json({ ok: false, error: `Unexpected server error: ${String(e && e.message || e)}` }, 500);
+  }
+}
+
+async function handleGet({ request, env }) {
   if (!env.THREADS_KV) return json({ ok: false, error: "THREADS_KV is not bound yet." }, 500);
   const auth = await authenticateAdmin(request, env);
   if (!auth.ok) return json({ ok: false, error: "Admin login required." }, 401);

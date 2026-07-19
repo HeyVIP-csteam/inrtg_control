@@ -1,52 +1,59 @@
 /**
- * GET  /api/brand-config           -> { ok, config } — public, used to render the hub's brand pills
- * POST /api/brand-config           -> multipart form: password, brand, link, logo (file, optional)
- *                                      Requires `password` to match env.BRAND_EDIT_PASSWORD (a Cloudflare
- *                                      secret you set — whoever knows it can edit; nobody else can).
+ * GET  /api/brand-config  -> { ok, config } — public, used to render the hub's brand pills
+ * POST /api/brand-config  -> JSON { brand, link } — requires a logged-in account
+ *                             (see _shared/accounts.js). Being logged in as any
+ *                             agent IS the authorization now — no separate shared
+ *                             edit password anymore.
  *
- * Config is a small JSON blob stored in the R2 bucket (env.SCREENSHOTS_BUCKET) at
- * key "brand-config.json": { [brandId]: { logoUrl, link } }. Logo files themselves
- * are stored under "brand-logos/" and served back out through /api/screenshot/<key>.
+ * Config is a small JSON blob stored in the R2 bucket (env.SCREENSHOTS_BUCKET)
+ * at key "brand-config.json": { [brandId]: { logoUrl, link } }.
+ *
+ * Logo image editing was removed this session — the file-upload path never
+ * actually worked in production, so it's been taken out rather than left as
+ * a broken control. `logoUrl` stays in the data shape (untouched, just
+ * nothing currently writes it) so brand pills that have no logo simply show
+ * colored initials until logo handling is redesigned.
  */
-export async function onRequestGet({ env }) {
-  const config = await readConfig(env);
-  return json({ ok: true, config });
+import { verifyRequest } from "../_shared/accounts.js";
+
+export async function onRequestGet(context) {
+  try {
+    const { env } = context;
+    const config = await readConfig(env);
+    return json({ ok: true, config });
+  } catch (e) {
+    return json({ ok: false, error: `Unexpected server error: ${String(e && e.message || e)}` }, 500);
+  }
 }
 
-export async function onRequestPost({ request, env }) {
+export async function onRequestPost(context) {
+  try {
+    return await handlePost(context);
+  } catch (e) {
+    return json({ ok: false, error: `Unexpected server error: ${String(e && e.message || e)}` }, 500);
+  }
+}
+
+async function handlePost({ request, env }) {
   const bucket = env.SCREENSHOTS_BUCKET;
   if (!bucket) return json({ ok: false, error: "Server is missing the SCREENSHOTS_BUCKET R2 binding." }, 500);
-  if (!env.BRAND_EDIT_PASSWORD) return json({ ok: false, error: "Server is missing BRAND_EDIT_PASSWORD." }, 500);
 
-  let form;
+  const account = await verifyRequest(request, env);
+  if (!account) return json({ ok: false, error: "Login required." }, 401);
+
+  let body;
   try {
-    form = await request.formData();
+    body = await request.json();
   } catch {
-    return json({ ok: false, error: "Invalid form data." }, 400);
+    return json({ ok: false, error: "Invalid JSON body." }, 400);
   }
 
-  const password = form.get("password");
-  if (password !== env.BRAND_EDIT_PASSWORD) {
-    return json({ ok: false, error: "Wrong password." }, 403);
-  }
-
-  const brand = form.get("brand");
+  const { brand, link } = body || {};
   if (!brand) return json({ ok: false, error: "Missing brand." }, 400);
 
   const config = await readConfig(env);
   const entry = config[brand] || {};
-
-  const link = form.get("link");
-  if (link !== null) entry.link = link || "";
-
-  const logo = form.get("logo");
-  if (logo && typeof logo === "object" && logo.size > 0) {
-    const bytes = new Uint8Array(await logo.arrayBuffer());
-    const ext = (logo.name && logo.name.includes(".") ? logo.name.split(".").pop() : "png").toLowerCase();
-    const key = `brand-logos/${brand}-${Date.now()}.${ext}`;
-    await bucket.put(key, bytes, { httpMetadata: { contentType: logo.type || "image/png" } });
-    entry.logoUrl = `${new URL(request.url).origin}/api/screenshot/${key.split("/").map(encodeURIComponent).join("/")}`;
-  }
+  if (link !== undefined) entry.link = link || "";
 
   config[brand] = entry;
   await bucket.put("brand-config.json", JSON.stringify(config), { httpMetadata: { contentType: "application/json" } });

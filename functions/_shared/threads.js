@@ -35,13 +35,43 @@ function newId() {
   return `t_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 }
 
+// Cloudflare KV hard limit: at most 1 write per second to the SAME key
+// (https://developers.cloudflare.com/kv/api/write-key-value-pairs/) —
+// writes faster than that throw a 429. Every reply/submission/solve-
+// toggle/edit writes the SAME "index" key (that's what the sidebar reads),
+// so under real load two of those can easily land in the same second.
+// Without a retry, that write is silently lost (the thread record itself
+// is already saved by the time this runs — only the sidebar summary goes
+// stale) until the next successful write to that same thread. A short
+// retry-with-backoff turns "silently dropped under load" into "arrives
+// a few hundred ms later" for the cases that are just transient
+// contention, without adding a request-shaped delay in the common case
+// where the first write just succeeds.
+async function kvPutWithRetry(env, key, value, attempts = 3) {
+  let lastErr;
+  for (let i = 0; i < attempts; i++) {
+    try {
+      await env.THREADS_KV.put(key, value);
+      return;
+    } catch (e) {
+      lastErr = e;
+      if (i < attempts - 1) await sleep(150 * (i + 1) + Math.floor(Math.random() * 100));
+    }
+  }
+  throw lastErr;
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 async function readIndex(env) {
   const raw = await env.THREADS_KV.get(INDEX_KEY);
   return raw ? JSON.parse(raw) : [];
 }
 
 async function writeIndex(env, list) {
-  await env.THREADS_KV.put(INDEX_KEY, JSON.stringify(list.slice(0, MAX_INDEX_SIZE)));
+  await kvPutWithRetry(env, INDEX_KEY, JSON.stringify(list.slice(0, MAX_INDEX_SIZE)));
 }
 
 function summarize(thread) {
@@ -74,12 +104,16 @@ function summarize(thread) {
 // Deletes a thread's KV record plus every msgid: pointer that leads to it
 // (the root submission message, and any reply sent back out from the
 // dashboard). Does NOT touch the index — callers manage that separately.
+// Parallelized (Promise.all) instead of one-at-a-time — these are all
+// different keys, so there's no per-key rate limit to worry about here,
+// only wall-clock time, and a thread with many messages/attachments could
+// otherwise mean a long chain of sequential round-trips.
 async function purgeThread(env, summaryOrThread) {
-  await env.THREADS_KV.delete(`thread:${summaryOrThread.id}`);
   const ids = summaryOrThread.msgIds || [];
-  for (const mid of ids) {
-    await env.THREADS_KV.delete(`msgid:${summaryOrThread.chatId}:${mid}`);
-  }
+  await Promise.all([
+    env.THREADS_KV.delete(`thread:${summaryOrThread.id}`),
+    ...ids.map((mid) => env.THREADS_KV.delete(`msgid:${summaryOrThread.chatId}:${mid}`)),
+  ]);
 }
 
 function isExpired(t, now) {
@@ -90,19 +124,28 @@ function isExpired(t, now) {
 }
 
 // Sweeps the in-memory index for expired entries and deletes their KV
-// records. Runs as part of every index write (cheap — just a date check
-// per entry, no extra KV calls unless something is actually expired), so
-// there's no need for a Cron Trigger.
+// records. Used to run on EVERY single index write — under real load
+// (many replies close together) that meant every write was also doing a
+// full date-check pass over up to 500 entries AND, whenever anything was
+// actually expired, a chain of extra deletes, all on the hot path that's
+// already fighting for the same rate-limited "index" key. Cleanup doesn't
+// need to be that eager — retention is measured in DAYS
+// (SOLVED_RETENTION_DAYS / STALE_RETENTION_DAYS), so running this on
+// roughly 1 in 20 writes instead of every write is still more than
+// prompt enough, and cuts the common-case write down to just the cheap
+// filter/sort/put it actually needs to do.
+const SWEEP_SAMPLE_RATE = 0.05;
+
 async function sweepExpired(env, list) {
+  if (Math.random() >= SWEEP_SAMPLE_RATE) return list;
   const now = Date.now();
   const keep = [];
+  const toPurge = [];
   for (const t of list) {
-    if (!t.deleted && isExpired(t, now)) {
-      await purgeThread(env, t);
-    } else {
-      keep.push(t);
-    }
+    if (!t.deleted && isExpired(t, now)) toPurge.push(t);
+    else keep.push(t);
   }
+  if (toPurge.length) await Promise.all(toPurge.map((t) => purgeThread(env, t)));
   return keep;
 }
 
@@ -114,8 +157,9 @@ async function upsertIndexEntry(env, thread) {
 
   // Anything pushed past MAX_INDEX_SIZE would otherwise leak — actually
   // delete it instead of just dropping it from the visible list.
+  // Parallelized for the same reason as purgeThread above.
   const overflow = filtered.slice(MAX_INDEX_SIZE);
-  for (const t of overflow) await purgeThread(env, t);
+  if (overflow.length) await Promise.all(overflow.map((t) => purgeThread(env, t)));
 
   const swept = await sweepExpired(env, filtered.slice(0, MAX_INDEX_SIZE));
   await writeIndex(env, swept);
@@ -148,8 +192,10 @@ export async function createThread(env, { module: moduleId, moduleName, icon, ac
     solvedAt: null,
     deleted: false,
   };
-  await env.THREADS_KV.put(`thread:${thread.id}`, JSON.stringify(thread));
-  await env.THREADS_KV.put(`msgid:${thread.chatId}:${rootMessageId}`, thread.id);
+  await Promise.all([
+    env.THREADS_KV.put(`thread:${thread.id}`, JSON.stringify(thread)),
+    env.THREADS_KV.put(`msgid:${thread.chatId}:${rootMessageId}`, thread.id),
+  ]);
   await upsertIndexEntry(env, thread);
   return thread;
 }
@@ -198,10 +244,11 @@ export async function appendMessage(env, threadId, message) {
   if (message.messageId) {
     thread.msgIds = [...(thread.msgIds || [thread.rootMessageId]), message.messageId];
   }
-  await env.THREADS_KV.put(`thread:${thread.id}`, JSON.stringify(thread));
+  const writes = [env.THREADS_KV.put(`thread:${thread.id}`, JSON.stringify(thread))];
   if (message.messageId) {
-    await env.THREADS_KV.put(`msgid:${thread.chatId}:${message.messageId}`, thread.id);
+    writes.push(env.THREADS_KV.put(`msgid:${thread.chatId}:${message.messageId}`, thread.id));
   }
+  await Promise.all(writes);
   await upsertIndexEntry(env, thread);
   return thread;
 }
@@ -242,7 +289,7 @@ export async function logDeletion(env, entry) {
   const raw = await env.THREADS_KV.get(DELETION_LOG_KEY);
   const list = raw ? JSON.parse(raw) : [];
   list.unshift({ id: newId(), ts: new Date().toISOString(), by: entry.by || null, ...entry });
-  await env.THREADS_KV.put(DELETION_LOG_KEY, JSON.stringify(list.slice(0, MAX_LOG_SIZE)));
+  await kvPutWithRetry(env, DELETION_LOG_KEY, JSON.stringify(list.slice(0, MAX_LOG_SIZE)));
 }
 
 export async function listDeletions(env) {

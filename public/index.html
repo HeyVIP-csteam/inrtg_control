@@ -27,15 +27,6 @@
     <div class="edit-modal">
       <p class="edit-modal-title" id="editModalTitle">Edit brand</p>
       <div class="field">
-        <label>Password</label>
-        <input type="password" id="editPassword" placeholder="Edit password..." />
-      </div>
-      <div class="field">
-        <label>Logo image</label>
-        <input type="file" id="editLogo" accept="image/*" />
-        <p class="edit-modal-note" id="editLogoFilename">No file selected yet.</p>
-      </div>
-      <div class="field">
         <label>Link (opens when the pill is clicked)</label>
         <input type="text" id="editLink" placeholder="https://..." />
       </div>
@@ -46,6 +37,8 @@
       </div>
     </div>
   </div>
+  <!-- Logo image editing removed for now (file upload wasn't working) — being
+       revisited later; brand pills just show colored initials until then. -->
 
   <div class="edit-modal-backdrop" id="acctModalBackdrop">
     <div class="edit-modal">
@@ -124,7 +117,6 @@
     const brandRowTrack = document.getElementById("brandRowTrack");
     let brandConfig = {};
     let editingBrand = null;
-    let unlockedPassword = sessionStorage.getItem("brandEditPassword") || "";
 
     function buildBrandPill(b, i) {
       const entry = brandConfig[b.id] || {};
@@ -200,30 +192,13 @@
     const backdrop = document.getElementById("editModalBackdrop");
     const modalTitle = document.getElementById("editModalTitle");
     const modalNote = document.getElementById("editModalNote");
-    const passwordInput = document.getElementById("editPassword");
-    const logoInput = document.getElementById("editLogo");
-    const logoFilename = document.getElementById("editLogoFilename");
     const linkInput = document.getElementById("editLink");
-
-    logoInput.addEventListener("change", () => {
-      if (logoInput.files[0]) {
-        logoFilename.textContent = `Selected: ${logoInput.files[0].name} (${Math.round(logoInput.files[0].size / 1024)} KB)`;
-        logoFilename.className = "edit-modal-note ok";
-      } else {
-        logoFilename.textContent = "No file selected yet.";
-        logoFilename.className = "edit-modal-note";
-      }
-    });
 
     function openEditModal(brand) {
       editingBrand = brand;
       modalTitle.textContent = `Edit ${brand.name}`;
       modalNote.textContent = "";
       modalNote.className = "edit-modal-note";
-      passwordInput.value = unlockedPassword;
-      logoInput.value = "";
-      logoFilename.textContent = "No file selected yet.";
-      logoFilename.className = "edit-modal-note";
       linkInput.value = (brandConfig[brand.id] && brandConfig[brand.id].link) || "";
       backdrop.classList.add("is-open");
     }
@@ -236,28 +211,21 @@
 
     document.getElementById("editSave").addEventListener("click", async () => {
       if (!editingBrand) return;
-      const password = passwordInput.value;
-      if (!password) {
-        modalNote.textContent = "Enter the edit password.";
-        modalNote.className = "edit-modal-note err";
-        return;
-      }
       modalNote.textContent = "Saving…";
       modalNote.className = "edit-modal-note";
 
-      const form = new FormData();
-      form.append("password", password);
-      form.append("brand", editingBrand.id);
-      form.append("link", linkInput.value || "");
-      if (logoInput.files[0]) form.append("logo", logoInput.files[0]);
-
       try {
-        const res = await fetch("/api/brand-config", { method: "POST", body: form });
+        // Logged-in-agent + this account's own credentials IS the
+        // authorization now — no separate shared edit password anymore
+        // (see functions/api/brand-config.js).
+        const res = await window.AgentAuth.authFetch("/api/brand-config", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ brand: editingBrand.id, link: linkInput.value || "" }),
+        });
         const data = await res.json();
         if (!res.ok || !data.ok) throw new Error(data.error || "Save failed.");
         brandConfig = data.config;
-        unlockedPassword = password;
-        sessionStorage.setItem("brandEditPassword", password);
         renderBrandRow();
         modalNote.textContent = "Saved.";
         modalNote.className = "edit-modal-note ok";
