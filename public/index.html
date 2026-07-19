@@ -358,7 +358,7 @@
           <div class="field"><label>Username</label><input type="text" id="am_username" autocomplete="off" /></div>
           <div class="field"><label>Password</label><input type="password" id="am_password" autocomplete="new-password" /></div>
           <div class="field"><label>Full Name</label><input type="text" id="am_fullname" autocomplete="off" placeholder="e.g. Daniel Tan" /></div>
-          <div class="field"><label>PID</label><input type="text" id="am_pid" autocomplete="off" placeholder="e.g. PID-014" /></div>
+          <div class="field"><label>PSD</label><input type="text" id="am_pid" autocomplete="off" placeholder="e.g. PSD-014" /></div>
           <div class="field"><label>Role</label><select id="am_role"><option value="agent">agent</option><option value="admin">admin</option></select></div>
           <div class="field"><label>Office</label><select id="am_office"><option value="">— none —</option>${officeOptions}</select></div>
           <div class="field">
@@ -438,7 +438,7 @@
       acctBody.innerHTML = `
         <div class="agent-profile-table-wrap">
           <table class="agent-profile-table">
-            <thead><tr><th>Account</th><th>Full Name</th><th>PID</th><th>Last Active</th><th>Password Changed</th><th></th></tr></thead>
+            <thead><tr><th>Account</th><th>Full Name</th><th>PSD</th><th>Last Log In Time</th><th>Password Changed</th><th></th></tr></thead>
             <tbody>${rows || '<tr><td colspan="6" style="color:var(--ink-soft);">No accounts yet.</td></tr>'}</tbody>
           </table>
         </div>`;
