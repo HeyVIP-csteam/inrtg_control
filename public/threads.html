@@ -85,11 +85,23 @@
       loadList();
       if (isAdmin) loadRecallLog();
       polishEmoji();
+      // Two different rhythms on purpose: refreshOpenThread() reads a
+      // single thread directly by ID (cheap, not affected by KV's
+      // separate/stricter list() quota — see loadList() below), so it
+      // stays fast/responsive since that's what actually matters when
+      // someone's actively viewing a conversation. loadList() (the
+      // sidebar) is what calls the server's listThreads(), which is
+      // itself now cached for 3 minutes server-side — polling it every
+      // 6s was just re-fetching the exact same cached data 30 times
+      // over for no benefit, while still adding needless request volume.
+      // 30s keeps the sidebar feeling reasonably live without that waste.
       pollTimer = setInterval(() => {
-        loadList(document.getElementById("threadSearch").value);
         refreshOpenThread();
-        if (isAdmin) loadRecallLog();
       }, 6000);
+      listPollTimer = setInterval(() => {
+        loadList(document.getElementById("threadSearch").value);
+        if (isAdmin) loadRecallLog();
+      }, 30000);
     }
 
     // ---------------------------------------------------------------------
@@ -100,6 +112,7 @@
     let selectedId = null;
     let selectedThread = null;
     let pollTimer = null;
+    let listPollTimer = null;
     let searchTimer = null;
 
     // ---- Local "optimistic" sidebar patches --------------------------

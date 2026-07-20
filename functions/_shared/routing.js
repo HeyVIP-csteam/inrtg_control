@@ -341,6 +341,7 @@ export const MESSAGE_TEMPLATE = {
         { emoji: "👤", label: "PIC", key: "pic" },
       ],
       default: [
+        { emoji: "🎮", label: "Brand / Platform", key: "brand" },
         { emoji: "📅", label: "Date", key: "date" },
         { emoji: "🆔", label: "UID", key: "uid" },
         { emoji: "📱", label: "Number", key: "number" },

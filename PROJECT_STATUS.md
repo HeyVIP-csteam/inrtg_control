@@ -376,6 +376,60 @@ this field) fall back to 100,000 automatically; new/reset passwords get
 10,000. Every account, old or new, keeps working exactly as before —
 nobody needs to reset anything because of this change.
 
+### ✅ Root-caused and fixed — "KV list() limit exceeded for the day"
+(a second, separate quota this session's earlier `list()`+metadata
+redesign missed)
+
+Same failure shape as the CPU/PBKDF2 saga above (sidebar randomly
+500ing), different root cause entirely, found via the actual error text
+this time: `Unexpected server error: KV list() limit exceeded for the
+day.` — a real Cloudflare-thrown error, not one of our own.
+
+**Root cause:** the `list()`+metadata redesign (see the top of this file
+and `_shared/threads.js`'s own header) fixed KV's write-contention limit
+by moving the sidebar off a single shared "index" key onto
+`THREADS_KV.list({ prefix: "thread:" })` — but Cloudflare's free plan
+caps `list()` calls at **1,000/day**, a completely separate and far
+stricter budget than the 100,000 reads/day one, and this wasn't checked
+at the time. The sidebar polls every 6 seconds; any single agent leaving
+the dashboard open for roughly two hours was enough to exhaust the
+entire day's list() budget on its own — this was never a "maybe," it was
+only a matter of when someone would notice.
+
+**Fixed in `functions/_shared/threads.js`:** a real `list()` scan now
+only runs at most once every 3 minutes — the result is cached in a
+single KV key (`thread-list-cache`, `LIST_CACHE_TTL_MS`) and every other
+`listThreads()` call in that window just reads that cache (a cheap
+`get()`, drawing from the much larger 100,000-reads/day budget instead).
+Caps real `list()` calls at ~480/day worst case even under continuous
+all-day polling — well under 1,000, and also keeps the cache-refresh
+writes well under the SEPARATE 1,000 writes/day budget shared with every
+ticket submit/reply/solve-toggle. If the real scan itself fails (e.g.
+the daily quota is already blown when this runs), it now falls back to
+whatever's cached — even hours-stale — rather than fail the request
+outright; it only throws if there's truly no cache to fall back to.
+
+**Trade-off, stated plainly:** a brand-new ticket, or a solved/reopened
+status change, can now take up to ~3 minutes to appear in someone else's
+sidebar. An already-open conversation is completely unaffected and stays
+fully real-time (it reads its own `thread:<id>` key directly by ID, never
+touches `list()` at all). Given the alternative was the whole sidebar
+hard-failing once the daily quota ran out, this is the same kind of
+trade already made earlier in this file (KV write-contention fix,
+PBKDF2/CPU fix) — favoring "usable but slightly delayed" over "breaks
+outright once a hidden limit is hit."
+
+**Known minor side-effect, not fixed:** deleting a ticket doesn't
+invalidate this cache, so a just-deleted ticket can still show in the
+sidebar for up to ~3 minutes (clicking it correctly shows "not found"
+rather than erroring). Not worth adding cache-invalidation-on-every-write
+for, since that would mean writing to the shared cache key far more
+often — the exact pattern this whole fix exists to avoid.
+
+**If more `list()` calls are ever added anywhere else in this codebase,
+remember they all share this same 1,000/day account-wide budget** — this
+was the whole miss the first time around.
+
 ### Model
 - **Offices** — a name + a list of allowed IPs.
 - **Accounts** — username + password (PBKDF2, 100k iterations), one of

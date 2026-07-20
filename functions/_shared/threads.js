@@ -23,7 +23,16 @@
  * second still could, which is a much smaller, much rarer surface). The
  * sidebar is built with `THREADS_KV.list({ prefix: "thread:" })`, which
  * returns every thread's metadata without fetching the full record —
- * cheap, and there's no per-key limit on reads, only writes.
+ * cheap per-call, BUT Cloudflare's free plan caps `list()` at 1,000
+ * calls/day, completely separate from (and far stricter than) the
+ * 100,000 reads/day budget. A naive "call list() on every listThreads()"
+ * (the original version of this redesign) blew through that in a
+ * couple of hours of normal 6-second sidebar polling — see the
+ * LIST_CACHE_KEY / LIST_CACHE_TTL_MS / DAILY_SCAN_LIMIT section below for
+ * the fix (a real list() scan now only happens at most once every 3
+ * minutes, cached in between, AND is hard-capped at 800 real scans per
+ * UTC day no matter what). Keep this in mind before adding any OTHER list() calls
+ * anywhere in this codebase — they all share the same 1,000/day budget.
  *
  * Trade-off: `list()` is only *eventually* consistent across Cloudflare's
  * edge (per Cloudflare's docs, propagation is usually fast but isn't
@@ -252,15 +261,15 @@ async function healThread(env, keyName) {
 // ONE call risks tripping that limit and 503ing the whole page, which is
 // exactly what showed up in testing. Capping how many get healed per
 // call bounds the damage to a small, fixed number of extra KV round
-// trips; whatever's left over just gets picked up on the NEXT list() —
-// since polling runs every 6s, the sidebar fully catches up within a
-// handful of cycles after a fresh deploy, and every call after that is
-// cheap again (nothing left to heal).
+// trips; whatever's left over just gets picked up on the next real scan
+// (see LIST_CACHE_TTL_MS below) — a one-time, self-resolving cost.
 const MAX_HEAL_PER_CALL = 15;
 
-// Sidebar list — walks every `thread:*` key via KV's list() (metadata
-// only, no full-record fetch) instead of reading one shared "index" key.
-export async function listThreads(env, { q } = {}) {
+// The actual KV `list()` walk — separated out from listThreads() below so
+// it can be called from BEHIND a cache (see getFreshOrCachedEntries).
+// Returns every thread's summary (unsorted, still includes soft-deleted
+// entries — filtering happens in listThreads()).
+async function scanThreadsFromKV(env) {
   const withMeta = [];
   const needsHeal = [];
   let cursor;
@@ -274,7 +283,145 @@ export async function listThreads(env, { q } = {}) {
   } while (cursor);
 
   const healed = await Promise.all(needsHeal.slice(0, MAX_HEAL_PER_CALL).map((name) => healThread(env, name)));
-  const results = [...withMeta, ...healed.filter(Boolean)];
+  return [...withMeta, ...healed.filter(Boolean)];
+}
+
+// ---- Cached sidebar scan ----
+//
+// Cloudflare's Workers KV free plan caps `list()` at 1,000 calls/day —
+// completely separate from (and far lower than) the 100,000 reads/day
+// budget, and NOT documented anywhere near as prominently. Every call to
+// listThreads() used to run a real list() scan, and the sidebar polls
+// every 6 seconds — do the math on ANY single agent leaving the
+// dashboard open for a couple of hours and it's obvious this was always
+// going to blow the daily list() quota, not a maybe. This is what
+// actually caused the "Unexpected server error: KV list() limit
+// exceeded for the day" failure that showed up in testing — a real
+// architectural miss when the shared "index" key was first replaced
+// with list()+metadata (that redesign fixed the KV *write*-contention
+// problem, but nobody checked list()'s own separate, much stricter
+// quota at the time).
+//
+// Fix: a real list() scan now only happens at most once every
+// LIST_CACHE_TTL_MS — the result is cached in ONE KV key
+// (LIST_CACHE_KEY) and every listThreads() call in between just reads
+// that cache (a cheap get(), which draws from the 100,000/day read
+// budget instead, with tons of headroom). 3 minutes keeps real list()
+// calls to at most ~480/day even under continuous nonstop polling all
+// day — comfortable headroom under 1,000, and also keeps the *write*
+// side (saving the cache) well under the SEPARATE 1,000 writes/day
+// budget, which every ticket submit/reply/solve-toggle also draws from.
+//
+// Trade-off, stated plainly: a brand-new ticket, or a solved/reopened
+// status change, can now take up to ~3 minutes to show up in the
+// sidebar for other agents (an already-open conversation stays fully
+// real-time regardless — that's a direct-by-ID get(), never affected by
+// any of this). Given the alternative was the whole sidebar hard-failing
+// once the daily list() quota ran out, this is a straightforward trade
+// in the sidebar's favor, same reasoning as the write-contention fix
+// before it.
+//
+// Resilience: if a real scan fails (e.g. the daily list() quota is
+// ALREADY exhausted for the day when this runs), fall back to whatever
+// is cached — even hours-stale data — rather than fail the request
+// outright. Only throws if there's truly nothing cached to fall back to.
+const LIST_CACHE_KEY = "thread-list-cache";
+const LIST_CACHE_TTL_MS = 3 * 60 * 1000; // 3 minutes
+
+// ---- Hard daily ceiling on real list() calls, on top of the 3-minute
+// throttle above ----
+//
+// The 3-minute throttle alone caps real scans at ~480/day under normal
+// conditions — comfortably under Cloudflare's 1,000/day limit. But it's
+// a "soft" guarantee: if several agents' polls land in the exact same
+// instant right as the cache expires, each could independently decide
+// "the cache is stale, I'll do a real scan" before any of them has
+// written the refreshed cache back — a small, bounded race, not a
+// guaranteed-zero one. This counter is the actual hard backstop the
+// business owner asked for: an explicit daily count, stored in KV,
+// checked BEFORE every real scan. Once it reaches DAILY_SCAN_LIMIT, no
+// further real list() calls happen for the rest of the UTC day no
+// matter what — the sidebar just keeps serving whatever's cached (even
+// if that means it stops updating for the remainder of the day), which
+// is a far better failure mode than risking a repeat of the outright
+// "KV list() limit exceeded" error. Resets automatically at UTC
+// midnight, same as Cloudflare's own quota window, since the counter
+// key stores which UTC calendar date it's counting for and starts over
+// the moment that date changes.
+const DAILY_SCAN_LIMIT = 800;
+const SCAN_COUNTER_KEY = "thread-list-scan-counter";
+
+function utcDateString(d) {
+  return d.toISOString().slice(0, 10); // "YYYY-MM-DD", UTC
+}
+
+// Returns true if a real scan is allowed to proceed right now (and, if
+// so, has already recorded this call against today's count). Returns
+// false if today's DAILY_SCAN_LIMIT has already been reached.
+async function tryReserveScanSlot(env) {
+  const today = utcDateString(new Date());
+  let counter;
+  try {
+    const raw = await env.THREADS_KV.get(SCAN_COUNTER_KEY);
+    counter = raw ? JSON.parse(raw) : null;
+  } catch {
+    counter = null;
+  }
+  if (!counter || counter.date !== today) counter = { date: today, count: 0 };
+  if (counter.count >= DAILY_SCAN_LIMIT) return false;
+  counter.count += 1;
+  try {
+    await env.THREADS_KV.put(SCAN_COUNTER_KEY, JSON.stringify(counter));
+  } catch {
+    // If we can't even persist the counter, err on the side of caution
+    // and still allow this one scan through — the 3-minute throttle is
+    // still there as a backup limiter either way.
+  }
+  return true;
+}
+
+async function getCachedScan(env) {
+  try {
+    const raw = await env.THREADS_KV.get(LIST_CACHE_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+}
+
+async function getFreshOrCachedEntries(env) {
+  const cached = await getCachedScan(env);
+  const now = Date.now();
+  if (cached && now - cached.generatedAt < LIST_CACHE_TTL_MS) {
+    return cached.entries;
+  }
+  // Cache is missing or stale — normally that means "do a real scan,"
+  // but only if today's hard ceiling hasn't been hit yet.
+  const allowed = await tryReserveScanSlot(env);
+  if (!allowed) {
+    if (cached) return cached.entries; // stale is fine — never worth risking the real quota over
+    return []; // no cache AND no budget left for today — degrade to an empty list rather than throw
+  }
+  try {
+    const entries = await scanThreadsFromKV(env);
+    // Best-effort — a failed cache write should never break the read
+    // path; the next call just re-scans instead of reusing a cache.
+    try {
+      await env.THREADS_KV.put(LIST_CACHE_KEY, JSON.stringify({ generatedAt: now, entries }));
+    } catch {
+      // ignored
+    }
+    return entries;
+  } catch (err) {
+    if (cached) return cached.entries; // stale beats broken
+    throw err;
+  }
+}
+
+// Sidebar list — served from the cache above almost all the time; only
+// touches KV's list() directly when that cache is missing or stale.
+export async function listThreads(env, { q } = {}) {
+  const results = await getFreshOrCachedEntries(env);
 
   const swept = await sweepExpired(env, results);
   const visible = swept.filter((t) => !t.deleted);
