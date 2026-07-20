@@ -705,7 +705,7 @@ itself is wrong.
 
 ## Animated background (built this session)
 
-The site-wide background (dark theme only) is now the business owner's
+The site-wide background (both themes — see below) is now the business owner's
 own space photo (`public/assets/img/bg-space.jpg`, compressed from a
 ~2.8MB original to ~250KB), brought to life with layered effects rather
 than a static image:

@@ -536,7 +536,7 @@ function escapeHtml(str) {
 // market — change CURRENCY_LABEL below and every outgoing Telegram
 // message updates automatically. Leave it as "" to drop the suffix
 // entirely and show just the plain brand name.
-const CURRENCY_LABEL = "";
+const CURRENCY_LABEL = "INR";
 function brandCurrencyLabel(name) {
   return name && CURRENCY_LABEL ? `${name} ${CURRENCY_LABEL}` : name;
 }

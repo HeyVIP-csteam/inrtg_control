@@ -125,6 +125,7 @@
 
     const BRAND_COLORS = ["#4fc3f7", "#f6ad55", "#f4718a", "#8b5cf6", "#34d399"];
     const brandRowTrack = document.getElementById("brandRowTrack");
+    const brandRowEl = document.getElementById("brandRow");
     let brandConfig = {};
     let editingBrand = null;
 
@@ -153,17 +154,41 @@
       // an agent scoped to one brand shouldn't see the other brands'
       // pills at all, not just get blocked after clicking one.
       const visibleBrands = window.AgentAuth ? window.AgentAuth.filterAllowedBrands(window.BRANDS) : window.BRANDS;
-      // Rendered twice back-to-back so the marquee (translateX(-50%) then
-      // snap back to 0) loops seamlessly — the end of copy 1 flows
-      // straight into the identical copy 2 with no visible jump. Edit
-      // clicks work the same from either copy, both point at the same
-      // brand object. (If there's only one visible brand, the marquee
-      // animation just won't have much to scroll — that's fine, it's not
-      // disabled, just less noticeable with one/two pills.)
-      for (let copy = 0; copy < 2; copy++) {
-        visibleBrands.forEach((b, i) => brandRowTrack.appendChild(buildBrandPill(b, i)));
+      if (!visibleBrands.length) return;
+
+      // The marquee loops by scrolling exactly one HALF of the track's
+      // total width (translateX(-50%), see the CSS) — so each half needs
+      // to independently be at least as wide as the visible row, or the
+      // loop runs out of content partway through and leaves a visible
+      // gap (this showed up in practice on a wide monitor with an agent
+      // scoped to just 1-2 brands — a fixed "render twice" wasn't always
+      // wide enough). Render one copy first purely to MEASURE how wide
+      // the brand set actually renders at this screen size (pill width
+      // depends on each brand's name/logo, can't be computed without a
+      // real layout pass), then figure out how many copies make up one
+      // full-width "half", and build the real (measure copy discarded)
+      // two-halves track from that.
+      visibleBrands.forEach((b, i) => brandRowTrack.appendChild(buildBrandPill(b, i)));
+      const oneCopyWidth = brandRowTrack.scrollWidth || 1;
+      const containerWidth = (brandRowEl && brandRowEl.clientWidth) || window.innerWidth;
+      const copiesPerHalf = Math.max(1, Math.ceil(containerWidth / oneCopyWidth) + 1);
+
+      brandRowTrack.innerHTML = "";
+      for (let half = 0; half < 2; half++) {
+        for (let copy = 0; copy < copiesPerHalf; copy++) {
+          visibleBrands.forEach((b, i) => brandRowTrack.appendChild(buildBrandPill(b, i)));
+        }
       }
     }
+
+    // Re-measure and rebuild on resize (debounced) — a copy count picked
+    // for one window width can fall short after the window (or a
+    // maximized browser moved to a bigger monitor) gets wider.
+    let brandRowResizeTimer = null;
+    window.addEventListener("resize", () => {
+      clearTimeout(brandRowResizeTimer);
+      brandRowResizeTimer = setTimeout(renderBrandRow, 200);
+    });
 
     async function loadBrandConfig() {
       try {

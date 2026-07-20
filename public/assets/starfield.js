@@ -70,13 +70,11 @@
 
     if (!reducedMotion()) {
       const bgimg = document.getElementById("sfBgImg");
-      document.addEventListener("mousemove", onMouseMove);
-      function onMouseMove(e) {
+      document.addEventListener("mousemove", (e) => {
         const x = (e.clientX / window.innerWidth - 0.5) * 2;
         const y = (e.clientY / window.innerHeight - 0.5) * 2;
         bgimg.style.setProperty("--sf-parallax", `translate(${(x * -14).toFixed(1)}px, ${(y * -10).toFixed(1)}px)`);
-      }
-      root._cleanup = () => document.removeEventListener("mousemove", onMouseMove);
+      });
     }
   }
 
