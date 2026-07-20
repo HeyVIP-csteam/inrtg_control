@@ -5,18 +5,18 @@
  * photo + slow "breathing" zoom + subtle mouse-parallax + a twinkling
  * star overlay + a meteor shower overlay), injected into every page that
  * includes this script rather than duplicated as markup in all 6 HTML
- * files. Only active in dark theme — in light theme the existing
- * `--page-bg` gradient (lavender/blue, defined in style.css) stays
- * exactly as it was; a space photo doesn't suit the light theme's look,
- * so this deliberately does nothing there rather than trying to force it.
+ * files. Active in BOTH themes — dark theme shows the photo as-is with a
+ * dark shading gradient (see --sf-shade in style.css); light theme
+ * brightens the same photo (a CSS filter) and shades it with a light
+ * lavender-tinted overlay instead, so it fits the light theme's own
+ * pastel palette rather than just dropping a dark photo onto a light
+ * page. Both variants are theme CSS variables (--sf-shade, --sf-filter)
+ * — this script itself doesn't care which theme is active, it just
+ * mounts once and CSS handles the rest via [data-theme].
  *
  * Respects prefers-reduced-motion: shows the photo as a plain static
  * background with no zoom/parallax/stars/meteors for anyone with that
  * OS-level preference set, rather than ignoring it.
- *
- * Watches <html data-theme="..."> for changes (theme.js's toggle button
- * flips this attribute without a page reload) so switching themes
- * live adds/removes the starfield instantly, not just on next load.
  */
 (function () {
   const STAR_COUNT = 60;
@@ -74,35 +74,15 @@
       function onMouseMove(e) {
         const x = (e.clientX / window.innerWidth - 0.5) * 2;
         const y = (e.clientY / window.innerHeight - 0.5) * 2;
-        bgimg.style.transform = `translate(${(x * -14).toFixed(1)}px, ${(y * -10).toFixed(1)}px) scale(1.04)`;
+        bgimg.style.setProperty("--sf-parallax", `translate(${(x * -14).toFixed(1)}px, ${(y * -10).toFixed(1)}px)`);
       }
       root._cleanup = () => document.removeEventListener("mousemove", onMouseMove);
     }
   }
 
-  function unmount() {
-    if (!mounted) return;
-    mounted = false;
-    if (root) {
-      if (root._cleanup) root._cleanup();
-      root.remove();
-      root = null;
-    }
-  }
-
-  function sync() {
-    const isDark = document.documentElement.getAttribute("data-theme") === "dark";
-    if (isDark) mount(); else unmount();
-  }
-
-  function init() {
-    sync();
-    new MutationObserver(sync).observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
-  }
-
-  // This script is included with `defer`, so document.body should
-  // already exist by the time it runs — but guard anyway in case it's
-  // ever included without defer.
-  if (document.body) init();
-  else document.addEventListener("DOMContentLoaded", init);
+  // Mounted once on load — active in both themes now, so there's no
+  // theme-triggered mount/unmount to watch for anymore. Only the CSS
+  // (keyed off [data-theme]) changes look between themes.
+  if (document.body) mount();
+  else document.addEventListener("DOMContentLoaded", mount);
 })();

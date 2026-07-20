@@ -724,14 +724,23 @@ than a static image:
 included via `<script src="/assets/starfield.js" defer></script>` in all
 6 pages' `<head>` (right after `theme.js`) — it injects the background
 markup into `<body>` itself rather than duplicating it as HTML in every
-page. It watches `<html data-theme="...">` via a `MutationObserver`, so
-toggling the theme live mounts/unmounts the whole thing instantly, no
-page reload needed.
+page. It mounts once on load, active in both themes (see below) — it no
+longer needs to watch `<html data-theme="...">` for changes, since which
+theme is active only changes the CSS custom properties (`--sf-filter`,
+`--sf-shade`) the same markup renders with, not whether the background
+exists at all.
 
-**Light theme:** deliberately untouched — a space photo doesn't suit the
-light theme's lavender/blue look, so `starfield.js` simply does nothing
-there; light theme keeps the original `--page-bg` gradient exactly as it
-was.
+**Light theme:** initially left untouched (a space photo seemed like it
+wouldn't suit the light theme's lavender/blue look) — but the business
+owner asked for it in both themes, so it's now active everywhere.
+Same photo, same effects, but two theme-scoped CSS variables change how
+it looks: `--sf-filter` (light theme brightens the photo —
+`brightness(1.4) saturate(0.85) contrast(0.95)`; dark theme leaves it
+`none`) and `--sf-shade` (light theme overlays a light lavender-tinted
+gradient matching this theme's own `--page-bg` palette; dark theme keeps
+the original dark shading gradient). `starfield.js` itself doesn't know
+or care which theme is active — it just mounts once on load; only the
+CSS driven by `[data-theme]` changes the look between themes.
 
 **`prefers-reduced-motion` respected:** if set, the photo still shows
 (as a plain static background) but with zero animation — no zoom, no

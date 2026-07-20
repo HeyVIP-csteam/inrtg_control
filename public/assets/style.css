@@ -17,6 +17,12 @@
   --panel-border: rgba(255, 255, 255, 0.6);
   --wordmark: #4338ca;
   --wordmark-gradient: linear-gradient(90deg, #4338ca, #6d5ce8, #8b7ff5, #6d5ce8, #4338ca);
+  /* Light-theme treatment for the animated space-photo background —
+     same photo as dark theme, brightened and shaded with a light
+     lavender tint (matching this theme's own --page-bg palette above)
+     instead of showing the photo dark. */
+  --sf-filter: brightness(1.4) saturate(0.85) contrast(0.95);
+  --sf-shade: linear-gradient(180deg, rgba(234,241,255,0.55) 0%, rgba(217,206,244,0.62) 45%, rgba(196,178,238,0.72) 100%);
   --sidebar-bg: rgba(255, 255, 255, 0.28);
   --sidebar-item-bg: rgba(255, 255, 255, 0.55);
   --sidebar-item-hover: rgba(255, 255, 255, 0.82);
@@ -55,6 +61,11 @@
   --panel-border: rgba(255, 255, 255, 0.08);
   --wordmark: #f3c463;
   --wordmark-gradient: linear-gradient(90deg, #e0a83f, #fff2cf, #d9a53c, #f3c463, #e0a83f);
+  /* Dark-theme treatment for the animated space-photo background — the
+     photo as-is, no brightening, shaded dark so foreground cards stay
+     readable regardless of which part of the photo sits behind them. */
+  --sf-filter: none;
+  --sf-shade: linear-gradient(180deg, rgba(3,4,13,0.35) 0%, rgba(3,4,13,0.55) 55%, rgba(3,4,13,0.75) 100%);
   --sidebar-bg: rgba(15, 19, 40, 0.75);
   --sidebar-item-bg: rgba(255, 255, 255, 0.03);
   --sidebar-item-hover: rgba(255, 255, 255, 0.07);
@@ -76,32 +87,40 @@ body {
   transition: background 0.2s ease, color 0.2s ease;
 }
 
-/* ---- Animated space-photo background (dark theme only) ----
+/* ---- Animated space-photo background (both themes) ----
    Injected by assets/starfield.js as #starfieldRoot, prepended to
    <body>. Sits behind everything (negative z-index) — real page
    content (topbar, cards, sidebars) is completely unaffected and
    keeps using its own backgrounds; this only shows through the empty
-   space around/behind them, same as the plain gradient it replaces in
-   dark theme. Not present at all in light theme (starfield.js handles
-   that) or when prefers-reduced-motion is set (the .sf-static variant
-   below — same photo, no zoom/parallax/stars/meteors). */
+   space around/behind them, same as the plain gradient it replaces.
+   Dark theme shows the photo as-is with a dark shading gradient; light
+   theme brightens the same photo (--sf-filter) and shades it with a
+   light lavender-tinted overlay (--sf-shade) instead, so the exact same
+   photo fits either theme's own palette rather than looking like a dark
+   photo just dropped onto a light page. Not present at all when
+   prefers-reduced-motion is set (the .sf-static variant below — same
+   photo, no zoom/parallax/stars/meteors). */
 #starfieldRoot { position: fixed; inset: 0; z-index: -2; overflow: hidden; pointer-events: none; }
 .sf-bgwrap { position: fixed; inset: -4%; overflow: hidden; }
 .sf-bgimg {
   position: absolute; inset: -3%;
   background-image: url('/assets/img/bg-space.jpg');
   background-size: cover; background-position: center;
+  filter: var(--sf-filter, none);
+  /* The mouse-parallax offset (set by starfield.js as this custom
+     property) and the breathing zoom below are combined into ONE
+     transform via keyframes that both reference --sf-parallax — setting
+     transform directly from JS would otherwise fight with the CSS
+     animation each frame, since both would be writing the same
+     property. */
+  transform: var(--sf-parallax, translate(0, 0)) scale(1);
   animation: sf-breathe 28s ease-in-out infinite;
-  transition: transform 0.4s ease-out;
 }
 @keyframes sf-breathe {
-  0%, 100% { transform: scale(1.0); }
-  50% { transform: scale(1.055); }
+  0%, 100% { transform: var(--sf-parallax, translate(0, 0)) scale(1.0); }
+  50%      { transform: var(--sf-parallax, translate(0, 0)) scale(1.055); }
 }
-.sf-shade {
-  position: fixed; inset: 0;
-  background: linear-gradient(180deg, rgba(3,4,13,0.35) 0%, rgba(3,4,13,0.55) 55%, rgba(3,4,13,0.75) 100%);
-}
+.sf-shade { position: fixed; inset: 0; background: var(--sf-shade); }
 .sf-stars { position: fixed; inset: 0; }
 .sf-star { position: absolute; border-radius: 50%; background: #fff; animation: sf-twinkle linear infinite; }
 @keyframes sf-twinkle { 0%, 100% { opacity: var(--sf-min-op, 0.15); } 50% { opacity: var(--sf-max-op, 1); } }
@@ -121,7 +140,7 @@ body {
 /* prefers-reduced-motion — starfield.js skips generating stars/meteors
    and adds this class; belt-and-suspenders in CSS too in case markup
    ever ends up present regardless. */
-.sf-static .sf-bgimg { animation: none; }
+.sf-static .sf-bgimg { animation: none; transform: none; }
 .sf-static .sf-star, .sf-static .sf-meteor { display: none; }
 
 /* threads.html only — locks the whole page to the viewport so the only
