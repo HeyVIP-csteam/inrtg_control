@@ -397,11 +397,11 @@ entire day's list() budget on its own — this was never a "maybe," it was
 only a matter of when someone would notice.
 
 **Fixed in `functions/_shared/threads.js`:** a real `list()` scan now
-only runs at most once every 3 minutes — the result is cached in a
+only runs at most once every 2 minutes — the result is cached in a
 single KV key (`thread-list-cache`, `LIST_CACHE_TTL_MS`) and every other
 `listThreads()` call in that window just reads that cache (a cheap
 `get()`, drawing from the much larger 100,000-reads/day budget instead).
-Caps real `list()` calls at ~480/day worst case even under continuous
+Caps real `list()` calls at ~720/day worst case even under continuous
 all-day polling — well under 1,000, and also keeps the cache-refresh
 writes well under the SEPARATE 1,000 writes/day budget shared with every
 ticket submit/reply/solve-toggle. If the real scan itself fails (e.g.
@@ -423,6 +423,56 @@ outright once a hidden limit is hit."
 invalidate this cache, so a just-deleted ticket can still show in the
 sidebar for up to ~3 minutes (clicking it correctly shows "not found"
 rather than erroring). Not worth adding cache-invalidation-on-every-write
+
+### 🆕 Optional add-on — `cron-worker/`, a truly independent scheduled
+refresher (not deployed by default, see that folder's own README.md)
+
+Everything above (2-minute cache + 800/day hard cap) is a request-
+triggered fallback — some page request has to "notice" the cache is
+stale and do the refresh, which leaves a small (not a real risk given
+the daily cap, but not a mathematical zero) window where two agents'
+requests could both notice staleness in the same instant. `cron-worker/`
+is a genuine architectural fix for that: a completely separate Cloudflare
+Workers project (own `wrangler.toml`, own deployment, NOT part of this
+Pages project) bound to the same `THREADS_KV` namespace, with a real
+Cron Trigger firing every 2 minutes — Cloudflare guarantees a Cron
+Trigger run never overlaps with itself, so there is no possible race,
+matching the guarantee the business owner saw in a comparable Google
+Apps Script project (`ScriptApp.newTrigger(...).everyMinutes(1)`) and
+asked to match. Available on Cloudflare's Free plan (Cron Triggers
+aren't Paid-only — up to 3 per Worker on Free).
+
+Deploying this is **optional** — the main app works completely fine
+without it (falls back to the request-triggered mechanism above,
+already safe on its own). If deployed, it becomes the primary refresher
+in practice (keeps the cache fresh before any page request would ever
+notice staleness); if it's ever undeployed or breaks, the main app
+doesn't notice or depend on it in any way. See `cron-worker/README.md`
+for click-through dashboard deployment steps (no CLI/local tooling
+needed) — it's a genuinely different deployment flow from the main site
+(a Worker created directly in the Cloudflare dashboard, not something
+that goes through the GitHub-upload-to-Pages flow used for everything
+else in this project), so don't try to drag this folder into the same
+GitHub repo as the main site — it needs its own separate Worker.
+
+**✅ Deployed and confirmed working** (this session) — the business
+owner set this up end-to-end via the Cloudflare dashboard (click-through,
+no CLI), confirmed via the Worker's own Logs tab showing
+`Refreshed thread-list-cache: 54 threads.` firing automatically every 2
+minutes with zero manual interaction. Interval was changed from the
+initial 3 minutes to 2 minutes at the business owner's request, to more
+closely match the cadence of the Google Apps Script project used for
+comparison. **Note the tighter safety margin at 2 minutes:** this cron
+job alone now uses ~720 of the shared 800/day hard cap, leaving only
+~80/day of headroom for the main app's request-triggered fallback (see
+above) — should be plenty in practice since that fallback should rarely
+fire once this cron job is running consistently, but don't drop the
+interval below 2 minutes without also raising DAILY_SCAN_LIMIT (currently
+800, still safely under Cloudflare's real 1,000/day ceiling) — see that
+constant in both `functions/_shared/threads.js` and `cron-worker/worker.js`
+(must be changed in BOTH files together, since they share one counter).
+
+
 for, since that would mean writing to the shared cache key far more
 often — the exact pattern this whole fix exists to avoid.
 

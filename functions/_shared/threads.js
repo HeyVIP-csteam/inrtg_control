@@ -29,7 +29,7 @@
  * (the original version of this redesign) blew through that in a
  * couple of hours of normal 6-second sidebar polling — see the
  * LIST_CACHE_KEY / LIST_CACHE_TTL_MS / DAILY_SCAN_LIMIT section below for
- * the fix (a real list() scan now only happens at most once every 3
+ * the fix (a real list() scan now only happens at most once every 2
  * minutes, cached in between, AND is hard-capped at 800 real scans per
  * UTC day no matter what). Keep this in mind before adding any OTHER list() calls
  * anywhere in this codebase — they all share the same 1,000/day budget.
@@ -306,14 +306,14 @@ async function scanThreadsFromKV(env) {
 // LIST_CACHE_TTL_MS — the result is cached in ONE KV key
 // (LIST_CACHE_KEY) and every listThreads() call in between just reads
 // that cache (a cheap get(), which draws from the 100,000/day read
-// budget instead, with tons of headroom). 3 minutes keeps real list()
-// calls to at most ~480/day even under continuous nonstop polling all
+// budget instead, with tons of headroom). 2 minutes keeps real list()
+// calls to at most ~720/day even under continuous nonstop polling all
 // day — comfortable headroom under 1,000, and also keeps the *write*
 // side (saving the cache) well under the SEPARATE 1,000 writes/day
 // budget, which every ticket submit/reply/solve-toggle also draws from.
 //
 // Trade-off, stated plainly: a brand-new ticket, or a solved/reopened
-// status change, can now take up to ~3 minutes to show up in the
+// status change, can now take up to ~2 minutes to show up in the
 // sidebar for other agents (an already-open conversation stays fully
 // real-time regardless — that's a direct-by-ID get(), never affected by
 // any of this). Given the alternative was the whole sidebar hard-failing
@@ -326,12 +326,12 @@ async function scanThreadsFromKV(env) {
 // is cached — even hours-stale data — rather than fail the request
 // outright. Only throws if there's truly nothing cached to fall back to.
 const LIST_CACHE_KEY = "thread-list-cache";
-const LIST_CACHE_TTL_MS = 3 * 60 * 1000; // 3 minutes
+const LIST_CACHE_TTL_MS = 2 * 60 * 1000; // 2 minutes — matches the standalone cron-worker's Cron Trigger interval
 
 // ---- Hard daily ceiling on real list() calls, on top of the 3-minute
 // throttle above ----
 //
-// The 3-minute throttle alone caps real scans at ~480/day under normal
+// The 2-minute throttle alone caps real scans at ~720/day under normal
 // conditions — comfortably under Cloudflare's 1,000/day limit. But it's
 // a "soft" guarantee: if several agents' polls land in the exact same
 // instant right as the cache expires, each could independently decide
