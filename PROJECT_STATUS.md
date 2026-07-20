@@ -4,6 +4,60 @@ Paste this whole document as the first message in a new conversation, along
 with the latest `telegram-issue-hub-updated.zip`. That gives the new chat
 the complete current state of the project.
 
+## 🔒 Security fix, 2026-07-20 — plaintext password was sitting in the
+browser's localStorage, readable via F12
+
+**Found by a colleague (IT) via DevTools → Application → Local Storage in
+under a minute.** The original login design (documented below under
+"Account system") had no session/token: the browser stored the agent's
+literal password in `localStorage.agentAuth.password` and re-sent it as
+`X-Agent-Pass` on every single request (including the 6-second sidebar
+poll), so the server could re-verify it every time without a session
+store. That meant the password was sitting in the clear in the browser at
+all times — completely independent of how strong the server-side PBKDF2
+hash was. Anyone with DevTools access to an already-logged-in browser
+(shared computer, unlocked laptop, malicious extension, etc.) could read
+it directly; no cracking involved.
+
+**Fixed — replaced with signed session tokens:**
+- `POST /api/auth/login` now issues a signed token (HMAC-SHA256, see
+  `issueToken()`/`verifyToken()` in `functions/_shared/accounts.js`)
+  instead of the frontend keeping the password.
+- The browser stores **only the token** (`localStorage.agentAuth.token`)
+  and sends it as `X-Agent-Token` on every request — the password itself
+  never leaves the login form after that.
+- Every account record now has a `tokenVersion` counter, bumped on every
+  password change AND every lock/unlock. `verifyRequest()` rejects any
+  token whose version doesn't match the account's current one, so an
+  old token stops working the instant the password changes or the
+  account gets locked — same guarantee the old "re-send the password
+  every time" design had, without ever exposing the password itself.
+- Tokens expire after 12h regardless, on top of the existing 2h
+  client-side idle timeout.
+- Self-service password change (`/api/account/change-password`) now
+  returns a fresh token in the same response so the browser doesn't get
+  logged out immediately after successfully changing its own password.
+
+**Requires a NEW Cloudflare secret before this deploy will work:**
+`SESSION_TOKEN_SECRET` (any long random string — used only server-side to
+sign/verify tokens, never sent to the browser; not the same as any
+existing secret). Add it under Settings → Environment variables →
+Production, same as the other secrets, then deploy.
+
+**Deploy side-effect, expected and harmless:** every already-logged-in
+browser gets logged out on first request after this deploy (their old
+localStorage entry has no `token` field, only the old `password` field,
+which the new frontend code no longer sends) — everyone just logs in
+again normally, no data loss, no account changes needed.
+
+**Still pending from this, not yet done:** rotating the actual credentials
+(all agent account passwords, `TELEGRAM_BOT_TOKEN`,
+`GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY`, `TELEGRAM_WEBHOOK_SECRET`,
+`BRAND_EDIT_PASSWORD`) — the token fix stops the password from leaking
+via the browser going forward, but doesn't retroactively un-expose
+whatever a colleague may have already seen. This rotation was flagged
+mid-session but not yet confirmed done.
+
 ## Multi-currency reuse — paused, reverted back to full INR
 
 The business owner briefly had all 13 Google Sheet IDs in
@@ -65,7 +119,11 @@ routing admin page ("TG Group / Channel"). Deployed on Cloudflare Pages.
   system below, it is NOT used for brand logo/link editing anymore),
   `TELEGRAM_WEBHOOK_SECRET` (self-chosen random string, verifies Telegram
   webhook calls — see "IMPORTANT: must be alphanumeric only, no
-  spaces/symbols/non-ASCII" note under TG Reply Threads below).
+  spaces/symbols/non-ASCII" note under TG Reply Threads below),
+  `SESSION_TOKEN_SECRET` (**NEW, required** — any long random string,
+  signs/verifies the session tokens described in the "Security fix"
+  section at the top of this doc; login and every protected endpoint
+  will fail until this is set).
   **Not yet set, optional:** `SECURITY_ALERTS_CHAT_ID` and
   `SECURITY_ALERTS_TOPIC_ID` — see "Unrecognized-IP login alerts" under
   Account system below; the feature silently no-ops until these exist.

@@ -4,8 +4,8 @@
  * sidebar list. Fetch a single thread's full conversation via
  * GET /api/threads/<id>.
  *
- * Requires a logged-in account (X-Agent-User / X-Agent-Pass headers —
- * see _shared/accounts.js). Results are filtered server-side to only
+ * Requires a logged-in account (X-Agent-Token header — see
+ * _shared/accounts.js). Results are filtered server-side to only
  * the brands that account is allowed to see — an agent restricted to a
  * subset of brands never receives the other brands' summaries at all,
  * this isn't just hidden in the UI.

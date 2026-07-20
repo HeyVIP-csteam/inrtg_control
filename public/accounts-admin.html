@@ -194,7 +194,7 @@
     function authHeaders() {
       if (bootstrapPassword) return { "X-Bootstrap-Password": bootstrapPassword };
       const auth = getAuth();
-      if (auth) return { "X-Agent-User": auth.username, "X-Agent-Pass": auth.password };
+      if (auth && auth.token) return { "X-Agent-Token": auth.token };
       return {};
     }
 
@@ -262,7 +262,7 @@
         // /api/deletion-log both had; fixed here the same way.
         const ROLE_RANK = { agent: 0, senior: 1, admin: 2, superadmin: 3 };
         if ((ROLE_RANK[data.account.role] ?? 0) < ROLE_RANK.admin) { err.textContent = "This account isn't an admin."; err.style.display = "block"; return; }
-        setAuth({ username: data.account.username, password, role: data.account.role, allowedBrands: data.account.allowedBrands });
+        setAuth({ username: data.account.username, token: data.token, role: data.account.role, allowedBrands: data.account.allowedBrands });
         enterAdminShell();
       } catch {
         err.textContent = "Network error — try again.";

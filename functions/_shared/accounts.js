@@ -12,15 +12,36 @@
  *   account:<username>  → { username, salt, hash, role, officeId, allowedBrands }
  *   accounts-index       → JSON array of usernames
  *
- * DESIGN NOTE — no session/token. This is the "medium" tier discussed
- * with the business owner: real per-agent accounts with hashed
- * passwords and enforced server-side, but no session store. The browser
- * re-sends the username+password on every request (via the
- * X-Agent-User / X-Agent-Pass headers) and every protected endpoint
- * re-verifies them (password hash + office IP) on every single call —
- * simpler to build/maintain than real sessions, acceptable for an
- * internal tool used from a small number of fixed-IP offices. There is
- * no "log out" beyond clearing the browser's saved credentials.
+ * DESIGN NOTE — SESSION TOKENS (replaces the old "no session" model).
+ *
+ * SECURITY INCIDENT, 2026-07-20: the original design stored the agent's
+ * PLAINTEXT password in the browser's localStorage (`agentAuth`) and
+ * re-sent it on every request via X-Agent-User/X-Agent-Pass headers, so
+ * every protected endpoint could re-verify the password hash + office IP
+ * on every single call without a session store. This was found to be
+ * trivially readable via browser DevTools (F12 → Application → Local
+ * Storage) by anyone with physical/remote access to an already-logged-in
+ * browser — i.e. the password was sitting in the clear, independent of
+ * how strong the server-side hash was. Replaced with signed session
+ * tokens:
+ *   - On login, the server issues a signed token (HMAC-SHA256 over
+ *     {username, tokenVersion, iat, exp} using the SESSION_TOKEN_SECRET
+ *     env secret) — see issueToken()/verifyToken() below.
+ *   - The browser stores ONLY this token (never the password) and sends
+ *     it as X-Agent-Token on every request.
+ *   - verifyToken() checks the signature + expiry; verifyRequest() then
+ *     re-fetches the account and checks it's not locked AND that the
+ *     token's `tokenVersion` still matches the account's current
+ *     tokenVersion (bumped on every password change and every lock/
+ *     unlock — see saveAccount()/setAccountLocked()), so a token that
+ *     predates a password reset or a lock immediately stops working,
+ *     same guarantee the old design had.
+ *   - Tokens expire after TOKEN_TTL_MS regardless (hard ceiling on top
+ *     of the client-side 2h idle timeout in authguard.js).
+ * REQUIRES a new Cloudflare secret: SESSION_TOKEN_SECRET (any long
+ * random string — used only to sign/verify tokens, never sent to the
+ * browser). If unset, issueToken()/verifyToken() throw/fail closed
+ * rather than silently signing with a guessable key.
  */
 
 const OFFICES_INDEX_KEY = "offices-index";
@@ -90,6 +111,86 @@ function timingSafeEqual(a, b) {
   let diff = 0;
   for (let i = 0; i < a.length; i++) diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
   return diff === 0;
+}
+
+// ---- session tokens (HMAC-SHA256, replaces sending the password on
+// every request — see the DESIGN NOTE at the top of this file) ----
+
+const TOKEN_TTL_MS = 12 * 60 * 60 * 1000; // 12h hard ceiling, independent of the client-side 2h idle timeout
+
+async function getSigningKey(env) {
+  if (!env.SESSION_TOKEN_SECRET) {
+    throw new Error("SESSION_TOKEN_SECRET is not configured — set it in Cloudflare (Settings → Environment variables, Production) to any long random string.");
+  }
+  return crypto.subtle.importKey(
+    "raw",
+    new TextEncoder().encode(env.SESSION_TOKEN_SECRET),
+    { name: "HMAC", hash: "SHA-256" },
+    false,
+    ["sign", "verify"]
+  );
+}
+
+function toBase64Url(bytes) {
+  let binary = "";
+  bytes.forEach((b) => (binary += String.fromCharCode(b)));
+  return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
+function fromBase64Url(str) {
+  const b64 = str.replace(/-/g, "+").replace(/_/g, "/") + "===".slice((str.length + 3) % 4);
+  const binary = atob(b64);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  return bytes;
+}
+
+/**
+ * Issues a signed session token for an account, good for TOKEN_TTL_MS.
+ * Payload carries the account's CURRENT tokenVersion, so this token
+ * stops verifying the instant that version changes (password reset,
+ * lock, or unlock) — see verifyToken()/verifyRequest().
+ */
+export async function issueToken(env, account) {
+  const payload = {
+    u: account.username,
+    v: account.tokenVersion || 0,
+    iat: Date.now(),
+    exp: Date.now() + TOKEN_TTL_MS,
+  };
+  const payloadB64 = toBase64Url(new TextEncoder().encode(JSON.stringify(payload)));
+  const key = await getSigningKey(env);
+  const sig = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(payloadB64));
+  const sigB64 = toBase64Url(new Uint8Array(sig));
+  return `${payloadB64}.${sigB64}`;
+}
+
+/**
+ * Verifies a token's signature and expiry. Does NOT check tokenVersion
+ * or lock state against the account — that requires a KV read, done by
+ * the caller (verifyRequest()) once it has both the token payload and
+ * the current account record. Returns the decoded payload ({u, v, iat,
+ * exp}) on success, or null on any failure (bad signature, malformed,
+ * expired, secret not configured).
+ */
+export async function verifyToken(env, token) {
+  if (!token || typeof token !== "string" || !token.includes(".")) return null;
+  const [payloadB64, sigB64] = token.split(".");
+  if (!payloadB64 || !sigB64) return null;
+  try {
+    const key = await getSigningKey(env);
+    const valid = await crypto.subtle.verify(
+      "HMAC",
+      key,
+      fromBase64Url(sigB64),
+      new TextEncoder().encode(payloadB64)
+    );
+    if (!valid) return null;
+    const payload = JSON.parse(new TextDecoder().decode(fromBase64Url(payloadB64)));
+    if (!payload.u || typeof payload.exp !== "number" || Date.now() > payload.exp) return null;
+    return payload;
+  } catch {
+    return null;
+  }
 }
 
 function bytesToBase64(bytes) {
@@ -176,12 +277,19 @@ export async function saveAccount(env, { username, password, passwordChangedBy, 
   // the old iteration count — see the note above hashPassword().
   let iterations = existing?.iterations || PBKDF2_ITERATIONS_LEGACY_FALLBACK;
   let lastPasswordChange = existing?.lastPasswordChange || null;
+  // Bumped on every password change so any already-issued session token
+  // (see issueToken()/verifyToken() above) is invalidated the instant a
+  // password changes — a browser holding an old token can no longer use
+  // it, same guarantee the old "re-send the password every request"
+  // design had for free.
+  let tokenVersion = existing?.tokenVersion || 0;
   if (password) {
     const hashed = await hashPassword(password);
     salt = hashed.salt;
     hash = hashed.hash;
     iterations = hashed.iterations;
     lastPasswordChange = { at: new Date().toISOString(), by: passwordChangedBy || key };
+    tokenVersion += 1;
   }
   if (!salt || !hash) throw new Error("A password is required for a new account.");
 
@@ -190,6 +298,7 @@ export async function saveAccount(env, { username, password, passwordChangedBy, 
     salt,
     hash,
     iterations,
+    tokenVersion,
     role: role !== undefined ? (VALID_ROLES.includes(role) ? role : "agent") : (existing?.role || "agent"),
     officeId: officeId !== undefined ? (officeId || null) : (existing?.officeId ?? null),
     allowedBrands: allowedBrands !== undefined
@@ -232,6 +341,10 @@ export async function setAccountLocked(env, username, locked, reason) {
   existing.locked = !!locked;
   existing.lockedAt = locked ? new Date().toISOString() : null;
   existing.lockedReason = locked ? (reason || "Locked") : null;
+  // Bump on both lock AND unlock — a token issued before the lock should
+  // never come back to life just because the account was later unlocked;
+  // whoever unlocks it should get a fresh token via a real login.
+  existing.tokenVersion = (existing.tokenVersion || 0) + 1;
   await env.THREADS_KV.put(`account:${key}`, JSON.stringify(existing));
   return stripSecret(existing);
 }
@@ -300,33 +413,33 @@ export async function officeIpCheckPasses(env, account, request) {
 }
 
 /**
- * Verifies the X-Agent-User / X-Agent-Pass headers on an incoming request:
- * password hash match AND the office/IP rule above. Returns the (secret-
- * stripped) account on success, or null on any failure — callers should
- * treat null as "not authorized" without leaking which specific check
- * failed (bad username vs bad password vs bad IP vs no office all look
- * the same from outside).
+ * Verifies the X-Agent-Token header on an incoming request: signature +
+ * expiry (verifyToken()), AND that the token's tokenVersion still
+ * matches the account's current one (rejects tokens issued before a
+ * password change or a lock/unlock cycle), AND the office/IP rule.
+ * Returns the (secret-stripped) account on success, or null on any
+ * failure — callers should treat null as "not authorized" without
+ * leaking which specific check failed.
  */
 export async function verifyRequest(request, env) {
   if (!env.THREADS_KV) return null;
-  const username = request.headers.get("X-Agent-User");
-  const password = request.headers.get("X-Agent-Pass");
-  if (!username || !password) return null;
+  const token = request.headers.get("X-Agent-Token");
+  if (!token) return null;
 
-  const account = await getAccount(env, username);
+  const payload = await verifyToken(env, token);
+  if (!payload) return null;
+
+  const account = await getAccount(env, payload.u);
   if (!account) return null;
 
-  // Checked BEFORE the password hash — a locked account should be
-  // rejected on every single request (there's no session/token, so a
-  // browser that was already logged in before the lock would otherwise
-  // keep working via its cached credentials), and skipping straight past
-  // PBKDF2 for an account we already know is locked saves real CPU time
-  // on every subsequent request it makes (see the PBKDF2/CPU-limit
-  // writeup under "Account system" in PROJECT_STATUS.md).
+  // Checked BEFORE anything else — a locked account should be rejected
+  // on every single request, and a browser holding a still-unexpired
+  // token from before the lock must not keep working.
   if (account.locked) return null;
 
-  const passwordOk = await verifyPassword(password, account.salt, account.hash, account.iterations);
-  if (!passwordOk) return null;
+  // A token from before the most recent password change / lock / unlock
+  // is stale even if its signature and expiry are both still valid.
+  if ((account.tokenVersion || 0) !== payload.v) return null;
 
   if (!(await officeIpCheckPasses(env, account, request))) return null;
 
@@ -343,8 +456,7 @@ export function canSeeBrand(account, brandName) {
 /**
  * Gate for the Account-Management endpoints, parameterized by minimum
  * role rank. Two ways in:
- *   1. A real logged-in account whose role rank >= minRank
- *      (X-Agent-User/X-Agent-Pass).
+ *   1. A real logged-in account whose role rank >= minRank (X-Agent-Token).
  *   2. BOOTSTRAP MODE: if no admin-or-above account exists in KV yet at
  *      all, and minRank is admin or below, the existing
  *      BRAND_EDIT_PASSWORD secret works as a one-time key (sent as

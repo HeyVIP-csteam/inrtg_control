@@ -1,16 +1,17 @@
 /**
  * POST /api/auth/login   body: { username, password }
  *
- * No session is created — this just validates the credentials + the
+ * No server-side session store — this validates the credentials + the
  * office/IP rule (see _shared/accounts.js officeIpCheckPasses() — every
  * role except SuperAdmin must be bound to an office with a matching IP;
  * an account with no office is rejected outright now, not silently let
- * through). On success, returns the account's public info (role,
- * allowedBrands) so the frontend can decide what to show; the frontend
- * then re-sends the same username/password as X-Agent-User / X-Agent-Pass
- * headers on every subsequent request, and every protected endpoint
- * re-verifies them independently — this endpoint is really just a "does
- * this work" check for the login form, not a source of trust by itself.
+ * through). On success, issues a signed session token (issueToken() in
+ * _shared/accounts.js) and returns it alongside the account's public
+ * info (role, allowedBrands). The frontend stores ONLY this token
+ * (never the password — see the SECURITY INCIDENT note in
+ * _shared/accounts.js for why that changed) and re-sends it as
+ * X-Agent-Token on every subsequent request; every protected endpoint
+ * re-verifies the token's signature/expiry/version independently.
  *
  * ERROR MESSAGES — deliberately generic for username/password ("Wrong
  * username or password") since those two failures happen BEFORE we know
@@ -59,7 +60,7 @@
  * so this ships now without breaking anything or requiring the group to
  * exist yet.
  */
-import { getAccount, verifyPassword, officeIpCheckPasses, getOffice, requestIP, setAccountLocked } from "../../_shared/accounts.js";
+import { getAccount, verifyPassword, officeIpCheckPasses, getOffice, requestIP, setAccountLocked, issueToken } from "../../_shared/accounts.js";
 import { sendTelegramMessage } from "../../_shared/telegram.js";
 
 const PASSWORD_FAIL_LOCK_THRESHOLD = 5;
@@ -131,8 +132,10 @@ async function handleLogin({ request, env, waitUntil }) {
     return json({ ok: false, error: `Your IP address (${ip}) isn't on the approved list for ${officeName}. Ask an admin to whitelist it under Account Management → Whitelist IP.` }, 401);
   }
 
+  const token = await issueToken(env, account);
   return json({
     ok: true,
+    token,
     account: { username: account.username, role: account.role, allowedBrands: account.allowedBrands, officeId: account.officeId },
   });
 }

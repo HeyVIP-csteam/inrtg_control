@@ -12,12 +12,21 @@
  *
  * Exposes window.AgentAuth for the rest of the page to use:
  *   - getAuth() / clearAuth()
- *   - authFetch(url, opts) — adds the X-Agent-User/X-Agent-Pass headers,
- *     and boots back to login on a 401 from the server (e.g. account
- *     deleted, IP changed, password changed elsewhere).
+ *   - authFetch(url, opts) — adds the X-Agent-Token header, and boots
+ *     back to login on a 401 from the server (e.g. account deleted/
+ *     locked, IP changed, password changed elsewhere, or the token
+ *     simply expired).
  *   - renderWhoami(elementId) — fills in the "User: name ROLE [logout]"
  *     pill, wherever a page has an element with that id.
- *   - logout() — clears saved credentials and goes to /login.html.
+ *   - logout() — clears the saved token and goes to /login.html.
+ *
+ * SECURITY NOTE: this used to store the plaintext password in
+ * localStorage and re-send it on every request — found to be trivially
+ * readable via DevTools (F12 → Application → Local Storage) by anyone
+ * with access to an already-logged-in browser. Replaced with a signed,
+ * server-issued session token (see the DESIGN NOTE in
+ * functions/_shared/accounts.js) — only the token is ever stored here,
+ * never the password.
  *
  * Deliberately NOT included on /login.html itself (redirect loop) or
  * /accounts-admin.html (that page has its own separate admin+bootstrap
@@ -66,9 +75,8 @@
     opts = opts || {};
     const a = getAuth();
     const headers = Object.assign({}, opts.headers || {});
-    if (a) {
-      headers["X-Agent-User"] = a.username;
-      headers["X-Agent-Pass"] = a.password;
+    if (a && a.token) {
+      headers["X-Agent-Token"] = a.token;
     }
     const res = await fetch(url, Object.assign({}, opts, { headers: headers }));
     if (res.status === 401) goToLogin();
@@ -115,14 +123,16 @@
       const allowed = new Set(a.allowedBrands || []);
       return (brands || []).filter(function (b) { return allowed.has(b.name); });
     },
-    // After a successful self-service password change, the browser's
-    // saved credentials are now stale (still hold the OLD password) —
-    // this patches them in place instead of forcing an immediate
-    // re-login right after the person just proved who they are.
-    updateStoredPassword: function (newPassword) {
+    // After a successful self-service password change, the OLD token is
+    // now stale (password changes bump the account's tokenVersion server
+    // -side — see accounts.js) — the change-password endpoint returns a
+    // fresh token in the same response, this patches it in place instead
+    // of forcing an immediate re-login right after the person just
+    // proved who they are.
+    updateStoredToken: function (newToken) {
       const a = getAuth();
       if (!a) return;
-      a.password = newPassword;
+      a.token = newToken;
       localStorage.setItem(AUTH_KEY, JSON.stringify(a));
     },
   };

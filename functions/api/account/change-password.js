@@ -5,8 +5,9 @@
  * Self-service only — an account can change ONLY its own password, never
  * anyone else's (that's what /api/admin/accounts is for, admin-gated).
  * Two independent proofs of identity are required, not one:
- *   1. The request's own X-Agent-User/X-Agent-Pass headers (the account
- *      is already logged in — verifyRequest() re-checks password + IP).
+ *   1. The request's own X-Agent-Token header (the account is already
+ *      logged in — verifyRequest() re-checks the token's signature,
+ *      expiry, tokenVersion, and IP).
  *   2. The `currentPassword` field in the body, checked again explicitly
  *      here. Slightly redundant with #1 on paper, but it's a deliberate
  *      UX/safety net: a browser left logged in and unattended can still
@@ -15,7 +16,7 @@
  *      desk from silently taking over the account by changing its
  *      password out from under the real owner.
  */
-import { verifyRequest, getAccount, verifyPassword, saveAccount } from "../../_shared/accounts.js";
+import { verifyRequest, getAccount, verifyPassword, saveAccount, issueToken } from "../../_shared/accounts.js";
 
 export async function onRequestPost(context) {
   try {
@@ -53,7 +54,7 @@ async function handleChangePassword({ request, env }) {
   const currentOk = await verifyPassword(currentPassword, full.salt, full.hash, full.iterations);
   if (!currentOk) return json({ ok: false, error: "Current password is incorrect." }, 403);
 
-  await saveAccount(env, {
+  const updated = await saveAccount(env, {
     username: full.username,
     password: newPassword,
     passwordChangedBy: full.username, // self-service — always their own name
@@ -62,7 +63,12 @@ async function handleChangePassword({ request, env }) {
     allowedBrands: full.allowedBrands,
   });
 
-  return json({ ok: true });
+  // The password change just bumped tokenVersion, which means the token
+  // this very request came in on is now stale (see verifyRequest()) —
+  // issue a fresh one immediately so the browser doesn't get logged out
+  // right after successfully proving who it is.
+  const token = await issueToken(env, updated);
+  return json({ ok: true, token });
 }
 
 function json(obj, status = 200) {

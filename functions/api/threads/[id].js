@@ -37,8 +37,8 @@
  *   be edited/recalled — Telegram doesn't let a bot edit or delete
  *   messages other people typed directly in the group.
  *
- *   Every action requires a logged-in account (X-Agent-User/X-Agent-Pass)
- *   that's allowed to see this thread's brand — see _shared/accounts.js.
+ *   Every action requires a logged-in account (X-Agent-Token) that's
+ *   allowed to see this thread's brand — see _shared/accounts.js.
  *   A thread outside an account's allowed brands 404s exactly like it
  *   doesn't exist, same as it's filtered out of the sidebar list.
  */

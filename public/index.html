@@ -823,7 +823,7 @@
       });
       const data = await res.json();
       if (!data.ok) return setAcctNote(data.error || "Password change failed.", "err");
-      window.AgentAuth.updateStoredPassword(newPass);
+      window.AgentAuth.updateStoredToken(data.token);
       setAcctNote("Password changed.", "ok");
       setTimeout(closeAcctModal, 700);
     }
