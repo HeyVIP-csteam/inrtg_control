@@ -4,6 +4,21 @@ Paste this whole document as the first message in a new conversation, along
 with the latest `telegram-issue-hub-updated.zip`. That gives the new chat
 the complete current state of the project.
 
+## Multi-currency reuse — paused, reverted back to full INR
+
+The business owner briefly had all 13 Google Sheet IDs in
+`functions/_shared/routing.js` cleared out (`sheetId: ""`) to prep this
+codebase for a different currency market, then asked to **revert back to
+the real INR values and pause that work** — something needs changing
+first (not yet specified). All 13 values (5 main `BRANDS` entries + 8
+`PROMOTION_SHEET_CONFIG` entries) are back to their original production
+IDs; nothing about Sheet logging is disabled right now. If multi-currency
+work resumes later: the same 13 `sheetId` fields are what need clearing/
+replacing again, `functions/api/promo-search.js`'s sheet is shared across
+currencies and should stay untouched, and Telegram `chatId`/`topicId`
+reassignment is handled separately through the TG Group/Channel admin
+panel (KV-backed overrides, independent of what's hardcoded here).
+
 **This version was rewritten from scratch** (not incrementally appended)
 to describe the system as it stands *right now* — it supersedes every
 earlier version of this document, including the incremental session-by-

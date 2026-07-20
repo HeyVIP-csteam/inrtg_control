@@ -162,6 +162,11 @@ export const RISK_ISSUE_FIELD_EMOJI = {
   aadharPan: "🪪",
   cancelType: "📌",
   issueDescription: "📝",
+  bankAccountNo: "🔢",
+  bankAccountHolderName: "🧑",
+  bankIfscCode: "🏷️",
+  bankBranch: "🏢",
+  bankName: "🏦",
 };
 
 /**
