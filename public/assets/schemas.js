@@ -174,7 +174,7 @@ const MODULES = [
           "VIP Level Update Issue",
           "KYC Issues",
           "Remove Back Account",
-          "Update Bank Details & Verify",
+          "Verify Bank Detail",
           "Others Issues",
         ],
       },
@@ -240,23 +240,27 @@ const MODULES = [
       },
       {
         key: "bankAccountNo", label: "Account NO", type: "text", required: true,
-        showIf: { field: "issueType", oneOf: ["Update Bank Details & Verify"] },
+        showIf: { field: "issueType", oneOf: ["Verify Bank Detail"] },
       },
       {
         key: "bankAccountHolderName", label: "Account Holder Name", type: "text", required: true,
-        showIf: { field: "issueType", oneOf: ["Update Bank Details & Verify"] },
+        showIf: { field: "issueType", oneOf: ["Verify Bank Detail"] },
       },
       {
         key: "bankIfscCode", label: "IFSC Code", type: "text", required: true,
-        showIf: { field: "issueType", oneOf: ["Update Bank Details & Verify"] },
+        showIf: { field: "issueType", oneOf: ["Verify Bank Detail"] },
       },
       {
         key: "bankBranch", label: "Branch", type: "text", required: true,
-        showIf: { field: "issueType", oneOf: ["Update Bank Details & Verify"] },
+        showIf: { field: "issueType", oneOf: ["Verify Bank Detail"] },
       },
       {
         key: "bankName", label: "Bank Name", type: "text", required: true,
-        showIf: { field: "issueType", oneOf: ["Update Bank Details & Verify"] },
+        showIf: { field: "issueType", oneOf: ["Verify Bank Detail"] },
+      },
+      {
+        key: "remark", label: "Remark", type: "textarea", required: false,
+        showIf: { field: "issueType", oneOf: ["Verify Bank Detail"] },
       },
     ],
   },
