@@ -352,7 +352,16 @@ function buildRiskIssueDynamicMessage({ brandName, fields, fieldMap, reporter })
     });
   }
 
-  lines.push("", `📝 <b>Remark:</b> ${escapeHtml(fieldMap.remark || "-")}`);
+  // Only show a Remark row if this issue type's form actually had a
+  // Remark field with something typed into it — several issue types
+  // (Others Bonus Related Issue, VIP Level Update Issue, KYC Issues,
+  // Remove Bank Account, Others Issues, Verify Bank Detail) use "Issue
+  // Description" instead of "Remark" and never collect fieldMap.remark
+  // at all, so this used to unconditionally print an empty "Remark: -"
+  // line even when the form never asked for one.
+  if (fieldMap.remark) {
+    lines.push("", `📝 <b>Remark:</b> ${escapeHtml(fieldMap.remark)}`);
+  }
 
   const autoNote = resolveAutoRemark(fieldMap);
   if (autoNote) lines.push("", `💬 ${escapeHtml(autoNote)}`);

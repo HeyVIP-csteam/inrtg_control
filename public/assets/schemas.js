@@ -173,7 +173,7 @@ const MODULES = [
           "Bonus Cancel Related Issue",
           "VIP Level Update Issue",
           "KYC Issues",
-          "Remove Back Account",
+          "Remove Bank Account",
           "Verify Bank Detail",
           "Others Issues",
         ],
@@ -236,7 +236,7 @@ const MODULES = [
       },
       {
         key: "issueDescription", label: "Issue Description", type: "textarea", required: false,
-        showIf: { field: "issueType", oneOf: ["Others Bonus Related Issue", "VIP Level Update Issue", "KYC Issues", "Remove Back Account", "Others Issues"] },
+        showIf: { field: "issueType", oneOf: ["Others Bonus Related Issue", "VIP Level Update Issue", "KYC Issues", "Remove Bank Account", "Others Issues"] },
       },
       {
         key: "bankAccountNo", label: "Account NO", type: "text", required: true,
