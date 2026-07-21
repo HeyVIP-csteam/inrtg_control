@@ -208,7 +208,7 @@
     }
     async function loadThreadsSummary() {
       try {
-        const res = await fetch("/api/threads", { cache: "no-store" });
+        const res = await window.AgentAuth.authFetch("/api/threads", { cache: "no-store" });
         const data = await res.json();
         if (!data.ok) return;
         const all = [...(data.active || []), ...(data.solved || [])];

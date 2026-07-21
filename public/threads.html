@@ -11,6 +11,13 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/twemoji.min.js"></script>
 </head>
 <body class="threads-page">
+  <!-- Attachment lightbox — populated live by viewAttachment() below.
+       Fetches bytes on demand from /api/attachment/<fileId>, never a
+       stored copy — see that endpoint's own comment for why. -->
+  <div class="attach-lightbox" id="attachLightbox">
+    <button type="button" class="attach-lightbox-close" id="attachLightboxClose" title="Close">✕</button>
+    <div class="attach-lightbox-body" id="attachLightboxBody"></div>
+  </div>
   <header class="topbar">
     <div class="topbar-left">
       <img src="/assets/img/logo.webp" alt="HeyVIP" class="logo-img" />
@@ -408,15 +415,55 @@
             ⚠️ The original message was recalled from Telegram — this ticket no longer exists in the group.
           </div>` : ""}
 
-        ${t.rootEdited ? `
-          <div class="thread-summary-card">
-            <div class="row" style="margin-bottom:6px;"><b style="color:var(--accent-gold);">✏️ Edited — current message text:</b></div>
-            <div style="white-space:pre-wrap; font-size:13px;">${escapeHtml(stripHtmlTags(t.rootText || ""))}</div>
-          </div>
-        ` : (t.summary && t.summary.length ? `
-          <div class="thread-summary-card">
-            ${t.summary.map((s) => `<div class="row"><b>${escapeHtml(s.label)}:</b> <span>${escapeHtml(s.value)}</span></div>`).join("")}
-          </div>` : "")}
+        ${(() => {
+          // Clickable "View attachment" buttons for the ORIGINAL ticket's
+          // own photo(s)/document(s) — reuses the exact same lightbox
+          // (viewAttachment(), see the script below) and the same
+          // /api/attachment/<fileId> live-proxy endpoint that reply
+          // attachments use. Only present for tickets submitted after
+          // this feature shipped — attachmentFileIds is simply empty/
+          // undefined for older ones, so this cleanly renders nothing
+          // rather than a broken button.
+          const fileIds = t.attachmentFileIds || [];
+          const attachmentButtons = fileIds.length ? `
+            <div class="thread-summary-attachments">
+              ${fileIds.map((fid, i) => `
+                <div class="inline-attach-slot" data-attachment-file="${escapeAttr(fid)}" data-attachment-name="ticket-attachment-${i + 1}">
+                  <div class="inline-attach-loading">Loading attachment…</div>
+                </div>
+              `).join("")}
+            </div>` : "";
+
+          if (t.rootEdited) {
+            return `
+              <div class="thread-summary-card">
+                <div class="row" style="margin-bottom:6px;"><b style="color:var(--accent-gold);">✏️ Edited — current message text:</b></div>
+                <div style="white-space:pre-wrap; font-size:13px;">${escapeHtml(stripHtmlTags(t.rootText || ""))}</div>
+                ${attachmentButtons}
+              </div>`;
+          }
+          // The exact text originally sent to Telegram — same emoji,
+          // same line breaks, same wording an agent would see in the
+          // Telegram group itself (just with the <b> HTML tags stripped,
+          // since this renders as plain text, not HTML). Falls back to
+          // the old simplified field-list (t.summary) only in the
+          // unlikely case rootText itself is empty for some reason.
+          if (t.rootText) {
+            return `
+              <div class="thread-summary-card">
+                <div style="white-space:pre-wrap; font-size:13px; line-height:1.6;">${escapeHtml(stripHtmlTags(t.rootText))}</div>
+                ${attachmentButtons}
+              </div>`;
+          }
+          if (t.summary && t.summary.length) {
+            return `
+              <div class="thread-summary-card">
+                ${t.summary.map((s) => `<div class="row"><b>${escapeHtml(s.label)}:</b> <span>${escapeHtml(s.value)}</span></div>`).join("")}
+                ${attachmentButtons}
+              </div>`;
+          }
+          return "";
+        })()}
       `;
     }
 
@@ -520,6 +567,7 @@
       renderAttachPreview();
       scrollConversation(true);
       polishEmoji();
+      loadInlineAttachments();
     }
 
     // Light refresh — used by polling and after in-place actions (solve,
@@ -537,6 +585,7 @@
       wireConversationButtons();
       if (forceScroll || wasNearBottom) scrollConversation(true);
       polishEmoji();
+      loadInlineAttachments();
     }
 
     const AVATAR_COLORS = ["#60A5FA", "#FBBF24", "#F87171", "#F472B6", "#34D399", "#A78BFA", "#38bdf8", "#fb923c"];
@@ -562,7 +611,11 @@
       const initials = (m.from || "?").trim().slice(0, 2).toUpperCase();
       const color = m.self ? "var(--accent-gold)" : colorFor(m.from || "?");
       const deliveredTick = m.self ? '<span class="msg-tick" title="Delivered">✓</span>' : "";
-      const attachTag = m.hasAttachment ? '<span class="msg-attach-tag">📎 attachment</span>' : "";
+      const attachTag = m.hasAttachment
+        ? (m.attachmentFileId
+            ? `<div class="inline-attach-slot msg-inline-attach" data-attachment-file="${escapeAttr(m.attachmentFileId)}" data-attachment-name="${escapeAttr(m.attachmentName || "attachment")}"><div class="inline-attach-loading">Loading attachment…</div></div>`
+            : '<span class="msg-attach-tag" title="Sent before this dashboard could look attachments back up — check the Telegram group for it.">📎 attachment</span>')
+        : "";
       return `
         <div class="msg-row ${m.self ? "self" : ""}">
           <div class="msg-avatar" style="background:${color};">${initials}</div>
@@ -713,6 +766,111 @@
         .replace(/</g, "&lt;")
         .replace(/>/g, "&gt;");
     }
+
+    // ---- Attachment lightbox ----
+    const attachLightbox = document.getElementById("attachLightbox");
+    const attachLightboxBody = document.getElementById("attachLightboxBody");
+
+    // ---- Shared attachment cache ----
+    //
+    // Images/videos now load AUTOMATICALLY the moment a thread opens
+    // (inline in the summary card + each reply bubble) rather than
+    // needing a click first. But the thread view re-renders from
+    // scratch on every 6-second poll (see updateThreadContent()) — no
+    // caching would mean re-fetching every visible attachment from
+    // Telegram every single poll, which is slow and pointless (nothing
+    // about an already-loaded attachment ever changes). This Map caches
+    // by fileId, storing the in-flight/completed Promise itself (not
+    // just the result) so two nearly-simultaneous requests for the same
+    // fileId (e.g. the inline slot AND a lightbox click both wanting it
+    // at once) share one fetch instead of firing two.
+    const attachmentCache = new Map(); // fileId -> Promise<{url, type}>
+
+    function getAttachmentUrl(fileId, name) {
+      if (!attachmentCache.has(fileId)) {
+        attachmentCache.set(fileId, (async () => {
+          const qs = name ? `?name=${encodeURIComponent(name)}` : "";
+          const res = await authFetch(`/api/attachment/${encodeURIComponent(fileId)}${qs}`);
+          if (!res.ok) {
+            const msg = await res.text().catch(() => "");
+            throw new Error(msg || "Couldn't load this attachment.");
+          }
+          const blob = await res.blob();
+          return { url: URL.createObjectURL(blob), type: blob.type || "" };
+        })());
+      }
+      return attachmentCache.get(fileId);
+    }
+
+    // Fills every not-yet-loaded ".inline-attach-slot" on the page (the
+    // summary card's ticket attachments + each reply's inline
+    // attachment) with the real image/video, using the cache above so
+    // repeat calls (every poll) skip anything already loaded. Called at
+    // the end of updateThreadContent() — see that function.
+    function loadInlineAttachments() {
+      document.querySelectorAll(".inline-attach-slot[data-attachment-file]:not([data-filled])").forEach((slot) => {
+        const fileId = slot.dataset.attachmentFile;
+        const name = slot.dataset.attachmentName || "attachment";
+        slot.setAttribute("data-filled", "1"); // mark now so a poll landing mid-fetch doesn't double-trigger
+        getAttachmentUrl(fileId, name).then(({ url, type }) => {
+          if (!document.body.contains(slot)) return; // a newer poll already replaced this DOM before we resolved
+          if (type.startsWith("image/")) {
+            slot.innerHTML = `<img src="${url}" alt="${escapeAttr(name)}" class="inline-attach-media" />`;
+          } else if (type.startsWith("video/")) {
+            slot.innerHTML = `<video src="${url}" controls class="inline-attach-media"></video>`;
+          } else {
+            slot.innerHTML = `<a href="${url}" download="${escapeAttr(name)}" class="inline-attach-file">📎 ${escapeHtml(name)} — click to download</a>`;
+          }
+          // Clicking an inline image/video also opens the fullscreen
+          // lightbox, for a closer look — small bonus on top of what
+          // was actually asked for, reuses the cache so it's instant.
+          const media = slot.querySelector("img.inline-attach-media, video.inline-attach-media");
+          if (media) media.addEventListener("click", () => viewAttachment(fileId, name));
+        }).catch((err) => {
+          if (!document.body.contains(slot)) return;
+          slot.innerHTML = `<div class="inline-attach-error">⚠️ Couldn't load this attachment.</div>`;
+        });
+      });
+    }
+
+    async function viewAttachment(fileId, name) {
+      attachLightbox.classList.add("is-open");
+      attachLightboxBody.innerHTML = `<div class="attach-lightbox-status">Loading…</div>`;
+      try {
+        const { url, type } = await getAttachmentUrl(fileId, name);
+        if (type.startsWith("image/")) {
+          attachLightboxBody.innerHTML = `<img src="${url}" alt="${escapeAttr(name || "attachment")}" />`;
+        } else if (type.startsWith("video/")) {
+          attachLightboxBody.innerHTML = `<video src="${url}" controls autoplay playsinline></video>`;
+        } else {
+          // Not an image or video (PDF/doc/etc.) — hand it off as a
+          // normal download instead of pretending we can preview it
+          // inline.
+          const a = document.createElement("a");
+          a.href = url;
+          a.download = name || "attachment";
+          document.body.appendChild(a);
+          a.click();
+          a.remove();
+          attachLightboxBody.innerHTML = `<div class="attach-lightbox-status">Downloaded — this file type can't be previewed here.</div>`;
+        }
+      } catch (e) {
+        attachLightboxBody.innerHTML = `<div class="attach-lightbox-status attach-lightbox-error">${escapeHtml(String((e && e.message) || "Couldn't load this attachment."))}</div>`;
+      }
+    }
+
+    function closeAttachLightbox() {
+      attachLightbox.classList.remove("is-open");
+      attachLightboxBody.innerHTML = "";
+      // NOTE: deliberately NOT revoking the object URL here anymore —
+      // it's now a shared cache entry (see attachmentCache above) that
+      // an inline thumbnail elsewhere on the page may still be using,
+      // not something exclusively owned by the lightbox. Object URLs
+      // get cleaned up by the browser when the page/tab itself closes.
+    }
+    document.getElementById("attachLightboxClose").addEventListener("click", closeAttachLightbox);
+    attachLightbox.addEventListener("click", (e) => { if (e.target === attachLightbox) closeAttachLightbox(); });
+    document.addEventListener("keydown", (e) => { if (e.key === "Escape" && attachLightbox.classList.contains("is-open")) closeAttachLightbox(); });
 
     bootDashboard();
 

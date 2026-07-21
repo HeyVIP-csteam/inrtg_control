@@ -70,10 +70,43 @@ async function handleUpdate(env, update) {
   if (!threadId) return; // Reply to something we're not tracking.
 
   const name = [msg.from?.first_name, msg.from?.last_name].filter(Boolean).join(" ") || "Unknown";
+
+  // Incoming photo/document/video/voice/sticker from someone replying
+  // IN Telegram itself (not from our own website's reply box — that's a
+  // separate path, see functions/api/threads/[id].js's "reply" action).
+  // This used to just hardcode the literal text "(attachment)" with
+  // nothing else recorded — no file_id, nothing — so there was never any
+  // way to actually view what was sent, even after the dashboard grew
+  // the ability to preview OUR OWN outgoing attachments. Same fix,
+  // applied to the other direction: capture Telegram's own file_id here
+  // too, so the same /api/attachment/[fileId].js live-proxy + lightbox
+  // (public/threads.html's viewAttachment()) can show it.
+  let attachmentFileId = null;
+  let attachmentName = null;
+  if (msg.photo && msg.photo.length) {
+    attachmentFileId = msg.photo[msg.photo.length - 1].file_id; // largest size
+    attachmentName = "photo.jpg";
+  } else if (msg.document) {
+    attachmentFileId = msg.document.file_id;
+    attachmentName = msg.document.file_name || "document";
+  } else if (msg.video) {
+    attachmentFileId = msg.video.file_id;
+    attachmentName = msg.video.file_name || "video.mp4";
+  } else if (msg.voice) {
+    attachmentFileId = msg.voice.file_id;
+    attachmentName = "voice message";
+  } else if (msg.sticker) {
+    attachmentFileId = msg.sticker.file_id;
+    attachmentName = "sticker";
+  }
+
   await appendMessage(env, threadId, {
     from: name,
     handle: msg.from?.username ? `@${msg.from.username}` : null,
-    text: msg.text || msg.caption || "(attachment)",
+    text: msg.text || msg.caption || (attachmentFileId ? `📎 ${attachmentName}` : "(attachment)"),
+    hasAttachment: !!attachmentFileId,
+    attachmentName,
+    attachmentFileId,
     ts: new Date((msg.date || Date.now() / 1000) * 1000).toISOString(),
     self: false,
     messageId: msg.message_id,

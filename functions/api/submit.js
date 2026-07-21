@@ -117,7 +117,7 @@ async function handleSubmit({ request, env }) {
     if (!fallback.ok) {
       return json({ ok: false, error: `Telegram send failed: ${fallback.error}` }, 502);
     }
-    tgResult = { messageId: fallback.messageId, attachmentLinks: [] };
+    tgResult = { messageId: fallback.messageId, attachmentLinks: [], attachmentFileIds: [] };
   }
   const attachmentLinks = tgResult.attachmentLinks;
 
@@ -145,6 +145,7 @@ async function handleSubmit({ request, env }) {
         rootMessageId: tgResult.messageId,
         rootText: text,
         hasMedia: Array.isArray(attachments) && attachments.length > 0,
+        attachmentFileIds: tgResult.attachmentFileIds || [],
         summary,
       });
       threadId = thread.id;
@@ -427,33 +428,54 @@ async function sendTelegramMessage({ botToken, route, text }) {
   return { ok: true, messageId: data.result.message_id };
 }
 
+// Browsers usually set File.type correctly, but not always — a file
+// re-uploaded after being downloaded from somewhere else (e.g. saved out
+// of Telegram itself, which often renames photos to a plain numeric
+// filename like "6111620814923827982_1.jpg") can come through with an
+// empty or generic type. Falling back to the file extension catches
+// those cases, so an actual photo still gets sent via sendPhoto (shows
+// as an inline thumbnail in Telegram) instead of silently degrading to
+// sendDocument (shows as a bare 📎 filename with no preview).
+function looksLikeImage(type, name) {
+  if ((type || "").startsWith("image/")) return true;
+  return /\.(jpe?g|png|gif|webp|bmp|heic|heif)$/i.test(name || "");
+}
+
 async function sendTelegramWithAttachments({ botToken, route, text, attachments }) {
   if (!attachments.length) {
     const r = await sendTelegramMessage({ botToken, route, text });
     if (!r.ok) throw new Error(r.error);
-    return { messageId: r.messageId, attachmentLinks: [] };
+    return { messageId: r.messageId, attachmentLinks: [], attachmentFileIds: [] };
   }
 
   if (attachments.length === 1) {
-    const messageId = await sendSingleWithCaption({ botToken, route, text, attachment: attachments[0] });
-    return { messageId, attachmentLinks: [buildMessageLink(route, messageId)] };
+    const { messageId, fileId } = await sendSingleWithCaption({ botToken, route, text, attachment: attachments[0] });
+    return { messageId, attachmentLinks: [buildMessageLink(route, messageId)], attachmentFileIds: fileId ? [fileId] : [] };
   }
 
-  const allImages = attachments.every((a) => (a.type || "").startsWith("image/"));
+  const allImages = attachments.every((a) => looksLikeImage(a.type, a.name));
   if (allImages) {
-    const messageIds = await sendMediaGroup({ botToken, route, text, attachments });
-    return { messageId: messageIds[0], attachmentLinks: messageIds.map((id) => buildMessageLink(route, id)) };
+    const sent = await sendMediaGroup({ botToken, route, text, attachments });
+    return {
+      messageId: sent[0].messageId,
+      attachmentLinks: sent.map((s) => buildMessageLink(route, s.messageId)),
+      attachmentFileIds: sent.map((s) => s.fileId).filter(Boolean),
+    };
   }
 
   // Mixed image/document types can't share one album — send each as its own
   // message, with the caption only on the first so it still reads as "the
   // ticket", not repeated noise on every attachment.
-  const ids = [];
+  const sent = [];
   for (let i = 0; i < attachments.length; i++) {
-    const id = await sendSingleWithCaption({ botToken, route, text: i === 0 ? text : undefined, attachment: attachments[i] });
-    ids.push(id);
+    const result = await sendSingleWithCaption({ botToken, route, text: i === 0 ? text : undefined, attachment: attachments[i] });
+    sent.push(result);
   }
-  return { messageId: ids[0], attachmentLinks: ids.map((id) => buildMessageLink(route, id)) };
+  return {
+    messageId: sent[0].messageId,
+    attachmentLinks: sent.map((s) => buildMessageLink(route, s.messageId)),
+    attachmentFileIds: sent.map((s) => s.fileId).filter(Boolean),
+  };
 }
 
 async function sendSingleWithCaption({ botToken, route, text, attachment }) {
@@ -461,7 +483,7 @@ async function sendSingleWithCaption({ botToken, route, text, attachment }) {
   const bytes = base64ToBytes(dataUrlToBase64(dataUrl));
   const blob = new Blob([bytes], { type: type || "application/octet-stream" });
 
-  const isImage = (type || "").startsWith("image/");
+  const isImage = looksLikeImage(type, name);
   const method = isImage ? "sendPhoto" : "sendDocument";
   const field = isImage ? "photo" : "document";
 
@@ -477,7 +499,10 @@ async function sendSingleWithCaption({ botToken, route, text, attachment }) {
   const res = await fetch(`https://api.telegram.org/bot${botToken}/${method}`, { method: "POST", body: form });
   const data = await res.json();
   if (!data.ok) throw new Error(data.description || "unknown Telegram error");
-  return data.result.message_id;
+  const fileId = isImage
+    ? data.result.photo?.[data.result.photo.length - 1]?.file_id || null
+    : data.result.document?.file_id || null;
+  return { messageId: data.result.message_id, fileId };
 }
 
 async function sendMediaGroup({ botToken, route, text, attachments }) {
@@ -504,7 +529,10 @@ async function sendMediaGroup({ botToken, route, text, attachments }) {
   const res = await fetch(`https://api.telegram.org/bot${botToken}/sendMediaGroup`, { method: "POST", body: form });
   const data = await res.json();
   if (!data.ok) throw new Error(data.description || "unknown Telegram error");
-  return data.result.map((m) => m.message_id);
+  return data.result.map((m) => ({
+    messageId: m.message_id,
+    fileId: m.photo?.[m.photo.length - 1]?.file_id || null,
+  }));
 }
 
 function dataUrlToBase64(dataUrl) {

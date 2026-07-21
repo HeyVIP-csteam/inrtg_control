@@ -4,7 +4,110 @@ Paste this whole document as the first message in a new conversation, along
 with the latest `telegram-issue-hub-updated.zip`. That gives the new chat
 the complete current state of the project.
 
-## 🔁 移植自 PKR,2026-07-21 — Security Alerts 路由可视化编辑 + 登录失败统一锁定逻辑
+## 🔁 移植自 PKR(master 合并版),2026-07-21 — 附件预览全部功能 + KV 写入配额修复
+
+这次是把之前分几次发的附件预览小改动,汇总成一份完整版(`master_attachment_and_quota_fix_export.zip`)一次性合并进 INR。涉及 6 个代码文件 + Part B 提到的独立 cron worker(不在这个仓库里,需要手动去 Cloudflare 后台调整,见下)。
+
+### Part A —— 附件预览,累计 7 项(A1-A7)
+
+- **A1**(上次已合并):回复消息带的附件能预览
+- **A2**(上次已合并):原始工单摘要卡片显示完整 `rootText` + 附件
+- **A3**(上次已合并):预览支持视频播放
+- **A4**(这次新增):**发送侧**图片误判成"文件"的修复——`submit.js` 和
+  `threads/[id].js` 都加了 `looksLikeImage(type, name)`,MIME 类型判断
+  不出来时退回看文件后缀名(`.jpg/.png/.gif/.webp/.bmp/.heic/.heif`),
+  避免图片被当成文件发送(Telegram 里显示成 📎 图标,没有缩略图)
+- **A5**(这次新增,INR 原本完全没有):**接收方向**——玩家/同事直接在
+  Telegram 群里回复的附件,现在也能提取 `file_id` 了。之前
+  `telegram-webhook.js` 遇到这种情况只会写死成文字 `"(attachment)"`,
+  现在跟 A1 用同一套字段(`attachmentFileId`)存下来,前端不用额外改就
+  自动能显示(消息气泡不区分是自己发的还是对方发的)
+- **A6**(这次新增,UI 改动较大):**从"点击才显示"改成"打开就自动
+  显示"**——`threads.html` 两处渲染附件的地方(摘要卡片、消息气泡)从
+  `<button>` 改成空占位 `<div class="inline-attach-slot">`,新函数
+  `loadInlineAttachments()` 在 `renderDetail()`(首次打开)和
+  `updateThreadContent()`(每次轮询/回复后刷新)末尾自动扫描并填充。
+  配了一个 `attachmentCache`(`Map<fileId, Promise>`,缓存 Promise 本身
+  防止重复请求)防止 6 秒轮询反复重新请求同一张图。原来"点击查看全屏
+  大图"的 lightbox 还在,变成锦上添花而不是唯一入口。
+  **⚠️ 这是交互方式的改动,是 PKR 业务方明确反馈要的,不代表 INR 业务方
+  也认可这个方向——如果 INR 这边还没人拍板过,部署前建议先跟业务方过一
+  遍效果,确认要保留"自动加载"还是想改回"点击才加载"。**
+- **A7**(这次新增,连历史老数据都受益):`attachment/[fileId].js` 判断
+  文件类型不准的修复——接口现在接受 `?name=<原始文件名>` 查询参数
+  (前端调用时把存下来的 `attachmentName` 带上),优先级改成:先信自己
+  存的原始文件名 → 再信 Telegram 的 Content-Type(除非它就是笼统的
+  `application/octet-stream`)→ 再猜 Telegram 内部路径 → 兜底
+
+### Part B —— KV 写入配额修复(**cron worker 部分需要手动去 Cloudflare 后台调整,不在这个 zip 里**)
+
+- 排查出**独立部署的 cron worker**(负责定时刷新侧边栏缓存,跟这个
+  Pages 项目分开部署,不在这个代码仓库里)本身每次运行就要写 2 次 KV,
+  原来设的是每 2 分钟一次 → 一天 720 次运行 × 2 = 1,440 次写入,**光这
+  一个自动化脚本就超过免费版 1,000 次/天的上限**,还没算真实业务写入
+- 第一步权宜之计:cron 频率从 2 分钟降到 10 分钟(`functions/_shared/
+  threads.js` 的 `LIST_CACHE_TTL_MS` 已经同步改成 10 分钟,这个已经合并
+  进 INR 了)——但业务方反馈"新工单要等最多 10 分钟才出现"不能接受
+- **真正的修复(已合并进 INR)**:新增 `patchListCache(env, thread,
+  {remove})`,新工单/新回复/切换已解决/删除这四个动作发生的瞬间,直接
+  "打补丁"式更新现有缓存(1 次读 + 1 次写,不用整个重新扫描),已经挂在
+  `createThread()`/`appendMessage()`/`setSolved()`/`softDeleteThread()`
+  四处。10 分钟这个间隔现在只管低风险的后台全量体检,不再影响"新工单能
+  不能被及时看到"
+
+**⚠️ 需要你手动去 Cloudflare 后台做的事(不在这次的代码改动里)：**
+如果 INR 这边也有同样的独立 cron worker,去它的 `wrangler.toml` 把
+Cron Trigger 从 `*/2 * * * *` 改成 `*/10 * * * *`,重新部署那个
+worker(注意:这是跟 Pages 项目分开部署的另一个 Cloudflare Worker,不
+是这次的 `telegram-issue-hub-updated.zip`)。如果不确定 INR 有没有这个
+cron worker、或者它现在实际设的频率是多少,需要你自己先去 Cloudflare
+后台确认一下。
+
+**部署时的一个操作提醒**：PKR 那边部署时踩过一次坑——用 GitHub 网页
+"直接编辑某个文件"的方式改动量大的文件,导致新旧代码拼接、同一个函数
+声明了两次,网站 500 崩溃。**改动量大的文件(这次是 `threads.html`、
+`_shared/threads.js`)务必用"Add file → Upload files" 整份覆盖上传,
+不要用网页在线编辑逐行改。**
+
+
+
+同样从 PKR 那边逐文件 diff 后手动合并进 INR(涉及 7 个文件:
+`functions/_shared/threads.js`、`functions/api/threads/[id].js`、
+`functions/api/attachment/[fileId].js`【新文件】、`functions/api/submit.js`、
+`public/index.html`、`public/threads.html`、`public/assets/style.css`)。
+
+**核心原理:实时代理,不存储**——业务方明确要求过这个功能不能占用 R2
+存储,所以做法是:发送时只记住 Telegram 自己的 `file_id`(一段引用字符
+串,不是文件本身),点开预览的那一刻才实时向 Telegram 现取字节流转发给
+浏览器(Bot Token 全程只在服务器内部用,不暴露给客户端)。
+
+1. **回复消息带的图片/文件,能在网站里点开预览**——新增
+   `functions/api/attachment/[fileId].js` 这个登录态代理接口;
+   `threads.html` 侧边栏附件从纯文字标签变成可点击按钮,弹出全屏
+   lightbox(点 ✕/点背景/按 ESC 都能关)。只对这次改动后的新回复生效,
+   旧消息当时没存 `file_id`,还是显示旧样式。
+2. **顺手修的独立小 bug:首页 "TG Reply Threads" 卡片未读徽章不显示**
+   ——`loadThreadsSummary()` 用的是没带登录 token 的 `fetch()`,
+   `/api/threads` 早就要求登录,一直被 401 拒绝。改成
+   `window.AgentAuth.authFetch()`。
+3. **工单详情顶部摘要卡片,改成显示完整 TG 消息原文**(`rootText`,带
+   emoji,不再是抽取几个字段拼出来的简化列表)+ 原始工单自己的附件也能
+   点开预览。旧工单的文字摘要会自动跟着变成新样式(`rootText` 一直都有
+   存),只是没有附件预览按钮(没存 `attachmentFileIds`)。
+4. **预览弹窗支持视频播放**——`viewAttachment()` 加了 `video/*` 分支,
+   用 `<video controls autoplay playsinline>`,不再是触发下载。
+
+**部署前无需新增任何东西**——复用现有的 `TELEGRAM_BOT_TOKEN`、
+`THREADS_KV`,不占用 R2、不需要新的 Cloudflare 密钥/绑定。
+
+**可选但没做的优化(供参考)**:视频现在发去 Telegram 走的是
+`sendDocument`(文档方式),不是 Telegram 原生视频消息格式
+(`sendVideo`)——不影响咱们网站这边的播放,只是 Telegram App 里显示成
+可下载文件而不是内嵌播放器。如果想要 Telegram 里也是原生视频消息样式,
+需要把发送逻辑按 `type.startsWith("video/")` 单独分支出来调用
+`sendVideo`,这次没做。
+
+
 
 从另一个币种(PKR)的对话里,把两个已经调好的功能合并进了 INR(逐文件
 diff 后手动合并,不是整份覆盖——INR 这边 login.js 已经有 token 机制,
