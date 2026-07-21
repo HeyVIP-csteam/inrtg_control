@@ -475,6 +475,11 @@
     // submission time.
     let acctRoutesData = null;
     let acctRoutesSelectedBrand = null;
+    // Reserved pseudo ids — NOT a real brand/module, must match the
+    // backend's SECURITY_BRAND_ID/SECURITY_MODULE_ID in
+    // functions/api/admin/routes.js exactly.
+    const SECURITY_ROW_ID = "_security";
+    const SECURITY_MODULE_ID = "alerts";
 
     async function loadTgRoutes() {
       const res = await window.AgentAuth.authFetch("/api/admin/routes");
@@ -484,7 +489,7 @@
         return;
       }
       acctRoutesData = data;
-      if (!acctRoutesSelectedBrand || !data.brands.some((b) => b.id === acctRoutesSelectedBrand)) {
+      if (!acctRoutesSelectedBrand || (acctRoutesSelectedBrand !== SECURITY_ROW_ID && !data.brands.some((b) => b.id === acctRoutesSelectedBrand))) {
         acctRoutesSelectedBrand = data.brands[0]?.id || null;
       }
       renderTgRoutes();
@@ -492,11 +497,53 @@
 
     function renderTgRoutes() {
       if (!acctRoutesData) return;
-      const { brands, modules, routes } = acctRoutesData;
+      const { brands, modules, routes, securityAlerts } = acctRoutesData;
+      const isSecuritySelected = acctRoutesSelectedBrand === SECURITY_ROW_ID;
 
       const brandListHtml = brands.map((b) => `
         <div class="tgroute-brand${b.id === acctRoutesSelectedBrand ? " selected" : ""}" data-brand="${acctEsc(b.id)}">${acctEsc(b.name)}</div>
-      `).join("");
+      `).join("") + `
+        <div class="tgroute-brand tgroute-security${isSecuritySelected ? " selected" : ""}" data-brand="${SECURITY_ROW_ID}">🔒 Security Alerts</div>
+      `;
+
+      if (isSecuritySelected) {
+        const r = securityAlerts || { chatId: "", topicId: null, isOverride: false };
+        acctBody.innerHTML = `
+          <div class="tgroute-layout">
+            <div class="tgroute-brands">${brandListHtml}</div>
+            <div class="tgroute-modules">
+              <div class="tgroute-row" data-module="${SECURITY_MODULE_ID}">
+                <div class="tgroute-mod-name">🔒 Unrecognized-IP / Account-Lock Alerts
+                  <span class="route-tag${r.isOverride ? " custom" : ""}">${r.isOverride ? "custom" : "default"}</span>
+                </div>
+                <div class="tgroute-fields">
+                  <input type="text" class="tgroute-chatid" placeholder="Chat ID e.g. -1001234567890" value="${acctEsc(r.chatId)}" autocomplete="off" />
+                  <input type="text" class="tgroute-topicid" placeholder="Topic ID (optional)" value="${r.topicId ?? ""}" autocomplete="off" />
+                  <div class="tgroute-row-actions">
+                    <button type="button" class="tgroute-action-btn tgroute-save">Save</button>
+                    ${r.isOverride ? '<button type="button" class="tgroute-action-btn tgroute-action-secondary tgroute-reset">Reset</button>' : ""}
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <hr class="tgroute-divider" />
+          <p class="edit-modal-note tgroute-footnote">This isn't a brand — it's where login sends a Telegram alert on every failed login attempt (wrong password, unrecognized IP, or no office assigned), or when an account gets auto-locked (5 combined failures within an hour). Login stays blocked exactly the same either way; this only controls where the heads-up message goes. "default" is whatever's set in the SECURITY_ALERTS_CHAT_ID Cloudflare secret (empty = no alerts sent yet).</p>`;
+        acctBody.querySelectorAll(".tgroute-brand").forEach((el) => {
+          el.addEventListener("click", () => {
+            acctRoutesSelectedBrand = el.dataset.brand;
+            setAcctNote("");
+            renderTgRoutes();
+          });
+        });
+        acctBody.querySelectorAll(".tgroute-save").forEach((btn) => {
+          btn.addEventListener("click", () => saveTgRouteRow(btn.closest(".tgroute-row")));
+        });
+        acctBody.querySelectorAll(".tgroute-reset").forEach((btn) => {
+          btn.addEventListener("click", () => resetTgRouteRow(btn.closest(".tgroute-row")));
+        });
+        return;
+      }
 
       const moduleRowsHtml = modules.map((m) => {
         const key = `${acctRoutesSelectedBrand}|${m.id}`;
@@ -552,7 +599,11 @@
       });
       const data = await res.json();
       if (!data.ok) return setAcctNote(data.error || "Save failed.", "err");
-      acctRoutesData.routes[`${acctRoutesSelectedBrand}|${moduleId}`] = data.route;
+      if (acctRoutesSelectedBrand === SECURITY_ROW_ID) {
+        acctRoutesData.securityAlerts = data.route;
+      } else {
+        acctRoutesData.routes[`${acctRoutesSelectedBrand}|${moduleId}`] = data.route;
+      }
       setAcctNote("Saved.", "ok");
       renderTgRoutes();
     }
@@ -566,7 +617,11 @@
       });
       const data = await res.json();
       if (!data.ok) return setAcctNote(data.error || "Reset failed.", "err");
-      acctRoutesData.routes[`${acctRoutesSelectedBrand}|${moduleId}`] = data.route;
+      if (acctRoutesSelectedBrand === SECURITY_ROW_ID) {
+        acctRoutesData.securityAlerts = data.route;
+      } else {
+        acctRoutesData.routes[`${acctRoutesSelectedBrand}|${moduleId}`] = data.route;
+      }
       setAcctNote("Reset to default.", "ok");
       renderTgRoutes();
     }

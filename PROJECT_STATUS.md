@@ -4,7 +4,40 @@ Paste this whole document as the first message in a new conversation, along
 with the latest `telegram-issue-hub-updated.zip`. That gives the new chat
 the complete current state of the project.
 
-## 🔒 Security fix, 2026-07-20 — plaintext password was sitting in the
+## 🔁 移植自 PKR,2026-07-21 — Security Alerts 路由可视化编辑 + 登录失败统一锁定逻辑
+
+从另一个币种(PKR)的对话里,把两个已经调好的功能合并进了 INR(逐文件
+diff 后手动合并,不是整份覆盖——INR 这边 login.js 已经有 token 机制,
+两边基础版本一致,合并很干净):
+
+**功能 1 — TG Group / Channel 面板新增 "🔒 Security Alerts" 行**
+- 登录安全警报(密码错误/IP 异常/没分配 Office/账号自动锁定)现在发到
+  哪个 Telegram 群/Topic,可以直接在网页上改,立刻生效,不用再去
+  Cloudflare 后台改 `SECURITY_ALERTS_CHAT_ID`/`SECURITY_ALERTS_TOPIC_ID`
+  环境变量 + 重新部署(这两个环境变量变成"没在网页上配置过时的兜底默认
+  值")
+- 涉及:`functions/api/admin/routes.js`(整份替换)、
+  `functions/api/auth/login.js`(整份替换,见下)、`public/index.html`
+  (TG Routes 面板那一段整段替换)、`public/assets/style.css`(加了
+  `.tgroute-security` 的样式)
+
+**功能 2 — 登录失败警报 + 自动锁定逻辑重构**
+- 三种登录失败(密码错误 / IP 异常 / 没分配 Office)现在**每种都会发
+  Telegram 警报**(以前只有 IP 异常才发)
+- 自动锁定门槛改成**一个合并计数器**:密码错误 + IP 异常,1 小时内不
+  分种类、不分是不是同一个 IP,累计满 5 次就锁定(以前是两套独立门槛:
+  连续 5 次密码错误 / 1 小时内 5 个不同 IP,而且不同 IP 反复失败不算数
+  ——这次改成同一个 IP 反复失败也会真实累加)
+- "没分配 Office" 只发警报、**不计入**锁定门槛(这是后台配置疏漏,不是
+  真正的安全风险,不该跟密码猜测用同一套惩罚机制)
+- 涉及:`functions/api/auth/login.js`(整份替换——KV key 从
+  `pwfail:<user>`/`ipfail:<user>` 两套合并成 `loginfail:<user>` 一套)
+
+**部署前无需新增任何东西**——复用的都是已经在用的
+`SECURITY_ALERTS_CHAT_ID`/`SECURITY_ALERTS_TOPIC_ID`/`THREADS_KV`,没有
+新的 Cloudflare 密钥/绑定要加。
+
+ — plaintext password was sitting in the
 browser's localStorage, readable via F12
 
 **Found by a colleague (IT) via DevTools → Application → Local Storage in

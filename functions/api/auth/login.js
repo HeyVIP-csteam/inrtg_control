@@ -25,27 +25,48 @@
  * can immediately go add it) is much more useful than the same generic
  * line. Requested directly by the business owner.
  *
- * IP ALERT NOTIFICATION — business owner requested a Telegram alert when
- * a real (password-correct) account tries to log in from an IP that
- * ISN'T on its office's approved list. Login is STILL BLOCKED exactly as
- * before — this only adds visibility, it does not loosen access.
- * Notifies on EVERY such attempt (deliberately not de-duplicated) — the
- * business owner wants to see how many times a given account has tried
- * from unapproved networks, not just a one-time flag. Switching between
- * multiple IPs that are ALL already on the approved list never alerts at
- * all (officeIpCheckPasses() passes, this whole block is skipped).
+ * LOGIN FAILURE ALERTS — business owner requested a Telegram alert on
+ * EVERY failed login attempt, for all three failure kinds: wrong
+ * password, unrecognized/unwhitelisted IP, and no office assigned.
+ * Login is STILL BLOCKED exactly as before in all three cases — this
+ * only adds visibility, it does not loosen access. Deliberately not
+ * de-duplicated — the business owner wants to see how many times a
+ * given account has tried, not just a one-time flag. A successful login
+ * from an IP already on the approved list never alerts at all
+ * (officeIpCheckPasses() passes, none of this fires).
  *
- * ACCOUNT AUTO-LOCK — also requested directly. Two independent triggers,
- * either one locks the account (sets `locked: true` via
- * setAccountLocked() in _shared/accounts.js — see that file for what
- * locking actually does to every other endpoint, not just this one):
- *   1. 5 CONSECUTIVE wrong-password attempts (counter in KV, reset to 0
- *      the moment a correct password comes in — this is about repeated
- *      wrong guesses, not lifetime attempts).
- *   2. 5 DIFFERENT unrecognized IPs within a rolling 1-hour window (KV-
- *      stored timestamped list, pruned to the last hour on every check —
- *      repeatedly retrying from the SAME bad IP doesn't count multiple
- *      times toward this, only genuinely different IPs do).
+ * "No office assigned" (an admin setup gap — someone forgot to assign
+ * this account an office) DOES get its own alert like the other two, but
+ * is handled as its own early-return branch BEFORE the IP-check block,
+ * and — unlike the other two — does NOT count toward the auto-lock
+ * threshold below (see ACCOUNT AUTO-LOCK). Reasoning: an account with no
+ * office WILL always fail the IP check no matter what IP it tries from,
+ * so a legitimate agent who simply hasn't been assigned an office yet
+ * could otherwise get auto-locked just for trying to log in a few times
+ * while waiting on an admin — that's not the "suspicious activity" this
+ * lock exists to catch. Alert: yes (owner wants visibility into this
+ * too). Lock-counter: no.
+ *
+ * ACCOUNT AUTO-LOCK — also requested directly, then refined this session
+ * per explicit business-owner feedback: ONE combined counter, not two
+ * independent tracks. A wrong password and a correct-password-but-bad-IP
+ * attempt both count as "a failed login" toward the SAME threshold, in
+ * any mix — e.g. 2 wrong passwords + 3 unrecognized-IP rejections = 5,
+ * locks. Repeated attempts from the very same IP count every time too
+ * (the earlier two-separate-triggers version only counted DISTINCT IPs
+ * for its IP-side trigger, which undercounted someone retrying from one
+ * single unwhitelisted IP over and over — fixed).
+ *   - 5 failed login attempts within a rolling 1-hour window (KV-stored
+ *     timestamped list, pruned to the last hour on every check) locks
+ *     the account (sets `locked: true` via setAccountLocked() in
+ *     _shared/accounts.js — see that file for what locking actually does
+ *     to every other endpoint, not just this one).
+ *   - A genuinely successful login (right password AND office/IP check
+ *     both pass) clears the counter immediately — only an unbroken
+ *     WINDOW of failures counts, not lifetime attempts.
+ *   - "No office assigned" (see above) never touches this counter at
+ *     all, in either direction — it still gets its own alert, just not
+ *     lock-counted.
  * Once locked, the account can't log in (or use any already-open browser
  * session — see verifyRequest() in _shared/accounts.js) until a
  * SuperAdmin manually unlocks it (accounts-admin.html, or Agent Profile
@@ -53,19 +74,34 @@
  * account gets auto-locked, distinct from the per-attempt IP-warning
  * message above.
  *
- * NOT YET CONFIGURED: set SECURITY_ALERTS_CHAT_ID (and optionally
- * SECURITY_ALERTS_TOPIC_ID) as Cloudflare environment variables once
- * there's a Telegram group/topic picked out for these — until then this
- * silently no-ops (sendTelegramMessage() skips cleanly with no chat ID),
- * so this ships now without breaking anything or requiring the group to
- * exist yet.
+ * NOT YET CONFIGURED (as Cloudflare secrets): set SECURITY_ALERTS_CHAT_ID
+ * (and optionally SECURITY_ALERTS_TOPIC_ID) as Cloudflare environment
+ * variables as a fallback default — until then this silently no-ops
+ * (sendTelegramMessage() skips cleanly with no chat ID). These CAN also
+ * be set live from the browser instead — see the "Security Alerts" row
+ * on the TG Group / Channel admin page (functions/api/admin/routes.js),
+ * which resolveSecurityAlertsRoute() below checks first and takes
+ * priority over these env vars the moment it's been saved once.
  */
 import { getAccount, verifyPassword, officeIpCheckPasses, getOffice, requestIP, setAccountLocked, issueToken } from "../../_shared/accounts.js";
 import { sendTelegramMessage } from "../../_shared/telegram.js";
+import { getRouteOverride } from "../../_shared/routes.js";
 
-const PASSWORD_FAIL_LOCK_THRESHOLD = 5;
-const IP_FAIL_LOCK_DISTINCT_THRESHOLD = 5;
-const IP_FAIL_WINDOW_MS = 60 * 60 * 1000; // 1 hour
+// Reserved pseudo brand/module id pair — NOT a real brand — used so the
+// "TG Group / Channel" admin page (functions/api/admin/routes.js) can
+// let a SuperAdmin change where these alerts go live from the browser,
+// reusing the exact same KV-override machinery every real brand+module
+// route uses. Falls back to the SECURITY_ALERTS_CHAT_ID/
+// SECURITY_ALERTS_TOPIC_ID Cloudflare secrets when nothing's been saved
+// through that page yet.
+async function resolveSecurityAlertsRoute(env) {
+  const override = await getRouteOverride(env, "_security", "alerts");
+  if (override) return override;
+  return { chatId: env.SECURITY_ALERTS_CHAT_ID, topicId: env.SECURITY_ALERTS_TOPIC_ID };
+}
+
+const LOGIN_FAIL_LOCK_THRESHOLD = 5;
+const LOGIN_FAIL_WINDOW_MS = 60 * 60 * 1000; // 1 hour
 
 export async function onRequestPost(context) {
   try {
@@ -101,36 +137,53 @@ async function handleLogin({ request, env, waitUntil }) {
 
   const passwordOk = await verifyPassword(password, account.salt, account.hash, account.iterations);
   if (!passwordOk) {
-    const { locked, count } = await recordFailedPassword(env, account.username);
+    const ip = requestIP(request) || "unknown";
+    if (waitUntil) waitUntil(notifyLoginFailure(env, { account, ip, request, reasonTitle: "Wrong Password" }));
+    const { locked, count } = await recordLoginFailure(env, account.username, { kind: "wrong password" });
     if (locked && waitUntil) {
-      waitUntil(notifyAccountLocked(env, { account, reason: `${count} consecutive wrong password attempts` }));
+      waitUntil(notifyAccountLocked(env, { account, reason: `${count} failed login attempts within the last hour` }));
     }
     return badCreds();
   }
-  // Correct password — whatever streak of wrong guesses existed before
-  // this is over; don't let it carry forward toward a future lockout.
-  await clearFailedPassword(env, account.username);
+
+  // "No office assigned" is an admin setup gap, not suspicious behavior —
+  // still worth an alert (business owner wants visibility into ALL three
+  // failure kinds), but handled as its own early branch, completely
+  // separate from the LOCK-counting machinery below. An account with no
+  // office WILL always fail officeIpCheckPasses() no matter what IP it
+  // tries from, so counting it toward the same 5-in-an-hour lock
+  // threshold as genuine wrong-password/bad-IP attempts would mean a
+  // perfectly legitimate agent — who's done nothing wrong except not
+  // being assigned an office yet — could get auto-locked just for
+  // trying to log in a few times while waiting on an admin. So: alert
+  // yes, lock-counter no.
+  if (!account.officeId && account.role !== "superadmin") {
+    const ip = requestIP(request) || "unknown";
+    if (waitUntil) waitUntil(notifyLoginFailure(env, { account, ip, request, reasonTitle: "No Office Assigned" }));
+    return json({ ok: false, error: `Your account has no office assigned, so it can't log in from anywhere. Ask an admin to assign you an office (your current IP: ${ip}).` }, 401);
+  }
 
   if (!(await officeIpCheckPasses(env, account, request))) {
     const ip = requestIP(request) || "unknown";
     // Fire-and-forget via waitUntil — never adds latency to the actual
     // rejection response, and a Telegram hiccup here can't turn into a
-    // broken login flow (notifyUnrecognizedIp swallows its own errors).
-    if (waitUntil) waitUntil(notifyUnrecognizedIp(env, { account, ip, request }));
+    // broken login flow (notifyLoginFailure swallows its own errors).
+    if (waitUntil) waitUntil(notifyLoginFailure(env, { account, ip, request, reasonTitle: "Abnormal IP Address" }));
 
-    const distinctIpCount = await recordFailedIp(env, account.username, ip);
-    if (distinctIpCount >= IP_FAIL_LOCK_DISTINCT_THRESHOLD) {
-      await setAccountLocked(env, account.username, true, `${distinctIpCount} different unrecognized IPs within 1 hour`);
-      if (waitUntil) waitUntil(notifyAccountLocked(env, { account, reason: `${distinctIpCount} different unrecognized IPs within 1 hour` }));
+    const { locked, count } = await recordLoginFailure(env, account.username, { kind: "unrecognized IP", ip });
+    if (locked && waitUntil) {
+      waitUntil(notifyAccountLocked(env, { account, reason: `${count} failed login attempts within the last hour` }));
     }
 
-    if (!account.officeId) {
-      return json({ ok: false, error: `Your account has no office assigned, so it can't log in from anywhere. Ask an admin to assign you an office (your current IP: ${ip}).` }, 401);
-    }
     const office = await getOffice(env, account.officeId);
     const officeName = office?.name || "your office";
     return json({ ok: false, error: `Your IP address (${ip}) isn't on the approved list for ${officeName}. Ask an admin to whitelist it under Account Management → Whitelist IP.` }, 401);
   }
+
+  // Fully successful login (right password AND office/IP check passed) —
+  // whatever failed-attempt history existed before this is over; don't
+  // let it carry forward toward a future lockout.
+  await clearLoginFailures(env, account.username);
 
   const token = await issueToken(env, account);
   return json({
@@ -140,37 +193,39 @@ async function handleLogin({ request, env, waitUntil }) {
   });
 }
 
-// ---- consecutive-wrong-password tracking (trigger #1 for auto-lock) ----
-
-async function recordFailedPassword(env, username) {
-  const key = `pwfail:${username}`;
-  const raw = await env.THREADS_KV.get(key);
-  const count = (parseInt(raw || "0", 10) || 0) + 1;
-  if (count >= PASSWORD_FAIL_LOCK_THRESHOLD) {
-    await setAccountLocked(env, username, true, `${count} consecutive wrong password attempts`);
-    await env.THREADS_KV.delete(key); // fresh count if this account is ever unlocked and tried again
-    return { locked: true, count };
-  }
-  await env.THREADS_KV.put(key, String(count));
-  return { locked: false, count };
-}
-
-async function clearFailedPassword(env, username) {
-  await env.THREADS_KV.delete(`pwfail:${username}`).catch(() => {});
-}
-
-// ---- distinct-unrecognized-IPs-per-hour tracking (trigger #2) ----
-
-async function recordFailedIp(env, username, ip) {
-  const key = `ipfail:${username}`;
+// ---- unified failed-login tracking (single trigger for auto-lock) ----
+//
+// Business owner wants ONE combined counter, not two independent tracks
+// — a wrong password and a correct-password-but-bad-IP attempt both
+// count as "a failed login" toward the same 5-in-an-hour threshold, in
+// ANY mix/order. This also deliberately counts REPEATED attempts from
+// the very same IP (earlier version of this only counted DISTINCT IPs
+// toward the IP-side trigger — that undercounted a determined attacker
+// retrying from one single unwhitelisted IP over and over). Rolling
+// 1-hour window, same as before — old failures age out rather than
+// haunting the account forever; a genuinely successful login also
+// clears the slate immediately (see clearLoginFailures() below).
+async function recordLoginFailure(env, username, { kind, ip }) {
+  const key = `loginfail:${username}`;
   const raw = await env.THREADS_KV.get(key);
   const now = Date.now();
   let entries = raw ? JSON.parse(raw) : [];
-  entries = entries.filter((e) => now - e.ts < IP_FAIL_WINDOW_MS);
-  entries.push({ ip, ts: now });
+  entries = entries.filter((e) => now - e.ts < LOGIN_FAIL_WINDOW_MS);
+  entries.push({ kind, ip, ts: now });
   entries = entries.slice(-100); // defensive cap, well above what 1 hour of real attempts would ever produce
+  const count = entries.length;
+
+  if (count >= LOGIN_FAIL_LOCK_THRESHOLD) {
+    await setAccountLocked(env, username, true, `${count} failed login attempts within 1 hour`);
+    await env.THREADS_KV.delete(key); // fresh count if this account is ever unlocked and tried again
+    return { locked: true, count };
+  }
   await env.THREADS_KV.put(key, JSON.stringify(entries));
-  return new Set(entries.map((e) => e.ip)).size;
+  return { locked: false, count };
+}
+
+async function clearLoginFailures(env, username) {
+  await env.THREADS_KV.delete(`loginfail:${username}`).catch(() => {});
 }
 
 async function notifyAccountLocked(env, { account, reason }) {
@@ -184,9 +239,10 @@ async function notifyAccountLocked(env, { account, reason }) {
       ``,
       `🔑 This account can no longer log in (or use any already-open session) until a SuperAdmin unlocks it under Account Management → Agent Profile, or accounts-admin.html.`,
     ];
+    const route = await resolveSecurityAlertsRoute(env);
     await sendTelegramMessage(env, {
-      chatId: env.SECURITY_ALERTS_CHAT_ID,
-      topicId: env.SECURITY_ALERTS_TOPIC_ID,
+      chatId: route.chatId,
+      topicId: route.topicId,
       text: lines.join("\n"),
     });
   } catch {
@@ -194,7 +250,15 @@ async function notifyAccountLocked(env, { account, reason }) {
   }
 }
 
-async function notifyUnrecognizedIp(env, { account, ip, request }) {
+// Sends an immediate per-attempt Telegram warning for ANY kind of failed
+// login — wrong password, unrecognized/unwhitelisted IP, or no office
+// assigned. All three are visible to the business owner this way, even
+// though only "wrong password" and "unrecognized IP" count toward the
+// combined 5-in-an-hour auto-lock threshold (see recordLoginFailure) —
+// "no office assigned" is an admin setup gap, not suspicious behavior,
+// so it's excluded from the LOCK counter but still worth a heads-up
+// alert like the other two, per explicit business-owner request.
+async function notifyLoginFailure(env, { account, ip, request, reasonTitle }) {
   try {
     const userAgent = request.headers.get("User-Agent") || "unknown device";
     const officeName = account.officeId ? (await getOffice(env, account.officeId))?.name : null;
@@ -209,7 +273,7 @@ async function notifyUnrecognizedIp(env, { account, ip, request }) {
 
     const now = new Date();
     const lines = [
-      `⚠️<b>Login Warning (Abnormal IP Address)</b>⚠️`,
+      `⚠️<b>Login Warning (${escapeHtml(reasonTitle)})</b>⚠️`,
       ``,
       `👤 User: ${escapeHtml(account.username)}`,
       `🌐 IP: ${escapeHtml(ip)}`,
@@ -223,9 +287,10 @@ async function notifyUnrecognizedIp(env, { account, ip, request }) {
       ``,
       `🚫 Login was blocked as usual — this is just a heads-up.`,
     ];
+    const route = await resolveSecurityAlertsRoute(env);
     await sendTelegramMessage(env, {
-      chatId: env.SECURITY_ALERTS_CHAT_ID,
-      topicId: env.SECURITY_ALERTS_TOPIC_ID,
+      chatId: route.chatId,
+      topicId: route.topicId,
       text: lines.join("\n"),
     });
   } catch {

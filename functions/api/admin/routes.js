@@ -6,7 +6,8 @@
  *        where routes["<brandId>|<moduleId>"] = { chatId, topicId, isOverride }.
  *        `isOverride: true` means it's a live KV override (edited through
  *        this page); `false` means it's still showing the hardcoded
- *        default from _shared/routing.js.
+ *        default from _shared/routing.js. Also includes `securityAlerts`
+ *        (see below) — same shape, but not tied to any brand.
  *     SuperAdmin-only.
  *
  *   POST { action:"save", brandId, moduleId, chatId, topicId } -> store an
@@ -18,6 +19,18 @@
  *     reverting that brand+module back to the hardcoded default.
  *     SuperAdmin-only.
  *
+ * SECURITY ALERTS ROW — not a real brand/module, just reuses the exact
+ * same KV-override machinery (_shared/routes.js) under the reserved
+ * pseudo id pair brandId="_security", moduleId="alerts" (not a valid
+ * brand id, so it can never collide with a real brand). Lets a
+ * SuperAdmin change where the login-security Telegram alerts
+ * (functions/api/auth/login.js — unrecognized-IP warnings, account
+ * auto-lock notices) go, live from the browser, instead of needing a
+ * Cloudflare secret + redeploy. Falls back to the SECURITY_ALERTS_CHAT_ID
+ * / SECURITY_ALERTS_TOPIC_ID env vars when nothing's been saved here yet
+ * — same "KV override, env/code default underneath" layering as every
+ * other row on this page.
+ *
  * Same tier as Whitelist IP (functions/api/admin/offices.js) — but unlike
  * that endpoint, this one is SuperAdmin-only for GET too, not
  * Admin-view/SuperAdmin-edit, since routing controls where every ticket
@@ -28,8 +41,11 @@
  * at submission time.
  */
 import { authenticateStaff, ROLE_RANK } from "../../_shared/accounts.js";
-import { getAllRouteOverrides, saveRouteOverride, deleteRouteOverride } from "../../_shared/routes.js";
+import { getAllRouteOverrides, saveRouteOverride, deleteRouteOverride, getRouteOverride } from "../../_shared/routes.js";
 import { BRANDS, MODULE_META } from "../../_shared/routing.js";
+
+const SECURITY_BRAND_ID = "_security";
+const SECURITY_MODULE_ID = "alerts";
 
 export async function onRequestGet(context) {
   try {
@@ -65,7 +81,12 @@ async function handleGet({ request, env }) {
     }
   }
 
-  return json({ ok: true, brands, modules, routes });
+  const securityOverride = await getRouteOverride(env, SECURITY_BRAND_ID, SECURITY_MODULE_ID);
+  const securityAlerts = securityOverride
+    ? { chatId: securityOverride.chatId, topicId: securityOverride.topicId, isOverride: true }
+    : { chatId: env.SECURITY_ALERTS_CHAT_ID || "", topicId: env.SECURITY_ALERTS_TOPIC_ID || null, isOverride: false };
+
+  return json({ ok: true, brands, modules, routes, securityAlerts });
 }
 
 export async function onRequestPost(context) {
@@ -89,8 +110,11 @@ async function handlePost({ request, env }) {
   }
 
   const { brandId, moduleId } = body || {};
-  if (!BRANDS[brandId]) return json({ ok: false, error: `Unknown brand "${brandId}".` }, 400);
-  if (!MODULE_META[moduleId]) return json({ ok: false, error: `Unknown module "${moduleId}".` }, 400);
+  const isSecurityRow = brandId === SECURITY_BRAND_ID && moduleId === SECURITY_MODULE_ID;
+  if (!isSecurityRow) {
+    if (!BRANDS[brandId]) return json({ ok: false, error: `Unknown brand "${brandId}".` }, 400);
+    if (!MODULE_META[moduleId]) return json({ ok: false, error: `Unknown module "${moduleId}".` }, 400);
+  }
 
   if (body.action === "save") {
     try {
@@ -103,6 +127,9 @@ async function handlePost({ request, env }) {
 
   if (body.action === "reset") {
     await deleteRouteOverride(env, brandId, moduleId);
+    if (isSecurityRow) {
+      return json({ ok: true, route: { chatId: env.SECURITY_ALERTS_CHAT_ID || "", topicId: env.SECURITY_ALERTS_TOPIC_ID || null, isOverride: false } });
+    }
     const fallback = BRANDS[brandId].telegram[moduleId] || BRANDS[brandId].telegram.default || {};
     return json({ ok: true, route: { chatId: fallback.chatId || "", topicId: fallback.topicId ?? null, isOverride: false } });
   }

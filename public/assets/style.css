@@ -400,6 +400,15 @@ a { color: inherit; text-decoration: none; }
   background: linear-gradient(135deg, rgba(200, 145, 47, 0.28), rgba(200, 145, 47, 0.14));
   border-color: var(--accent-gold); color: #f3c463;
 }
+/* Visually separated from the brand list above it — this isn't a brand,
+   it's the login-security alerts row (see resolveSecurityAlertsRoute in
+   functions/api/auth/login.js). */
+.tgroute-brand.tgroute-security {
+  margin-top: 10px; padding-top: 12px; border-top: 1.5px dashed var(--border);
+}
+.tgroute-brand.tgroute-security.selected {
+  border-color: var(--accent-gold);
+}
 .tgroute-modules { flex: 1; min-width: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; }
 .tgroute-row {
   border: 1px solid var(--panel-border); border-radius: 12px; padding: 10px 12px;
