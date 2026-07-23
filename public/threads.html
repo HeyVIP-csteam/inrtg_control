@@ -393,7 +393,7 @@
       }
     }
 
-    function buildTopHTML(t) {
+    function buildHeaderHTML(t) {
       return `
         <div class="thread-detail-header">
           <div>
@@ -409,7 +409,17 @@
           </div>
         </div>
         <hr class="thread-divider" />
+      `;
+    }
 
+    // Everything that USED to be fixed at the top along with the header
+    // (rootRecalled notice, the summary/attachments card) now scrolls
+    // together with the conversation instead — only the header itself
+    // (icon/title/Solved/✏️↩️🗑🔄) stays pinned. See renderDetail() and
+    // updateThreadContent(), which prepend this to the scroll area's
+    // innerHTML rather than the fixed one.
+    function buildSummaryHTML(t) {
+      return `
         ${t.rootRecalled ? `
           <div class="edit-modal-note err" style="font-size:12.5px; margin-bottom:14px;">
             ⚠️ The original message was recalled from Telegram — this ticket no longer exists in the group.
@@ -538,8 +548,8 @@
       const t = selectedThread;
       if (!t) return;
       main.innerHTML = `
-        <div class="thread-top-fixed" id="threadTopFixed">${buildTopHTML(t)}</div>
-        <div class="thread-scroll-area" id="threadScrollArea">${buildConversationHTML(t)}</div>
+        <div class="thread-top-fixed" id="threadTopFixed">${buildHeaderHTML(t)}</div>
+        <div class="thread-scroll-area" id="threadScrollArea">${buildSummaryHTML(t)}${buildConversationHTML(t)}</div>
         <div class="thread-reply-fixed">
           <div id="replyTargetBanner"></div>
           <div class="reply-attach-preview" id="replyAttachPreview"></div>
@@ -579,9 +589,9 @@
       const scrollArea = document.getElementById("threadScrollArea");
       if (!topFixed || !scrollArea) { renderDetail(); return; }
       const wasNearBottom = isNearBottom(scrollArea);
-      topFixed.innerHTML = buildTopHTML(t);
+      topFixed.innerHTML = buildHeaderHTML(t);
       wireTopButtons();
-      scrollArea.innerHTML = buildConversationHTML(t);
+      scrollArea.innerHTML = buildSummaryHTML(t) + buildConversationHTML(t);
       wireConversationButtons();
       if (forceScroll || wasNearBottom) scrollConversation(true);
       polishEmoji();
