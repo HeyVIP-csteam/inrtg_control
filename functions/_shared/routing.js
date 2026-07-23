@@ -186,6 +186,8 @@ export const ACCOUNT_ISSUE_FIELD_STYLE = {
   removeGmail: { emoji: "🗑" },
   previousGmail: { emoji: "📤" },
   updateNewGmail: { emoji: "📥" },
+  previousNumber: { emoji: "📤" },
+  updateNewNumber: { emoji: "📥" },
   messageType: { emoji: "📨" },
   updateRequest: { emoji: "✏️" },
   fullName: { emoji: "🧾" },
@@ -434,12 +436,20 @@ export const SHEET_LAYOUT = {
   account_issue: {
     tab: "Account Issue",
     startColumn: "B",
+    // "Customer Number Change" reuses two columns that are otherwise
+    // unused for it (Gmail-related fields, and nid/aadharPan) instead of
+    // needing a brand new Sheet column — safe because SHEET_LAYOUT
+    // "first non-empty wins" groups are per-ROW, and only one issueType
+    // is ever active per submission, so there's no real collision:
+    // previousNumber only ever has a value on a "Customer Number Change"
+    // row, at which point gmail/removeGmail/previousGmail/updateNewGmail
+    // are all empty anyway (and vice versa for any other issue type).
     columns: [
       "brand",
       "uid",
       { details: ["registerNumber", "registerWrongNumber"] },
-      { details: ["gmail", "removeGmail", "previousGmail", "updateNewGmail"] },
-      { details: ["nid", "aadharPan"] },
+      { details: ["gmail", "removeGmail", "previousGmail", "updateNewGmail", "previousNumber"] },
+      { details: ["nid", "aadharPan", "updateNewNumber"] },
       "issueType",
       "screenshotLink",
       "remark",

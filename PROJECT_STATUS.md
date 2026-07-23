@@ -4,7 +4,24 @@ Paste this whole document as the first message in a new conversation, along
 with the latest `telegram-issue-hub-updated.zip`. That gives the new chat
 the complete current state of the project.
 
-## ↩️ 已撤回,2026-07-23 — Google Sheet 截图/聊天记录链接改成可点击文字(试过又撤回了)
+## ➕ 新增,2026-07-23 — Account Issue 新增 "Customer Number Change" 类型
+
+跟已有的 "Customer Email Change / Inactive / Lost" 是同一个模式,只是
+从 Gmail 换成手机号:填 UID、Register Number、Previous Number
+(Remove)、Update New Number,加通用的 Issue & Remark + 截图。
+
+- `public/assets/schemas.js` —— 加了下拉选项,新增 `previousNumber`/
+  `updateNewNumber` 两个字段,`uid`/`registerNumber` 的 `showIf` 也加了
+  这个新类型
+- `functions/_shared/routing.js` —— `ACCOUNT_ISSUE_FIELD_STYLE` 加了两
+  个新字段的 emoji;**Sheet 列没有新增**——`previousNumber`/
+  `updateNewNumber` 分别塞进了"Gmail 相关"和"nid/aadharPan"这两个对
+  这个新类型来说本来就空着的列(同一时间只会有一个 issueType 生效,
+  不会真的撞车),不需要去 Google Sheet 那边插新列
+- Telegram 消息不用写专属模板,通用的"按表单字段顺序显示"逻辑自动就能
+  拼出跟业主给的格式一致的消息
+
+
 
 这个改动(`Screenshot Link`/`Chat Link(s)` 从原始网址拆成 3 列
 `HYPERLINK()` 公式)代码都写完过,后来评估下来觉得"要手动去 Sheet 插列
