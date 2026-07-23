@@ -166,12 +166,12 @@ async function handleSubmit({ request, env }) {
   if (sheetAttempted) {
     try {
       if (moduleId === "promotion_request") {
-        const values = resolveColumnValues(promoConfig.columns, { fieldMap, brand, reporter, screenshotLink, attachmentLinks, r2Links });
+        const values = resolveColumnValues(promoConfig.columns, { fieldMap, brand, reporter, screenshotLink, attachmentLinks });
         await appendRowByColumns(env, promoConfig.sheetId, promoConfig.tab, promoConfig.startColumn, values);
       } else {
         const layoutEntry = SHEET_LAYOUT[moduleId];
         if (layoutEntry && layoutEntry.pairByDate) {
-          const values = resolveColumnValues(layoutEntry.columns, { fieldMap, brand, reporter, screenshotLink, attachmentLinks, r2Links });
+          const values = resolveColumnValues(layoutEntry.columns, { fieldMap, brand, reporter, screenshotLink, attachmentLinks });
           const dateValue = formatDateDDMMYYYY(fieldMap.reportDate || fieldMap.date);
           const shiftValue = fieldMap[layoutEntry.selectorField];
           const activeSide = shiftValue === layoutEntry.rightBlock.shiftValue ? "right" : "left";
@@ -185,7 +185,7 @@ async function handleSubmit({ request, env }) {
         } else {
           const layout = resolveSheetLayout(layoutEntry, fieldMap);
           if (layout) {
-            const values = resolveColumnValues(layout.columns, { fieldMap, brand, reporter, screenshotLink, attachmentLinks, r2Links });
+            const values = resolveColumnValues(layout.columns, { fieldMap, brand, reporter, screenshotLink, attachmentLinks });
             await appendRowByColumns(env, brand.sheetId, layout.tab, layout.startColumn, values);
           } else {
             const row = {
@@ -233,45 +233,13 @@ function buildPromotionRequestMessage(rows, { brandName, fieldMap, reporter }) {
   return lines.join("\n");
 }
 
-// Builds a literal =HYPERLINK("url","label") formula string. Only works
-// because appendRowByColumns() now writes with valueInputOption=
-// USER_ENTERED (see _shared/googleSheets.js) — under the old RAW mode
-// this would've shown up as the literal text "=HYPERLINK(...)" in the
-// cell instead of a real clickable link. Quotes in the url/label are
-// escaped since Sheets formula string literals use "" to represent a
-// literal double-quote (not backslash-escaping).
-function sheetHyperlink(url, label) {
-  const esc = (s) => String(s).replace(/"/g, '""');
-  return `=HYPERLINK("${esc(url)}","${esc(label)}")`;
-}
-
-function resolveColumnValues(columns, { fieldMap, brand, reporter, screenshotLink, attachmentLinks, r2Links }) {
-  // chatLinks is a free-text textarea (agent pastes one link per line) —
-  // split once per row, reused by all three chatLinksN lookups below
-  // instead of re-splitting on every column.
-  const chatLinkLines = (fieldMap.chatLinks || "").split("\n").map((s) => s.trim()).filter(Boolean);
+function resolveColumnValues(columns, { fieldMap, brand, reporter, screenshotLink, attachmentLinks }) {
   return columns.map((col) => {
     if (col === null) return "-";
     if (typeof col === "string") {
       if (col === "brand") return brand.name || "-";
       if (col === "pic") return reporter || "-";
       if (col === "screenshotLink") return (screenshotLink || attachmentLinks.join(", ")) || "-";
-      // Split out of the single joined screenshotLink string — one
-      // column, one link, rendered as clickable "View Screenshot" text
-      // instead of the raw (often very long) URL. Falls back to the
-      // Telegram message deep-link (attachmentLinks) on the same index
-      // if R2 uploads weren't used for this submission, same fallback
-      // the old single-column "screenshotLink" case above already used.
-      if (col === "screenshotLink1" || col === "screenshotLink2" || col === "screenshotLink3") {
-        const i = Number(col.slice(-1)) - 1;
-        const url = (r2Links && r2Links[i]) || (attachmentLinks && attachmentLinks[i]);
-        return url ? sheetHyperlink(url, "View Screenshot") : "-";
-      }
-      if (col === "chatLinks1" || col === "chatLinks2" || col === "chatLinks3") {
-        const i = Number(col.slice(-1)) - 1;
-        const url = chatLinkLines[i];
-        return url ? sheetHyperlink(url, "View Chat Link") : "-";
-      }
       if (col === "dateFormatted") return formatDateDDMMYYYY(fieldMap.reportDate || fieldMap.date) || "-";
       return fieldMap[col] || "-";
     }

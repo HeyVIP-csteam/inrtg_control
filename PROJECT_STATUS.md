@@ -4,44 +4,17 @@ Paste this whole document as the first message in a new conversation, along
 with the latest `telegram-issue-hub-updated.zip`. That gives the new chat
 the complete current state of the project.
 
-## 🔧 改动,2026-07-23 — Google Sheet 里的截图/聊天记录链接改成可点击文字
+## ↩️ 已撤回,2026-07-23 — Google Sheet 截图/聊天记录链接改成可点击文字(试过又撤回了)
 
-**背景**：`Screenshot Link`(Account Issue、QA)、`Chat Link(s)`(Genie
-Issue)这几列以前是把完整网址原样写进一个格子,网址太长、多张截图/多个
-链接还会用逗号拼在一起挤进同一格,导致 Google Sheets 认不出来是网址,
-不会自动变成可点击链接,只能整段复制。
+这个改动(`Screenshot Link`/`Chat Link(s)` 从原始网址拆成 3 列
+`HYPERLINK()` 公式)代码都写完过,后来评估下来觉得"要手动去 Sheet 插列
++ 连带影响 Risk Issue/Promotion Request"这个维护成本不划算,**已经撤回
+到原样**——`googleSheets.js` 改回 `RAW`,`routing.js` 的 `SHEET_LAYOUT`
+改回单列,`submit.js` 去掉了 `sheetHyperlink()`。现在这几列还是原来的
+"网址直接堆进一个格子"的样子,没有任何变化。
 
-**改动**：
-- 这三个模块的这一列,**拆成 3 个独立列**(截图/链接最多显示 3 个),
-  改用 `=HYPERLINK("真实网址","显示文字")` 公式,单元格里只显示一小段
-  文字——Account Issue / QA 显示 **"View Screenshot"**,Genie Issue
-  显示 **"View Chat Link"**,点这段文字才跳转
-- `functions/_shared/googleSheets.js` 的 `appendRowByColumns()` 把
-  `valueInputOption` 从 `RAW` 改成 `USER_ENTERED`,不然 Sheets 不会把
-  `HYPERLINK(...)` 当公式解析,只会显示这段文字本身
-
-**⚠️ 部署前必须手动做的事(代码本身不会自动改 Google Sheet 的结构)**：
-以下三个 Sheet 分页,原来的单列位置要**手动插入 2 个新列**,让"1 列"
-变成"3 列",列头文字自己按需要命名(比如 "Screenshot Link 1/2/3"):
-- `QA OTP & Domain` 分页,原来 `Screenshot Link` 那一列
-- `Account Issue` 分页,原来 `Screenshot Link` 那一列
-- `Genie Issues` 分页,原来 `Chat Link(s)` 那一列
-
-不插入这 2 列的话,代码写进去的值会**往右挤,盖掉后面 Remark/PIC 这些
-列原本的内容**,因为写入用的是连续区间,不会自动跳过。
-
-**⚠️ 连带影响,范围比这次要改的 3 个模块更大**：`appendRowByColumns()`
-这个函数是**共用的**,`Risk Issue` 和 `Promotion Request` 这两个模块的
-Sheet 写入也走同一个函数,这次改成 `USER_ENTERED` 后,**这两个模块也会
-受到影响**——不是它们的哪一列变成了超链接,而是它们所有自由文本字段
-(Remark 之类)如果写进去的内容**刚好以 `=`/`+`/`-`/`@` 开头**,理论上
-也可能被 Sheets 误判成公式。业主已确认接受这个风险,暂不做转义保护,
-后续真出问题再处理。
-
-**Genie Issue 的 `Chat Link(s)` 没有硬性数量上限**（agent 在文本框里
-一行一个,想贴几个贴几个,不像截图上传限制最多 3 张）——**只有前 3 行**
-会被拆出来做成可点击链接,第 4 行及以后不会出现在 Sheet 的这几列里
-(原始内容还在 Telegram 消息和表单提交记录里,只是没单独拆出链接列)。
+（如果之后想再尝试,讨论过程中还比较过三个方案 A/B/C,细节可以翻这次
+会话记录找回来,这里就不重复展开了。）
 
 
 

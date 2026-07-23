@@ -421,33 +421,15 @@ export const MESSAGE_TEMPLATE = {
  * Add an entry here per module once you know that module's tab name + columns.
  */
 export const SHEET_LAYOUT = {
-  // "screenshotLinkN" / "chatLinksN" (N = 1/2/3) write a
-  // =HYPERLINK("<url>","View Screenshot"|"View Chat Link") FORMULA, not a
-  // raw URL — see resolveColumnValues() in submit.js for how these get
-  // built, and appendRowByColumns() in _shared/googleSheets.js (now
-  // USER_ENTERED, not RAW, specifically so Sheets parses these as real
-  // formulas instead of showing the literal "=HYPERLINK(...)" text).
-  // ⚠️ Because these were split from ONE column into THREE, the actual
-  // Google Sheet tab needs 2 new columns manually inserted right after
-  // the old single "Screenshot Link"/"Chat Link(s)" column, BEFORE
-  // deploying this — otherwise the extra values will overwrite whatever
-  // used to be in the columns that came after (Remark/PIC etc.), since
-  // this always writes a contiguous block starting at `startColumn`.
   qa: {
     tab: "QA OTP & Domain",
     startColumn: "B",
-    columns: ["date", "uid", "number", "email", "brand", "motive", "domainLink", "screenshotLink1", "screenshotLink2", "screenshotLink3", { details: ["remark", "issueDetails"] }, "pic"],
+    columns: ["date", "uid", "number", "email", "brand", "motive", "domainLink", "screenshotLink", { details: ["remark", "issueDetails"] }, "pic"],
   },
   genie_issue: {
     tab: "Genie Issues",
     startColumn: "B",
-    // chatLinks comes from a free-text textarea (agent pastes one link
-    // per line, no hard cap) — only the first 3 lines get their own
-    // column/HYPERLINK; anything past the 3rd line is silently not
-    // shown here (still fully intact in the original Telegram message
-    // and in fieldMap.chatLinks itself, just not broken out into its
-    // own clickable column).
-    columns: ["brand", "issueDetails", "chatLinks1", "chatLinks2", "chatLinks3", "pic"],
+    columns: ["brand", "issueDetails", "chatLinks", "pic"],
   },
   account_issue: {
     tab: "Account Issue",
@@ -459,9 +441,7 @@ export const SHEET_LAYOUT = {
       { details: ["gmail", "removeGmail", "previousGmail", "updateNewGmail"] },
       { details: ["nid", "aadharPan"] },
       "issueType",
-      "screenshotLink1",
-      "screenshotLink2",
-      "screenshotLink3",
+      "screenshotLink",
       "remark",
       "pic",
     ],
