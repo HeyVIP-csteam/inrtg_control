@@ -4,6 +4,70 @@ Paste this whole document as the first message in a new conversation, along
 with the latest `telegram-issue-hub-updated.zip`. That gives the new chat
 the complete current state of the project.
 
+## 🔧 改动,2026-07-23 — Google Sheet 里的截图/聊天记录链接改成可点击文字
+
+**背景**：`Screenshot Link`(Account Issue、QA)、`Chat Link(s)`(Genie
+Issue)这几列以前是把完整网址原样写进一个格子,网址太长、多张截图/多个
+链接还会用逗号拼在一起挤进同一格,导致 Google Sheets 认不出来是网址,
+不会自动变成可点击链接,只能整段复制。
+
+**改动**：
+- 这三个模块的这一列,**拆成 3 个独立列**(截图/链接最多显示 3 个),
+  改用 `=HYPERLINK("真实网址","显示文字")` 公式,单元格里只显示一小段
+  文字——Account Issue / QA 显示 **"View Screenshot"**,Genie Issue
+  显示 **"View Chat Link"**,点这段文字才跳转
+- `functions/_shared/googleSheets.js` 的 `appendRowByColumns()` 把
+  `valueInputOption` 从 `RAW` 改成 `USER_ENTERED`,不然 Sheets 不会把
+  `HYPERLINK(...)` 当公式解析,只会显示这段文字本身
+
+**⚠️ 部署前必须手动做的事(代码本身不会自动改 Google Sheet 的结构)**：
+以下三个 Sheet 分页,原来的单列位置要**手动插入 2 个新列**,让"1 列"
+变成"3 列",列头文字自己按需要命名(比如 "Screenshot Link 1/2/3"):
+- `QA OTP & Domain` 分页,原来 `Screenshot Link` 那一列
+- `Account Issue` 分页,原来 `Screenshot Link` 那一列
+- `Genie Issues` 分页,原来 `Chat Link(s)` 那一列
+
+不插入这 2 列的话,代码写进去的值会**往右挤,盖掉后面 Remark/PIC 这些
+列原本的内容**,因为写入用的是连续区间,不会自动跳过。
+
+**⚠️ 连带影响,范围比这次要改的 3 个模块更大**：`appendRowByColumns()`
+这个函数是**共用的**,`Risk Issue` 和 `Promotion Request` 这两个模块的
+Sheet 写入也走同一个函数,这次改成 `USER_ENTERED` 后,**这两个模块也会
+受到影响**——不是它们的哪一列变成了超链接,而是它们所有自由文本字段
+(Remark 之类)如果写进去的内容**刚好以 `=`/`+`/`-`/`@` 开头**,理论上
+也可能被 Sheets 误判成公式。业主已确认接受这个风险,暂不做转义保护,
+后续真出问题再处理。
+
+**Genie Issue 的 `Chat Link(s)` 没有硬性数量上限**（agent 在文本框里
+一行一个,想贴几个贴几个,不像截图上传限制最多 3 张）——**只有前 3 行**
+会被拆出来做成可点击链接,第 4 行及以后不会出现在 Sheet 的这几列里
+(原始内容还在 Telegram 消息和表单提交记录里,只是没单独拆出链接列)。
+
+
+
+**现象**：`BNAssistant`(群里另一个真正注册过的 Telegram Bot,不是普通
+账号)在群里回复的 "✅ DONE" 之类的消息,在 Telegram App 里看得到,但
+网站这边的工单详情页完全没有记录,消息列表里凭空少了一条。
+
+**根因**：`functions/api/telegram-webhook.js` 的 `handleUpdate()`
+一进来就有 `if (!msg || msg.from?.is_bot) return;`——凡是发送者是"机器
+人账号"(Telegram 的 `is_bot` 字段为 true)的消息,一律直接丢弃,不记录。
+这行代码原本是想防止"我们自己的 Bot 把自己发出去的消息,又当成一条新
+回复记录进来"造成死循环,但实际上 Telegram 的 webhook 机制根本不会把
+Bot 自己 `sendMessage`/`sendPhoto` 发出去的内容,又作为一条"收到新消息"
+推送回同一个 Bot——这个过滤条件从一开始就没在防它真正想防的问题,
+副作用却是把群里**所有**其他机器人(不只是我们自己的)的回复全部
+静默丢弃,包括 `BNAssistant` 这种真正有用的自动化机器人。
+
+（这里有个容易搞混的地方：`PYT_BOT ACC` 虽然名字里带 "BOT"，但技术上
+只是个普通 Telegram 账号，不是真正注册过的 Bot，所以之前一直能正常
+记录，只有像 `BNAssistant` 这种**真正**注册过的 Bot 才会被这行代码
+误伤。）
+
+**修复**：改成只排除"我们自己这个 Bot"发的消息（Bot 的 Telegram 数字
+ID，就是 `TELEGRAM_BOT_TOKEN` 里冒号前面那一串数字，不需要额外调用
+API 去查），群里其他任何机器人的回复现在都会正常记录、正常显示。
+
 ## 🔁 移植自 PKR(master 合并版),2026-07-21 — 附件预览全部功能 + KV 写入配额修复
 
 这次是把之前分几次发的附件预览小改动,汇总成一份完整版(`master_attachment_and_quota_fix_export.zip`)一次性合并进 INR。涉及 6 个代码文件 + Part B 提到的独立 cron worker(不在这个仓库里,需要手动去 Cloudflare 后台调整,见下)。

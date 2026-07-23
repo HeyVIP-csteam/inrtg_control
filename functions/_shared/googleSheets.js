@@ -83,9 +83,19 @@ export async function appendRowByColumns(env, sheetId, tabName, startColumn, val
   const endColumn = columnLetter(columnIndex(startColumn) + values.length - 1);
   const range = `${tabName}!${startColumn}:${endColumn}`;
 
+  // USER_ENTERED (not RAW) — needed so a value like
+  // `=HYPERLINK("https://...","View Screenshot")` (see sheetHyperlink()
+  // in submit.js) actually gets parsed as a real formula by Sheets
+  // instead of showing up as that literal text in the cell. Tradeoff,
+  // deliberately accepted rather than sanitized: USER_ENTERED applies to
+  // the WHOLE row, not just the hyperlink columns — free-text fields
+  // (Remark, Issue Details, etc.) that happen to start with =/+/-/@
+  // could get misinterpreted as a formula by Sheets too. Considered low
+  // risk enough not to add escaping for now; revisit if it ever actually
+  // happens.
   const appendUrl =
     `https://sheets.googleapis.com/v4/spreadsheets/${sheetId}/values/` +
-    `${encodeURIComponent(range)}:append?valueInputOption=RAW&insertDataOption=INSERT_ROWS`;
+    `${encodeURIComponent(range)}:append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS`;
 
   const res = await sheetsFetch(appendUrl, token, { values: [values] });
   if (!res.ok) {
