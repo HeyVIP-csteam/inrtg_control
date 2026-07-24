@@ -4,7 +4,31 @@ Paste this whole document as the first message in a new conversation, along
 with the latest `telegram-issue-hub-updated.zip`. That gives the new chat
 the complete current state of the project.
 
-## ➕ 新增,2026-07-23 — Account Issue 新增 "Customer Number Change" 类型
+## 🔁 移植自 PKR,2026-07-23 — 表单字段门控:选完 Issue Type 才展开
+
+**改动前**：进任何一个模块的表单,Brand/Platform 和 Issue Type(或者
+Motive/Promotion/Shift,看哪个模块)下面**所有字段**——UID、Remark、
+截图上传框、Agent Name——一开始就全部摆在页面上,显得很乱,agent 也可能
+在系统还不知道要提交哪种工单之前就开始乱填。
+
+**改动后**：只有 **Brand/Platform + 主选择器**(`emphasize: true` 标记
+的那个字段)先显示,其余字段(包括截图上传框、Agent Name 这两个不在
+`module.fields` 数组里、写死在 `form.html` 公共部分的元素)**全部隐藏
+到主选择器选完才展开**。这是**通用的、按 schema 驱动**的改动,不认模块
+名字、不认品牌——哪个模块的 schema 里有且只有一个 `emphasize: true`
+字段,就自动生效;没有的(目前是 **Genie Issue**,它没有主选择器这个
+结构)保持原样,不受影响。
+
+**只改了一个文件**：`public/assets/app.js`。CSS 不用动
+(`.field[data-conditional="true"]` / `.is-visible` 这条规则 INR 这边
+本来就有,复用的是已有机制)。`schemas.js`/`routing.js`/`submit.js`
+都没碰。
+
+**应用了这个效果的 5 个模块**：QA(主选择器 Motive)、Account Issue
+(Issue Type)、Risk Issue(Issue Type)、Promotion Request(Promotion)、
+Daily Report(Shift)。
+
+
 
 跟已有的 "Customer Email Change / Inactive / Lost" 是同一个模式,只是
 从 Gmail 换成手机号:填 UID、Register Number、Previous Number
