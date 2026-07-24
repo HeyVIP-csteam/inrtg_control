@@ -1223,3 +1223,19 @@ h1 {
 .status-msg { display: block; margin-top: 10px; font-size: 13px; font-weight: 600; text-align: center; }
 .status-msg.ok { color: #1a9c6e; }
 .status-msg.err { color: #e0577a; }
+
+/* ---- Page-to-page fade transition (index.html <-> form.html) ----
+   These are REAL full page navigations (plain <a href>, not an SPA),
+   so this can't be a smooth in-DOM swap like a single-page app — it's a
+   quick fade-out on the page you're leaving, then a fade-in on the page
+   you land on, timed to roughly overlap with the browser's own
+   navigation. See /assets/pageTransition.js for the click-intercept
+   logic that drives this. Deliberately NOT a static `body { opacity: 0 }`
+   rule — the "enter" class is baked directly into the HTML's <body
+   class="..."> in each page (not added by JS), so if the JS file ever
+   fails to load for any reason, the page still renders at full opacity
+   immediately rather than getting stuck invisible. */
+@keyframes pageFadeIn { from { opacity: 0; } to { opacity: 1; } }
+@keyframes pageFadeOut { to { opacity: 0; } }
+body.page-transition-in { animation: pageFadeIn 0.22s ease; }
+body.page-transition-out { animation: pageFadeOut 0.16s ease forwards; }

@@ -4,7 +4,25 @@ Paste this whole document as the first message in a new conversation, along
 with the latest `telegram-issue-hub-updated.zip`. That gives the new chat
 the complete current state of the project.
 
-## 🔁 移植自 PKR,2026-07-23 — 表单字段门控:选完 Issue Type 才展开
+## ✨ 新增,2026-07-23 — 首页 ↔ 表单页跳转加了淡入淡出
+
+**背景**：点首页侧边栏的模块进 `form.html`,以及表单页点"Back to Home"
+回首页,都是**真实的整页跳转**(普通 `<a href>`,不是单页应用),浏览器
+直接硬切,没有任何过渡,感觉很生硬。参考了另一个币种那边做的一个
+预览对比(3 种动画方案:淡入淡出 / 左右滑动 / 缩放渐变),选了效果最
+简单干净的**淡入淡出**方案。
+
+**做法**：新建 `public/assets/pageTransition.js`(两个页面共用):
+- 点击链接时先让当前页面淡出(160ms),淡出动画播完再真正跳转
+- 目标页面的淡入效果是**直接写在 HTML 的 `<body class="page-transition-in">` 里的**,不是靠 JS 加上去的——这样即使这个新脚本文件加载失败,两个页面也只是变回"硬切",不会卡在一片空白看不到内容
+- 只处理了鼠标左键单击;Cmd/Ctrl+点击这种想在新标签页打开的操作,不受影响,该怎么样还怎么样
+
+**改了 3 个文件**：新增 `public/assets/pageTransition.js`,`style.css`
+加了两个淡入淡出的 CSS 动画,`index.html`/`form.html` 引入这个脚本、
+`<body>` 加了个 class,各自的跳转链接(侧边栏模块列表、Back to Home)
+接上这个效果。
+
+
 
 **改动前**：进任何一个模块的表单,Brand/Platform 和 Issue Type(或者
 Motive/Promotion/Shift,看哪个模块)下面**所有字段**——UID、Remark、

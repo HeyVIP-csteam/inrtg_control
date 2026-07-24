@@ -8,8 +8,9 @@
 <script src="/assets/theme.js"></script>
 <script src="/assets/starfield.js" defer></script>
 <script src="/assets/authguard.js"></script>
+<script src="/assets/pageTransition.js"></script>
 </head>
-<body>
+<body class="page-transition-in">
   <header class="topbar">
     <div class="topbar-left">
       <img src="/assets/img/logo.webp" alt="HeyVIP" class="logo-img" />
@@ -301,6 +302,7 @@
       `;
       list.appendChild(a);
     });
+    window.wireFadeLinks(".sidebar-item");
 
     // ---- Account Management (sidebar dropdown + 4 focused modals) ----
     // Rank matches functions/_shared/accounts.js ROLE_RANK exactly — keep
