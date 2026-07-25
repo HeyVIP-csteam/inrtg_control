@@ -60,7 +60,26 @@ the complete current state of the project.
 一个 `attachmentNames` 参数,但那是**另一个还没合并进 INR 的功能**
 (不在这次 patch 自己写的 CHANGES.md 范围内),这次没有引入。
 
-## 🔧 修复,2026-07-23 — Daily Report 现在也支持 "🔄 Sync to Sheet" 了
+## 🐛 修复,2026-07-25 — "淡入淡出"功能误伤了 Account Management 下拉
+
+**现象**：点侧边栏的 "Account Management",不会展开选项,反而直接跳飞
+到一个空白/报错页面。
+
+**根因**：Account Management 是个 `<div>`,靠 JS 切换展开/收起,本身
+不是跳转链接,但为了视觉统一,跟真正的跳转链接共用了 `.sidebar-item`
+这个 CSS class。上次做首页 ↔ 表单页淡入淡出效果时,`index.html` 里写的
+是 `window.wireFadeLinks(".sidebar-item")`——这个选择器**不分青红皂白
+把所有长得像侧边栏项目的元素都当成跳转链接处理**,连这个 `<div>` 也
+被接上了"点击后跳转"的逻辑。但这个 `<div>` 没有 `href`,于是变成:
+淡出动画播完,尝试跳转到 `location.href = undefined`,浏览器把这个当
+不存在的网址处理,页面直接跳飞,而不是正常展开下拉选项。
+
+**修复**：`public/assets/pageTransition.js` 的 `wireFadeLinks()` 加了
+一道防御性检查——只有真正的 `<a href="...">` 元素才会被接上淡出效果,
+没有 `href` 的元素(不管是不是共用了同一个 class)一律跳过,保留它
+原本的点击行为不受影响。只改了这一个文件。
+
+
 
 上面那次合并完成时,Daily Report 的工单其实**已经会显示 📊 按钮**(按钮
 显示条件 `t.fieldMap && t.brandId` 是所有模块统一传的,不分模块),

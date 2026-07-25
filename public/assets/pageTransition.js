@@ -35,6 +35,15 @@
    */
   window.wireFadeLinks = function wireFadeLinks(selector) {
     document.querySelectorAll(selector).forEach((a) => {
+      // Defensive: `selector` is sometimes a class shared with non-link
+      // elements that just happen to look the same (e.g. a <div> that
+      // toggles a dropdown open/closed via its own separate click
+      // handler, not a real navigation). Only wire up genuine <a href>
+      // elements — anything else has no real destination to fade to,
+      // and calling fadeNavigate(undefined) would hijack its click into
+      // a broken navigation instead of whatever it was actually meant
+      // to do.
+      if (a.tagName !== "A" || !a.getAttribute("href")) return;
       a.addEventListener("click", (e) => {
         if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || a.target === "_blank") return;
         e.preventDefault();
