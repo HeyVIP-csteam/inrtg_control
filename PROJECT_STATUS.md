@@ -60,7 +60,26 @@ the complete current state of the project.
 一个 `attachmentNames` 参数,但那是**另一个还没合并进 INR 的功能**
 (不在这次 patch 自己写的 CHANGES.md 范围内),这次没有引入。
 
-## 🐛 修复,2026-07-25 — 首页 ↔ 表单页跳转瞬间的白屏
+## 🐛 修复,2026-07-25 — 淡入淡出效果导致星空背景消失
+
+**现象**：首页/表单页(用了淡入淡出效果的两个页面)背景变成一片纯色,
+动态星空/星球图完全消失;`threads.html`(没加这个效果)背景正常。
+
+**根因**：`<body class="page-transition-in">` 这个 class 对应一段淡入
+动画,但**动画播完之后从来没有被摘掉**,永远留在 `<body>` 上。浏览器
+有个规则:只要元素身上挂着 `animation`(不管有没有在播),这个元素就会
+强制"建立一个新的堆叠层"。星空背景(`#starfieldRoot`)靠
+`z-index: -2` 垫在最底下实现,`<body>` 一旦被迫建立了自己的堆叠层,
+`-2` 就只能在这个新层内部生效,没法再垫到 `<body>` 自己的背景下面,
+背景直接消失,只剩一片纯色。
+
+**修复**：`public/assets/pageTransition.js`——淡入动画播完的瞬间,主动
+把 `page-transition-in` 这个 class 摘掉(监听 `animationend`,另外加了
+一个 400ms 兜底 `setTimeout` 防止极端情况下事件没触发),`<body>` 恢复
+成"没有 animation"的状态,星空背景的堆叠顺序就正常了。只改了这一个
+文件。
+
+
 
 **现象**：淡入淡出效果播放时,中间会闪一下白屏,很难看。
 

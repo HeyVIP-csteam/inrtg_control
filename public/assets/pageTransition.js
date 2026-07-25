@@ -25,6 +25,29 @@
     }, FADE_OUT_MS);
   };
 
+  // The fade-in class (baked into the static HTML — see style.css's
+  // DESIGN NOTE) is only ever meant to play ONCE, on arrival. But as
+  // long as it stays on <body>, the browser treats <body> as having a
+  // live `animation` property — which, per spec, forces <body> into its
+  // own stacking context REGARDLESS of whether the animation has
+  // actually finished playing. That breaks the starfield background
+  // (#starfieldRoot, z-index: -2, meant to sit behind everything) —
+  // once <body> has its own stacking context, -2 only sinks it behind
+  // OTHER things inside that same context, not behind <body>'s own
+  // background, so the animated space image disappears and only a flat
+  // color shows. Fix: strip the class the instant the fade-in finishes,
+  // so <body> goes back to having no `animation` at all for the rest of
+  // the page's lifetime.
+  document.body.addEventListener("animationend", (e) => {
+    if (e.animationName === "pageFadeIn") document.body.classList.remove("page-transition-in");
+  }, { once: true });
+  // Fallback in case animationend somehow never fires (edge-case browser
+  // quirks) — same class removal, just on a plain timer instead of the
+  // animation's own completion event. Redundant with the listener above
+  // in the normal case, which is fine — removing an already-removed
+  // class is a harmless no-op.
+  setTimeout(() => document.body.classList.remove("page-transition-in"), 400);
+
   /**
    * Wires up every same-tab left-click on `selector` (a CSS selector for
    * one or more <a> elements already in the DOM) to fade out before
