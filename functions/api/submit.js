@@ -1,4 +1,8 @@
-import { BRANDS, RECORD_TO_SHEET, MODULE_META, SHEET_LAYOUT, MESSAGE_TEMPLATE, SCREENSHOT_R2_ENABLED, RISK_ISSUE_AUTO_REMARKS, RISK_ISSUE_FIELD_EMOJI, ACCOUNT_ISSUE_FIELD_STYLE, PROMOTION_SHEET_CONFIG, PROMOTION_MESSAGE_TEMPLATE } from "../_shared/routing.js";
+import { BRANDS, RECORD_TO_SHEET, MODULE_META, SHEET_LAYOUT, MESSAGE_TEMPLATE, SCREENSHOT_R2_ENABLED, PROMOTION_SHEET_CONFIG, PROMOTION_MESSAGE_TEMPLATE } from "../_shared/routing.js";
+import {
+  resolveColumnValues, resolveSheetLayout, formatDateDDMMYYYY,
+  buildTicketMessage, buildTitleAndSummary,
+} from "../_shared/messageBuilders.js";
 import { appendRowToSheet, appendRowByColumns, writeRowForDate } from "../_shared/googleSheets.js";
 import { uploadAttachmentToR2, screenshotUrl } from "../_shared/r2.js";
 import { createThread } from "../_shared/threads.js";
@@ -89,19 +93,10 @@ async function handleSubmit({ request, env }) {
   }
   const screenshotLink = r2Links.join(", ");
 
-  const template = resolveTemplate(MESSAGE_TEMPLATE[moduleId], fieldMap);
-  let text;
-  if (template) {
-    text = buildMessageFromTemplate({ template, meta, brandName: brand.name, fieldMap, reporter, screenshotLink });
-  } else if (moduleId === "risk_issue") {
-    text = buildRiskIssueDynamicMessage({ brandName: brand.name, fields, fieldMap, reporter });
-  } else if (moduleId === "account_issue") {
-    text = buildAccountIssueDynamicMessage({ brandName: brand.name, fields, fieldMap, reporter });
-  } else if (moduleId === "promotion_request" && PROMOTION_MESSAGE_TEMPLATE[`${brandId}|${fieldMap.promotion}`]) {
-    text = buildPromotionRequestMessage(PROMOTION_MESSAGE_TEMPLATE[`${brandId}|${fieldMap.promotion}`], { brandName: brand.name, fieldMap, reporter });
-  } else {
-    text = buildMessage({ meta, brandName: brand.name, reporter, fields, moduleId, fieldMap });
-  }
+  const text = buildTicketMessage({
+    moduleId, brandId, meta, brand, fieldMap, fields, reporter, screenshotLink,
+    messageTemplate: MESSAGE_TEMPLATE, promotionMessageTemplate: PROMOTION_MESSAGE_TEMPLATE,
+  });
 
   // 2. Send to Telegram — photo(s)/document(s) with the info as the caption,
   //    so it shows as one message instead of text + separate photo.
@@ -121,44 +116,16 @@ async function handleSubmit({ request, env }) {
   }
   const attachmentLinks = tgResult.attachmentLinks;
 
-  // 2b. Create a TG Reply Threads record so agent replies to this exact
-  //     Telegram message can be tracked in the dashboard. Optional feature —
-  //     skipped silently until THREADS_KV is bound (see wrangler.toml).
-  let threadId = null;
-  if (env.THREADS_KV) {
-    try {
-      const title = fieldMap.issueType ? `${meta.name} — ${fieldMap.issueType}` : `${meta.name} — ${brand.name}`;
-      const summary = fields
-        .filter((f) => f.value && !["issueType"].includes(f.key))
-        .slice(0, 6)
-        .map((f) => ({ label: f.label, value: f.value }));
-      const thread = await createThread(env, {
-        module: moduleId,
-        moduleName: meta.name,
-        icon: meta.emoji,
-        accent: meta.accent,
-        brand: brand.name,
-        title,
-        submitter: reporter,
-        chatId: route.chatId,
-        topicId: route.topicId,
-        rootMessageId: tgResult.messageId,
-        rootText: text,
-        hasMedia: Array.isArray(attachments) && attachments.length > 0,
-        attachmentFileIds: tgResult.attachmentFileIds || [],
-        summary,
-      });
-      threadId = thread.id;
-    } catch {
-      // Non-fatal — the Telegram message and sheet row are already the
-      // source of truth; the reply-tracking record is a nice-to-have.
-    }
-  }
-
   // 2. Optionally log to the brand's Google Sheet (fire-and-await, but don't
   //    fail the whole request if the sheet write fails — Telegram already has it).
+  // Runs BEFORE the thread record below on purpose: if this writes a real
+  // row, we want its {sheetId, tab, startColumn, columns, row} saved on
+  // the thread as `sheetRef`, so a later edit (functions/api/threads/[id].js
+  // editDetails) knows exactly which Sheet cell range to overwrite instead
+  // of appending a duplicate row.
   let sheetLogged = false;
   let sheetError = null;
+  let sheetRef = null;
   const promoConfig = moduleId === "promotion_request" ? PROMOTION_SHEET_CONFIG[`${brandId}|${fieldMap.promotion}`] : null;
   const sheetAttempted = moduleId === "promotion_request"
     ? !!(RECORD_TO_SHEET[moduleId] && promoConfig)
@@ -167,7 +134,8 @@ async function handleSubmit({ request, env }) {
     try {
       if (moduleId === "promotion_request") {
         const values = resolveColumnValues(promoConfig.columns, { fieldMap, brand, reporter, screenshotLink, attachmentLinks });
-        await appendRowByColumns(env, promoConfig.sheetId, promoConfig.tab, promoConfig.startColumn, values);
+        const { row } = await appendRowByColumns(env, promoConfig.sheetId, promoConfig.tab, promoConfig.startColumn, values);
+        if (row) sheetRef = { sheetId: promoConfig.sheetId, tab: promoConfig.tab, startColumn: promoConfig.startColumn, columns: promoConfig.columns, row };
       } else {
         const layoutEntry = SHEET_LAYOUT[moduleId];
         if (layoutEntry && layoutEntry.pairByDate) {
@@ -175,18 +143,28 @@ async function handleSubmit({ request, env }) {
           const dateValue = formatDateDDMMYYYY(fieldMap.reportDate || fieldMap.date);
           const shiftValue = fieldMap[layoutEntry.selectorField];
           const activeSide = shiftValue === layoutEntry.rightBlock.shiftValue ? "right" : "left";
-          await writeRowForDate(env, brand.sheetId, layoutEntry.tab, {
+          const activeBlock = activeSide === "right" ? layoutEntry.rightBlock : layoutEntry.leftBlock;
+          const { row } = await writeRowForDate(env, brand.sheetId, layoutEntry.tab, {
             leftBlock: layoutEntry.leftBlock,
             rightBlock: layoutEntry.rightBlock,
             activeSide,
             dateValue,
             values,
           });
+          // `row` is the ACTUAL Sheets row this shift's data landed on —
+          // same row a same-date submission from the OTHER shift would
+          // also resolve to (see writeRowForDate()'s scan logic), but
+          // that's fine: sheetRef is stored per-THREAD, not shared, and
+          // `startColumn` is fixed to THIS shift's own block, so a later
+          // editDetails() on this specific ticket only ever touches this
+          // shift's own columns — never the other shift's half of the row.
+          if (row) sheetRef = { sheetId: brand.sheetId, tab: layoutEntry.tab, startColumn: activeBlock.startColumn, columns: layoutEntry.columns, row };
         } else {
           const layout = resolveSheetLayout(layoutEntry, fieldMap);
           if (layout) {
             const values = resolveColumnValues(layout.columns, { fieldMap, brand, reporter, screenshotLink, attachmentLinks });
-            await appendRowByColumns(env, brand.sheetId, layout.tab, layout.startColumn, values);
+            const { row } = await appendRowByColumns(env, brand.sheetId, layout.tab, layout.startColumn, values);
+            if (row) sheetRef = { sheetId: brand.sheetId, tab: layout.tab, startColumn: layout.startColumn, columns: layout.columns, row };
           } else {
             const row = {
               timestamp,
@@ -205,6 +183,40 @@ async function handleSubmit({ request, env }) {
     }
   }
 
+  // 2b. Create a TG Reply Threads record so agent replies to this exact
+  //     Telegram message can be tracked in the dashboard. Optional feature —
+  //     skipped silently until THREADS_KV is bound (see wrangler.toml).
+  let threadId = null;
+  if (env.THREADS_KV) {
+    try {
+      const { title, summary } = buildTitleAndSummary({ meta, brand, fieldMap, fields });
+      const thread = await createThread(env, {
+        module: moduleId,
+        moduleName: meta.name,
+        icon: meta.emoji,
+        accent: meta.accent,
+        brand: brand.name,
+        brandId,
+        title,
+        submitter: reporter,
+        chatId: route.chatId,
+        topicId: route.topicId,
+        rootMessageId: tgResult.messageId,
+        rootText: text,
+        hasMedia: Array.isArray(attachments) && attachments.length > 0,
+        attachmentFileIds: tgResult.attachmentFileIds || [],
+        summary,
+        fieldMap,
+        screenshotLink,
+        sheetRef,
+      });
+      threadId = thread.id;
+    } catch {
+      // Non-fatal — the Telegram message and sheet row are already the
+      // source of truth; the reply-tracking record is a nice-to-have.
+    }
+  }
+
   return json({
     ok: true,
     telegramMessageId: tgResult.messageId,
@@ -215,197 +227,6 @@ async function handleSubmit({ request, env }) {
     attachmentErrors: attachmentErrors.length ? attachmentErrors : undefined,
     r2Errors: r2Errors.length ? r2Errors : undefined,
   });
-}
-
-// Promotion Request: plain "Particular information" list (no emoji/header
-// styling, matches the reference format exactly). `key` can be a field key,
-// "brand", "pic", or { fixed: "..." } for an always-the-same value.
-function buildPromotionRequestMessage(rows, { brandName, fieldMap, reporter }) {
-  const lines = ["<b>Particular information</b>"];
-  rows.forEach((item) => {
-    let value;
-    if (typeof item.key === "object") value = item.key.fixed;
-    else if (item.key === "brand") value = brandCurrencyLabel(brandName);
-    else if (item.key === "pic") value = reporter;
-    else value = fieldMap[item.key];
-    lines.push(`<b>${escapeHtml(item.label)}:</b> ${escapeHtml(value || "-")}`);
-  });
-  return lines.join("\n");
-}
-
-function resolveColumnValues(columns, { fieldMap, brand, reporter, screenshotLink, attachmentLinks }) {
-  return columns.map((col) => {
-    if (col === null) return "-";
-    if (typeof col === "string") {
-      if (col === "brand") return brand.name || "-";
-      if (col === "pic") return reporter || "-";
-      if (col === "screenshotLink") return (screenshotLink || attachmentLinks.join(", ")) || "-";
-      if (col === "dateFormatted") return formatDateDDMMYYYY(fieldMap.reportDate || fieldMap.date) || "-";
-      return fieldMap[col] || "-";
-    }
-    // { details: ["remark", "issueDetails"] } — first non-empty field wins
-    const [, fallbackKeys] = Object.entries(col)[0];
-    for (const key of fallbackKeys) {
-      if (fieldMap[key]) return fieldMap[key];
-    }
-    return "-";
-  });
-}
-
-function resolveAutoRemark(fieldMap) {
-  for (const triggerField of ["issueType", "accountStatus", "cancelType"]) {
-    const table = RISK_ISSUE_AUTO_REMARKS[triggerField];
-    const match = table && table[fieldMap[triggerField]];
-    if (match) return match;
-  }
-  return null;
-}
-
-function resolveSheetLayout(entry, fieldMap) {
-  if (!entry) return null;
-  if (entry.selectorField) {
-    const selectorValue = fieldMap[entry.selectorField];
-    return entry.layouts[selectorValue] || entry.layouts.default || null;
-  }
-  return entry;
-}
-
-function resolveTemplate(entry, fieldMap) {
-  if (!entry) return null;
-  if (Array.isArray(entry)) return { rows: entry, spacing: "tight", emptyPlaceholder: "-" };
-  if (entry.selectorField) {
-    const selectorValue = fieldMap[entry.selectorField];
-    const chosen = entry.templates[selectorValue] || entry.templates.default;
-    return resolveTemplate(chosen, fieldMap);
-  }
-  return { rows: entry.rows, spacing: entry.spacing || "tight", emptyPlaceholder: entry.emptyPlaceholder ?? "-", header: entry.header || null };
-}
-
-function resolveFieldValue(item, { brandName, fieldMap, reporter, screenshotLink }) {
-  if (typeof item.key !== "string") {
-    const [, fallbackKeys] = Object.entries(item.key)[0];
-    return fallbackKeys.map((k) => fieldMap[k]).find((v) => v);
-  }
-  if (item.key === "brand") return brandCurrencyLabel(brandName);
-  if (item.key === "screenshotLink") return screenshotLink;
-  if (item.key === "pic") return reporter;
-  if (item.key === "dateShift") return formatDateShift(fieldMap.reportDate, fieldMap.shift);
-  if (item.key === "autoRemark") return resolveAutoRemark(fieldMap);
-  if (item.key === "submittedBy") return reporter ? `Submitted by ${reporter}` : null;
-  return fieldMap[item.key];
-}
-
-function buildMessageFromTemplate({ template, meta, brandName, fieldMap, reporter, screenshotLink }) {
-  const { rows, spacing, emptyPlaceholder, header } = template;
-  const lines = [];
-  if (header) {
-    const headerValue = header.source === "brand" ? brandName : fieldMap[header.source];
-    const titleLine = header.hideValue
-      ? `${meta.emoji} <b>${escapeHtml(meta.name)}</b>`
-      : `${meta.emoji} <b>${escapeHtml(meta.name)} — ${escapeHtml(headerValue || "-")}</b>`;
-    lines.push(titleLine);
-    if (!header.noBlankAfter) lines.push("");
-  }
-  rows.forEach((item, i) => {
-    const value = resolveFieldValue(item, { brandName, fieldMap, reporter, screenshotLink });
-    if (item.raw) {
-      if (!value) return; // skip entirely — no placeholder line for optional raw notes
-      lines.push(`${item.emoji} ${escapeHtml(value)}`);
-    } else {
-      lines.push(`${item.emoji} <b>${escapeHtml(item.label)}:</b> ${escapeHtml(value || emptyPlaceholder)}`);
-    }
-    if (spacing === "loose" && i < rows.length - 1 && !item.tight) lines.push("");
-  });
-  return lines.join("\n");
-}
-
-// "15/07/2026 ( Day Shift Report )☀️" — DD/MM/YYYY from the <input type=date>
-// value (YYYY-MM-DD), plus the shift name and a sun/moon emoji.
-function formatDateShift(isoDate, shift) {
-  const formatted = formatDateDDMMYYYY(isoDate);
-  if (!formatted) return "-";
-  const emoji = shift === "Night Shift" ? "🌙" : "☀️";
-  return `${formatted} ( ${shift || "Day Shift"} Report )${emoji}`;
-}
-
-function formatDateDDMMYYYY(isoDate) {
-  if (!isoDate) return "";
-  const [y, m, d] = isoDate.split("-");
-  if (!y || !m || !d) return isoDate;
-  return `${d}/${m}/${y}`;
-}
-
-// Used for any Risk Issue type that doesn't have its own row list in
-// MESSAGE_TEMPLATE.risk_issue.templates — keeps the same visual style
-// (emoji-labeled bold rows, header showing the Issue Type) without needing
-// a hand-written template for all 11 issue types up front.
-function buildRiskIssueDynamicMessage({ brandName, fields, fieldMap, reporter }) {
-  const lines = [`⚠️ <b>Risk Issue — ${escapeHtml(fieldMap.issueType || "-")}</b>`, ""];
-  lines.push(`🎮 <b>Brand/Platform:</b> ${escapeHtml(brandCurrencyLabel(brandName))}`);
-  lines.push(`👤 <b>Username:</b> ${escapeHtml(fieldMap.uid || "-")}`);
-
-  const middleFields = fields.filter((f) => !["issueType", "uid", "remark"].includes(f.key) && f.value);
-  if (middleFields.length) {
-    lines.push("");
-    middleFields.forEach((f) => {
-      const emoji = RISK_ISSUE_FIELD_EMOJI[f.key] || "🔸";
-      lines.push(`${emoji} <b>${escapeHtml(f.label)}:</b> ${escapeHtml(f.value)}`);
-    });
-  }
-
-  // Only show a Remark row if this issue type's form actually had a
-  // Remark field with something typed into it — several issue types
-  // (Others Bonus Related Issue, VIP Level Update Issue, KYC Issues,
-  // Remove Bank Account, Others Issues, Verify Bank Detail) use "Issue
-  // Description" instead of "Remark" and never collect fieldMap.remark
-  // at all, so this used to unconditionally print an empty "Remark: -"
-  // line even when the form never asked for one.
-  if (fieldMap.remark) {
-    lines.push("", `📝 <b>Remark:</b> ${escapeHtml(fieldMap.remark)}`);
-  }
-
-  const autoNote = resolveAutoRemark(fieldMap);
-  if (autoNote) lines.push("", `💬 ${escapeHtml(autoNote)}`);
-
-  lines.push("", `👷 <b>PIC:</b> ${escapeHtml(reporter)}`);
-  return lines.join("\n");
-}
-
-// Account Issue: header shows Issue Type, Brand/Username/type-specific
-// fields are all grouped together (no blank lines between them), then one
-// blank line before Remark and another before PIC.
-function buildAccountIssueDynamicMessage({ brandName, fields, fieldMap, reporter }) {
-  const lines = [`🔑 <b>Account Issue — ${escapeHtml(fieldMap.issueType || "-")}</b>`, ""];
-  lines.push(`🎮 <b>Brand/Platform:</b> ${escapeHtml(brandCurrencyLabel(brandName))}`);
-  lines.push(`👤 <b>Username:</b> ${escapeHtml(fieldMap.uid || "-")}`);
-
-  fields
-    .filter((f) => !["issueType", "uid", "remark"].includes(f.key) && f.value)
-    .forEach((f) => {
-      const style = ACCOUNT_ISSUE_FIELD_STYLE[f.key];
-      const emoji = style ? style.emoji : "🔸";
-      const label = style && style.label ? style.label : f.label;
-      lines.push(`${emoji} <b>${escapeHtml(label)}:</b> ${escapeHtml(f.value)}`);
-    });
-
-  lines.push("", `📝 <b>Remark:</b> ${escapeHtml(fieldMap.remark || "-")}`);
-  lines.push("", `👷 <b>PIC:</b> ${escapeHtml(reporter)}`);
-  return lines.join("\n");
-}
-
-function buildMessage({ meta, brandName, reporter, fields, moduleId, fieldMap }) {
-  const autoNote = moduleId === "risk_issue" ? resolveAutoRemark(fieldMap) : null;
-  const lines = [
-    `${meta.emoji} <b>New ${escapeHtml(meta.name)} — ${escapeHtml(brandName)}</b>`,
-    "",
-    ...fields
-      .filter((f) => f.value)
-      .map((f) => `<b>${escapeHtml(f.label)}:</b> ${escapeHtml(f.value)}`),
-    ...(autoNote ? ["", `💬 ${escapeHtml(autoNote)}`] : []),
-    "",
-    `🧑‍💼 Submitted by ${escapeHtml(reporter)}`,
-  ];
-  return lines.join("\n");
 }
 
 async function sendTelegramMessage({ botToken, route, text }) {
@@ -552,30 +373,6 @@ function base64ToBytes(base64) {
   const bytes = new Uint8Array(binary.length);
   for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
   return bytes;
-}
-
-function escapeHtml(str) {
-  return String(str)
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;");
-}
-
-// Business owner wants every TG-message "Platform"/"Brand" labeled ROW to
-// read "<Brand> <CURRENCY>" (e.g. "Crickex XYZ") — NOT the Sheet columns,
-// and NOT the "New X — Brand" title/header lines, both of which stay as
-// the plain brand name. Used at the three spots that render a labeled
-// brand row: buildPromotionRequestMessage, resolveFieldValue (the
-// MESSAGE_TEMPLATE row renderer used by QA/Risk Issue/Genie Issue/Daily
-// Report), and buildAccountIssueDynamicMessage.
-//
-// ONE PLACE TO EDIT when reusing this project for a different currency
-// market — change CURRENCY_LABEL below and every outgoing Telegram
-// message updates automatically. Leave it as "" to drop the suffix
-// entirely and show just the plain brand name.
-const CURRENCY_LABEL = "INR";
-function brandCurrencyLabel(name) {
-  return name && CURRENCY_LABEL ? `${name} ${CURRENCY_LABEL}` : name;
 }
 
 function json(obj, status = 200) {

@@ -91,6 +91,45 @@ export async function appendRowByColumns(env, sheetId, tabName, startColumn, val
   if (!res.ok) {
     throw new Error(`Sheets append failed (${res.status}): ${await res.text()}`);
   }
+  // `updates.updatedRange` looks like "BJ!A192:I192" — pull the row number
+  // out of it so callers (submit.js) can remember exactly which row this
+  // submission landed on, for editDetails() in threads/[id].js to update
+  // later. Best-effort: a row is still successfully written even if this
+  // parse fails for some reason, so callers must treat a null row as
+  // "can't do row-level edits later", not as the append itself failing.
+  let row = null;
+  try {
+    const body = await res.json();
+    const updatedRange = body?.updates?.updatedRange || "";
+    const match = updatedRange.match(/![A-Z]+(\d+):/);
+    if (match) row = parseInt(match[1], 10);
+  } catch {
+    // Non-fatal — see comment above.
+  }
+  return { row };
+}
+
+/**
+ * Overwrites an already-written row in place (as opposed to
+ * appendRowByColumns, which always adds a new one) — used by
+ * editDetails() in functions/api/threads/[id].js so an edit made on the
+ * website can update the exact same Sheet row the original submission
+ * wrote to, instead of creating a duplicate. `row` is the 1-indexed
+ * Sheets row number returned by appendRowByColumns() at submit time.
+ */
+export async function updateRowByColumns(env, sheetId, tabName, startColumn, row, values) {
+  const token = await getAccessToken(env);
+  const endColumn = columnLetter(columnIndex(startColumn) + values.length - 1);
+  const range = `${tabName}!${startColumn}${row}:${endColumn}${row}`;
+
+  const updateUrl =
+    `https://sheets.googleapis.com/v4/spreadsheets/${sheetId}/values/` +
+    `${encodeURIComponent(range)}?valueInputOption=RAW`;
+
+  const res = await sheetsFetch(updateUrl, token, { values: [values] }, "PUT");
+  if (!res.ok) {
+    throw new Error(`Sheets update failed (${res.status}): ${await res.text()}`);
+  }
 }
 
 /**
@@ -142,6 +181,13 @@ export async function writeRowForDate(env, sheetId, tab, { leftBlock, rightBlock
     body: JSON.stringify({ values: [values] }),
   });
   if (!putRes.ok) throw new Error(`Sheets update failed (${putRes.status}): ${await putRes.text()}`);
+  // targetRow is computed locally above (from the scan), not parsed out of
+  // the PUT response — unlike appendRowByColumns, this write always knows
+  // exactly which row it's touching before it even makes the request. See
+  // submit.js's daily_report branch for why this now gets returned:
+  // editDetails() (functions/api/threads/[id].js) needs it to overwrite
+  // the right row later instead of guessing.
+  return { row: targetRow };
 }
 
 /**
@@ -271,9 +317,9 @@ async function ensureTabWithHeaders(token, sheetId, tabName, headers) {
   );
 }
 
-function sheetsFetch(url, token, body) {
+function sheetsFetch(url, token, body, method = "POST") {
   return fetch(url, {
-    method: "POST",
+    method,
     headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
     body: JSON.stringify(body),
   });

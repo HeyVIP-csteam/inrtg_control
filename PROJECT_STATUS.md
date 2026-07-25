@@ -4,7 +4,87 @@ Paste this whole document as the first message in a new conversation, along
 with the latest `telegram-issue-hub-updated.zip`. That gives the new chat
 the complete current state of the project.
 
-## ✨ 新增,2026-07-23 — 首页 ↔ 表单页跳转加了淡入淡出
+## 🔁 移植自 PKR,2026-07-23 — 工单字段级编辑("🔄 Sync to Sheet")
+
+**改动前**：`threads.html` 点 ✏️ 编辑工单,只有一个 `prompt()` 弹窗,把
+**整条原始 Telegram 消息文本**丢给你手改,改完存回去——如果这个工单当
+时写过 Google Sheet,那一行**完全不会跟着变**,Telegram 消息和 Sheet
+两边各自为政,没有任何机制保持同步。
+
+**改动后**：新提交的工单会多一个按钮 **📊**,点开是一个跟提交表单一样
+的、按字段填写的表单(用的是同一份 `window.MODULES` schema,预填工单
+当时的真实字段值)。点"Save & Sync":
+1. 用**跟 `submit.js` 当初生成消息一模一样的函数**重新拼出 Telegram
+   消息文本,编辑那条线上的消息
+2. 如果这个工单当时写过一行可追踪的 Sheet 记录,**原地覆盖那一行**
+   (不是新增一行)
+3. 侧边栏的标题/预览文字也跟着更新
+
+**✏️ 没有被删除**——只对"这次改动之前提交的老工单"显示(老工单没存
+`fieldMap`/`brandId`/`sheetRef`,📊 没有数据可以拿来重建表单)。**新
+工单只显示 📊,不是两个按钮都显示**,这是刻意设计,合并/以后维护时
+不要把 ✏️ 删掉。
+
+### 这次是"按架构合并",不是整份复制(PKR 自己在 CHANGES.md 里强调过)
+
+因为 `submit.js` 这个文件本身就是每个币种项目各自维护、各不相同的
+(模块列表不一样),所以没有直接拿 PKR 的 `submit.js` 覆盖 INR 的,而是
+按同样的思路在 INR 自己的代码基础上做了同等的两处结构调整:
+
+1. **把所有"拼消息文本"/"拼 Sheet 列值"的函数,从 `submit.js` 搬进新
+   文件 `functions/_shared/messageBuilders.js`**,`submit.js`/
+   `threads/[id].js` 都从这里导入,不会各自维护一份、慢慢跑偏。INR 版
+   跟 PKR 版的差别:**没有 `buildBankIssueDynamicMessage`/
+   `buildWithdrawIssueDynamicMessage`**(INR 没有这两个模块),
+   `CURRENCY_LABEL` 保持 `"INR"`
+2. **Sheet 写入的顺序挪到 `createThread()` 之前**,并且把写入返回的
+   实际行号(`row`)存进 thread 记录的新字段 `sheetRef`(`{sheetId,
+   tab, startColumn, columns, row}`)——这样以后编辑时才知道该覆盖
+   Sheet 的哪一行,而不是又新增一行
+
+**涉及的文件(6 个)**：
+- `functions/_shared/messageBuilders.js`(新建)
+- `functions/api/submit.js`(结构性重排,不是整份覆盖)
+- `functions/_shared/googleSheets.js`(`appendRowByColumns` 现在会
+  返回 `{row}`,新增 `updateRowByColumns`,`sheetsFetch` 支持
+  `method` 参数)
+- `functions/_shared/threads.js`(`createThread` 加 4 个新参数,新增
+  `updateThreadDetails`)
+- `functions/api/threads/[id].js`(新增 `editDetails` action)
+- `public/threads.html`(加载 `schemas.js`、✏️/📊 按钮互斥逻辑、新增
+  `openEditDetailsModal()`)
+- `public/assets/style.css`(追加 `.edit-details-*` 样式,没动任何
+  现有规则)
+
+**特意没有搬过来的东西**：PKR 那份 patch 里 `createThread()` 还带了
+一个 `attachmentNames` 参数,但那是**另一个还没合并进 INR 的功能**
+(不在这次 patch 自己写的 CHANGES.md 范围内),这次没有引入。
+
+## 🔧 修复,2026-07-23 — Daily Report 现在也支持 "🔄 Sync to Sheet" 了
+
+上面那次合并完成时,Daily Report 的工单其实**已经会显示 📊 按钮**(按钮
+显示条件 `t.fieldMap && t.brandId` 是所有模块统一传的,不分模块),
+只是点了之后**只会同步 Telegram 消息,Sheet 那部分会被静默跳过**——
+因为 `writeRowForDate()`(Daily Report 专用的"两个班次共用同一行"写入
+函数)当时没有把最终写到了第几行汇报出来,`sheetRef` 只能是 `null`。
+
+**修复**：
+- `functions/_shared/googleSheets.js` 的 `writeRowForDate()` 现在会把
+  内部扫描算出来的目标行号 `return { row: targetRow }`
+- `functions/api/submit.js` 的 `daily_report` 分支,捕获这个行号,构建
+  `sheetRef = { sheetId, tab, startColumn, columns, row }`——
+  `startColumn` 固定用**这次实际写入的那个班次自己的 block**(Day
+  Shift 是 `leftBlock.startColumn`,Night Shift 是
+  `rightBlock.startColumn`),不是共享的
+
+**为什么这样是安全的,不会日班夜班互相覆盖**：`sheetRef` 是存在**每
+个工单自己身上**的,不是全局共享的一份。同一天日班、夜班各自的工单,
+`sheetRef.row` 会指向**同一行**(这是设计上就该如此,两个班次本来就
+共用那一行),但 `sheetRef.startColumn` 各自记的是**自己那半边**——
+之后编辑日班工单,只会覆盖左半边(B~M 列);编辑夜班工单,只会覆盖
+右半边(O~Z 列),不会碰到对方的数据。
+
+
 
 **背景**：点首页侧边栏的模块进 `form.html`,以及表单页点"Back to Home"
 回首页,都是**真实的整页跳转**(普通 `<a href>`,不是单页应用),浏览器

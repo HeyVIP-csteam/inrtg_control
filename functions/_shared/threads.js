@@ -193,7 +193,7 @@ async function sweepExpired(env, list) {
   return keep;
 }
 
-export async function createThread(env, { module: moduleId, moduleName, icon, accent, brand, title, submitter, chatId, topicId, rootMessageId, rootText, hasMedia, attachmentFileIds, summary }) {
+export async function createThread(env, { module: moduleId, moduleName, icon, accent, brand, brandId, title, submitter, chatId, topicId, rootMessageId, rootText, hasMedia, attachmentFileIds, summary, fieldMap, screenshotLink, sheetRef }) {
   const now = new Date().toISOString();
   const thread = {
     id: newId(),
@@ -202,6 +202,11 @@ export async function createThread(env, { module: moduleId, moduleName, icon, ac
     icon,
     accent,
     brand,
+    // routing.js's BRANDS key (e.g. "crickex") — display name alone
+    // (`brand` above) isn't enough to re-look-up BRANDS[...] later, and
+    // editDetails() (see functions/api/threads/[id].js) needs the real
+    // brand object to rebuild the message/Sheet row correctly.
+    brandId: brandId || null,
     title,
     submitter,
     submittedAt: now,
@@ -225,6 +230,21 @@ export async function createThread(env, { module: moduleId, moduleName, icon, ac
     solved: false,
     solvedAt: null,
     deleted: false,
+    // The raw { fieldKey: value } this ticket was submitted with, plus
+    // where (if anywhere) it landed in a Google Sheet — both only used by
+    // the "Sync to Sheet" editDetails action (functions/api/threads/[id].js).
+    // Threads created before this existed just have fieldMap: null /
+    // sheetRef: null, meaning they can still get their Telegram message
+    // edited the old way, just not the Sheet-syncing kind of edit.
+    fieldMap: fieldMap || null,
+    screenshotLink: screenshotLink || "",
+    // { sheetId, tab, startColumn, columns, row } — null if this
+    // submission never wrote a (trackable) Sheet row. See submit.js's
+    // comment on `sheetRef` for why it's captured at write time instead
+    // of re-derived later (routing.js's config for this brand+module
+    // could change after the fact; the row this ticket ACTUALLY landed
+    // on never does).
+    sheetRef: sheetRef || null,
   };
   await Promise.all([
     saveThread(env, thread),
@@ -546,6 +566,31 @@ export async function updateRootText(env, threadId, text) {
   thread.rootEdited = true;
   thread.lastActivity = new Date().toISOString();
   await saveThread(env, thread);
+  return thread;
+}
+
+// Used by the "Sync to Sheet" editDetails action (functions/api/threads/
+// [id].js) after an agent corrects a ticket's field values — updates
+// everything that could have changed as a result: the raw fieldMap, the
+// re-rendered Telegram message text (rootText), and the sidebar's
+// title/preview (title/summary), which were all originally derived from
+// fieldMap at submission time and would otherwise go stale. Unlike
+// updateRootText above, this DOES call patchListCache() — title/summary
+// are exactly what the sidebar shows, so a stale cache here would mean
+// agents see outdated info until the next scan.
+export async function updateThreadDetails(env, threadId, { fieldMap, rootText, title, summary }) {
+  const thread = await getThread(env, threadId);
+  if (!thread) return null;
+  if (fieldMap !== undefined) thread.fieldMap = fieldMap;
+  if (rootText !== undefined) {
+    thread.rootText = rootText;
+    thread.rootEdited = true;
+  }
+  if (title !== undefined) thread.title = title;
+  if (summary !== undefined) thread.summary = summary;
+  thread.lastActivity = new Date().toISOString();
+  await saveThread(env, thread);
+  await patchListCache(env, thread);
   return thread;
 }
 
