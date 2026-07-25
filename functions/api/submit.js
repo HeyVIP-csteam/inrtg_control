@@ -79,7 +79,11 @@ async function handleSubmit({ request, env }) {
     // Placeholder first, 30s TTL — so a near-simultaneous duplicate
     // request (arriving before the real processing below has finished)
     // still gets caught immediately instead of racing past this check too.
-    await env.THREADS_KV.put(dedupeKey, JSON.stringify({ ok: true, duplicate: true, note: "Original submission was still processing — this is not a second ticket." }), { expirationTtl: 30 });
+    // Cloudflare KV enforces a hard minimum of 60s for expirationTtl —
+    // passing 30 here (as originally written) makes EVERY put() call
+    // fail with a 400, which breaks EVERY submission, not just duplicate
+    // ones (this dedupe check runs on every request, not just repeats).
+    await env.THREADS_KV.put(dedupeKey, JSON.stringify({ ok: true, duplicate: true, note: "Original submission was still processing — this is not a second ticket." }), { expirationTtl: 60 });
   }
 
   const botToken = env.TELEGRAM_BOT_TOKEN;

@@ -60,7 +60,29 @@ the complete current state of the project.
 一个 `attachmentNames` 参数,但那是**另一个还没合并进 INR 的功能**
 (不在这次 patch 自己写的 CHANGES.md 范围内),这次没有引入。
 
-## 🐛 修复,2026-07-25 — 淡入淡出效果导致星空背景消失
+## 🐛 修复,2026-07-25 — 防重复提交那次改动,KV TTL 写死了 30 秒,导致所有提交全部失败
+
+**现象**：提交任何工单,不管是不是重复提交,一律报错
+`KV PUT failed: 400 Invalid expiration_ttl of 30. Expiration TTL must be
+at least 60.`
+
+**根因**：Cloudflare KV 的 `expirationTtl` 有**硬性最低 60 秒**的限制,
+低于这个数值直接拒绝写入、报 400。之前那份"防重复提交"的改动说明里,
+占位符那步写的是 `expirationTtl: 30`——而这个占位符写入是**每次提交
+都会跑一遍**的(不是只有重复提交才触发),所以这个数值错误直接导致
+**所有工单提交全部失败**,不分是不是重复。
+
+**修复**：改成 `60`(Cloudflare 允许的最小值)。只改了
+`functions/api/submit.js` 这一行。
+
+**顺带说明**：同一批截图里反馈的"Account Management 点击没反应",
+不是新 bug——是上一条修复的 `pageTransition.js` 那个"脚本报错中断
+执行"的问题的连锁反应(`window.wireFadeLinks` 没定义成功 →
+调用它直接报错 → 后面绑定 Account Management 点击事件的代码根本没
+跑到)。这次一起重新打包的 `pageTransition.js` 已经带着上一条的修复,
+不需要额外改动。
+
+
 
 **现象**：首页/表单页(用了淡入淡出效果的两个页面)背景变成一片纯色,
 动态星空/星球图完全消失;`threads.html`(没加这个效果)背景正常。
@@ -73,11 +95,17 @@ the complete current state of the project.
 `-2` 就只能在这个新层内部生效,没法再垫到 `<body>` 自己的背景下面,
 背景直接消失,只剩一片纯色。
 
-**修复**：`public/assets/pageTransition.js`——淡入动画播完的瞬间,主动
-把 `page-transition-in` 这个 class 摘掉(监听 `animationend`,另外加了
-一个 400ms 兜底 `setTimeout` 防止极端情况下事件没触发),`<body>` 恢复
-成"没有 animation"的状态,星空背景的堆叠顺序就正常了。只改了这一个
-文件。
+**第一版修复(有 bug,实际没生效)**：一开始写的是动画播完就摘掉这个
+class,但**这段代码直接调用了 `document.body.addEventListener(...)`**
+——而 `pageTransition.js` 是放在 `<head>` 里、不带 `defer` 的脚本,
+执行的时候 `<body>` 还没解析出来,`document.body` 是 `null`,这行代码
+直接报错,**还把这个脚本文件剩下的代码一起中断执行**(包括下面定义
+`window.wireFadeLinks` 那部分),相当于这次"修复"自己又引入了一个新
+问题,而且第一次报告"还是一样"是真的一样,压根没生效过。
+
+**真正的修复**：改成防御性写法,跟 `starfield.js` 本来就在用的同一个
+套路——`<body>` 存在就直接跑清理逻辑,不存在就等 `DOMContentLoaded`
+再跑。只改了 `public/assets/pageTransition.js` 这一个文件。
 
 
 

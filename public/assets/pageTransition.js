@@ -38,15 +38,31 @@
   // color shows. Fix: strip the class the instant the fade-in finishes,
   // so <body> goes back to having no `animation` at all for the rest of
   // the page's lifetime.
-  document.body.addEventListener("animationend", (e) => {
-    if (e.animationName === "pageFadeIn") document.body.classList.remove("page-transition-in");
-  }, { once: true });
-  // Fallback in case animationend somehow never fires (edge-case browser
-  // quirks) — same class removal, just on a plain timer instead of the
-  // animation's own completion event. Redundant with the listener above
-  // in the normal case, which is fine — removing an already-removed
-  // class is a harmless no-op.
-  setTimeout(() => document.body.classList.remove("page-transition-in"), 400);
+  //
+  // IMPORTANT: this <script> tag lives in <head> and is NOT deferred, so
+  // it runs WHILE <head> is still being parsed — <body> doesn't exist
+  // yet at this point (document.body is null). A first version of this
+  // fix called document.body.addEventListener(...) directly here, which
+  // threw immediately (can't read properties of null) and silently
+  // killed the REST of this script's execution too, including the
+  // window.wireFadeLinks assignment below — so the previous "fix"
+  // couldn't have been working at all. Same guard pattern starfield.js
+  // already uses: run right away if <body> happens to already exist
+  // (e.g. this script were ever moved to load later), otherwise wait for
+  // it to show up.
+  function cleanUpFadeInClass() {
+    document.body.addEventListener("animationend", (e) => {
+      if (e.animationName === "pageFadeIn") document.body.classList.remove("page-transition-in");
+    }, { once: true });
+    // Fallback in case animationend somehow never fires (edge-case
+    // browser quirks) — same class removal, just on a plain timer
+    // instead of the animation's own completion event. Redundant with
+    // the listener above in the normal case, which is fine — removing
+    // an already-removed class is a harmless no-op.
+    setTimeout(() => document.body.classList.remove("page-transition-in"), 400);
+  }
+  if (document.body) cleanUpFadeInClass();
+  else document.addEventListener("DOMContentLoaded", cleanUpFadeInClass);
 
   /**
    * Wires up every same-tab left-click on `selector` (a CSS selector for
