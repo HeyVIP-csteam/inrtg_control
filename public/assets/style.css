@@ -1,4 +1,11 @@
-@import url("https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;600&display=swap");
+/* Space Grotesk / Inter / JetBrains Mono are loaded via a <link> tag in
+   each HTML file's <head> now, not an @import here — @import forces the
+   browser to wait for that external font-CSS request to finish before it
+   can even start applying the REST of this file's own rules (body's
+   background, the starfield styles, etc.), chaining two network requests
+   back-to-back instead of letting them load in parallel. That's what was
+   stretching out the "flat fallback color" window on page navigation —
+   see the critical inline <style> in index.html/form.html's <head>. */
 
 :root {
   --ink: #1b2559;

@@ -60,7 +60,88 @@ the complete current state of the project.
 一个 `attachmentNames` 参数,但那是**另一个还没合并进 INR 的功能**
 (不在这次 patch 自己写的 CHANGES.md 范围内),这次没有引入。
 
-## 🐛 修复,2026-07-25 — 星空背景消失,第四轮排查:真正的深层原因
+## 🐛 修复,2026-07-25 — TID 重复的真正根因是 Cloudflare 边缘缓存,不只是抢跑时间差
+
+**用户反馈**：即使 Sheet 数据本身是对的,重新点 Generate 有时候还是会
+吐出旧编号——说明不只是上一条修复的"抢跑时间差"问题,还有更根本的
+原因。
+
+**真正根因**：`getNextSequenceValue()`(以及同一个文件里另外三处读取
+Google Sheets 的函数)请求 Google Sheets API 时,**URL 是固定不变的**
+(比如永远是 `Tab!B2:B100000` 这个范围,不管表格里实际有多少行数据)。
+Cloudflare Workers 的 `fetch()` 默认会遵循标准 HTTP 缓存规则,哪怕是
+请求第三方 API(比如 Google Sheets)也一样——如果 Google 的响应带着
+可缓存的 header,Cloudflare 边缘节点就可能把这次查询结果**缓存住**,
+下次同样的 URL 请求,直接返回缓存里的旧数据,根本不会真的再问一次
+Google Sheets。这才是"Sheet 数据明明对,Generate 还是给旧编号"的真正
+原因——不是竞争条件,是缓存吐出了过期数据。
+
+**修复**：`functions/_shared/googleSheets.js` 里全部 4 处读取 Sheet
+数据的 `fetch()` 调用(`getNextSequenceValue`、`writeRowForDate` 的
+扫描读取、`getSheetTabTitles`、`batchGetValues`),全部加上明确禁用
+缓存的设置(`cf: { cacheTtl: -1, cacheEverything: false }` +
+`Cache-Control: no-cache` 请求头),强制每次都真正打到 Google Sheets,
+不吃任何缓存。
+
+**这是共用函数级别的修复,不分品牌**——`getNextSequenceValue()` 是
+所有品牌、所有 Promotion 共用的同一个函数,这次修完,13 个品牌/推广
+组合全部一起受益,不需要每个品牌单独处理。`writeRowForDate` 影响的是
+Daily Report(同样的缓存问题理论上也可能导致"没找到今天已有的那一行,
+又新增了一行"这种重复),`getSheetTabTitles`/`batchGetValues` 影响的
+是 Promo Code Search 的查询结果新鲜度。
+
+
+
+**现象**：`MP INR Promotion Manual Issue Bonus` 这类表里,自动生成的
+TID 出现了重复(比如 `MPBD0392`/`MPBD0393` 在同一张表里出现了两次,
+分别对应完全不同日期、不同 agent 的两次提交)。
+
+**根因**：TID 是靠表单里一个"Generate"按钮(`/api/next-tid` 接口)
+生成的,这个按钮**在提交之前就能点**——agent 点了按钮拿到预览的编号
+(比如 "MPBD0392")之后,可能还要花好几分钟继续填完表单其他字段才会
+真正点提交。这段时间里,`getNextSequenceValue()` 判断"下一个编号"
+用的是"扫描 Sheet,找最后一行有值的那个编号"——如果另一个 agent 在
+这几分钟内**也**点了 Generate(这时候前一个人的那一行还没真正写进
+表格),扫描到的"最后一行"还是同一行,两边就会拿到**一模一样**的
+预览编号,谁先提交谁占到,后提交的那个人还是会带着同一个编号交上去,
+造成重复。
+
+**修复**：`functions/api/submit.js`——**真正提交(写入 Sheet)之前**,
+再重新扫描一次当前真实的"下一个编号";如果跟 agent 表单里带着的编号
+对不上(说明这段等待期间有别的提交抢先用掉了),**静默换成最新扫描到
+的编号**再继续写入。这样把"能产生重复"的等待窗口,从"agent 填表单
+那几分钟"压缩到"这次重新扫描到真正写入之间的几十毫秒",不是数学上
+绝对杜绝(理论上还是有极小概率两次提交精确同一瞬间冲突),但已经覆盖
+了实际观察到的这种"隔了好几分钟才重复"的真实场景。
+
+**⚠️ 这次修复不会自动清理已经产生的重复数据**——截图里那两行
+`MPBD0392`/`MPBD0393`(2026-07-24、07-25 提交的那两行)需要手动去
+Sheet 里改成正确的编号。
+
+
+
+**现象**：首页 ↔ 表单页跳转时,"防白屏"那个纯色兜底背景(深色导航蓝/
+浅色版本 `#dbe7fb`)停留的时间比设计预期长不少,不是一闪而过。
+
+**根因**：`style.css` 文件**第一行**是:
+
+```css
+@import url("https://fonts.googleapis.com/css2?family=Space+Grotesk...");
+```
+
+`@import` 写在样式表最开头,会强迫浏览器**先等这个 Google Fonts 请求
+完全返回**,才处理 `style.css` 剩下的规则(包括真正的深色背景、星空
+样式)——相当于把"加载 CSS"这件事,从"并行请求两个文件"变成"串行:
+先等字体、再等真正的样式表",凭空拉长了纯色兜底背景显示的窗口期。
+
+**修复**：把 Google Fonts 的加载方式,从 `style.css` 里的 `@import`
+改成 6 个 HTML 文件(`index.html`、`form.html`、`login.html`、
+`threads.html`、`promo.html`、`accounts-admin.html`)各自 `<head>`
+里的标准 `<link rel="stylesheet">` 标签,外加两条
+`<link rel="preconnect">` 提前建好连接——这样字体和 `style.css` 变成
+**并行加载**,不再互相等待,纯色兜底背景显示的时间会明显缩短。
+
+
 
 **排查了四轮才彻底定位,完整记录一下,避免以后再走弯路：**
 

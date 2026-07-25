@@ -3,7 +3,7 @@ import {
   resolveColumnValues, resolveSheetLayout, formatDateDDMMYYYY,
   buildTicketMessage, buildTitleAndSummary,
 } from "../_shared/messageBuilders.js";
-import { appendRowToSheet, appendRowByColumns, writeRowForDate } from "../_shared/googleSheets.js";
+import { appendRowToSheet, appendRowByColumns, writeRowForDate, getNextSequenceValue } from "../_shared/googleSheets.js";
 import { uploadAttachmentToR2, screenshotUrl } from "../_shared/r2.js";
 import { createThread } from "../_shared/threads.js";
 import { verifyRequest, canSeeBrand } from "../_shared/accounts.js";
@@ -100,6 +100,41 @@ async function handleSubmit({ request, env }) {
   const route = routeOverride || brand.telegram[moduleId] || brand.telegram.default;
   const timestamp = new Date().toISOString().replace("T", " ").slice(0, 19) + " UTC";
   const fieldMap = Object.fromEntries(fields.map((f) => [f.key, f.value]));
+
+  // Promotion Request's TID gets shown to the agent via the "Generate"
+  // button (see app.js) BEFORE they submit — often minutes before, while
+  // they're still filling out the rest of the form. That preview is a
+  // point-in-time READ of "what's the next TID after the last row in the
+  // sheet right now"; if a second submission (a different agent, or the
+  // same one double-clicking Generate) reads that same "last row" before
+  // THIS one has actually been written, both end up with the identical
+  // previewed TID — nothing enforces it's still free by the time Submit
+  // is actually clicked. Close that gap here, right before the real
+  // write: re-check what the CURRENT next TID actually is; if it no
+  // longer matches what the agent's form is holding (someone else's
+  // submission landed in the meantime), silently swap in the fresh one
+  // instead of writing a duplicate. Shrinks the real race window from
+  // "however long the agent takes to fill out the form" down to the
+  // handful of milliseconds between this check and the write below —
+  // not a mathematical guarantee under true simultaneous submissions,
+  // but closes the actual gap that was causing real duplicates.
+  if (moduleId === "promotion_request" && fieldMap.tid) {
+    const freshConfig = PROMOTION_SHEET_CONFIG[`${brandId}|${fieldMap.promotion}`];
+    if (freshConfig) {
+      try {
+        const fresh = await getNextSequenceValue(env, freshConfig.sheetId, freshConfig.tab, freshConfig.tidColumn || freshConfig.startColumn);
+        if (fresh.next && fresh.next !== fieldMap.tid) {
+          fieldMap.tid = fresh.next;
+          const tidField = fields.find((f) => f.key === "tid");
+          if (tidField) tidField.value = fresh.next;
+        }
+      } catch {
+        // Best-effort — if this re-check itself fails (Sheets hiccup),
+        // fall through and submit with whatever TID the agent's form
+        // already had rather than blocking the whole submission over it.
+      }
+    }
+  }
 
   // 1. Upload attachments to R2 first (if configured) so the message text
   //    can include a real, directly-openable screenshot link.

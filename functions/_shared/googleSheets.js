@@ -147,7 +147,10 @@ export async function writeRowForDate(env, sheetId, tab, { leftBlock, rightBlock
   const scanEndColumn = columnLetter(columnIndex(rightBlock.startColumn) + rightBlock.width - 1);
   const scanRange = `${tab}!${leftBlock.startColumn}2:${scanEndColumn}1000`;
   const getUrl = `https://sheets.googleapis.com/v4/spreadsheets/${sheetId}/values/${encodeURIComponent(scanRange)}`;
-  const getRes = await fetch(getUrl, { headers: { Authorization: `Bearer ${token}` } });
+  const getRes = await fetch(getUrl, {
+    headers: { Authorization: `Bearer ${token}`, "Cache-Control": "no-cache" },
+    cf: { cacheTtl: -1, cacheEverything: false },
+  });
   if (!getRes.ok) throw new Error(`Sheets read failed (${getRes.status}): ${await getRes.text()}`);
   const data = await getRes.json();
   const rows = data.values || [];
@@ -201,7 +204,10 @@ export async function writeRowForDate(env, sheetId, tab, { leftBlock, rightBlock
 export async function getSheetTabTitles(env, sheetId) {
   const token = await getAccessToken(env);
   const url = `https://sheets.googleapis.com/v4/spreadsheets/${sheetId}?fields=sheets.properties.title`;
-  const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+  const res = await fetch(url, {
+    headers: { Authorization: `Bearer ${token}`, "Cache-Control": "no-cache" },
+    cf: { cacheTtl: -1, cacheEverything: false },
+  });
   if (!res.ok) throw new Error(`Sheets metadata read failed (${res.status}): ${await res.text()}`);
   const data = await res.json();
   return (data.sheets || []).map((s) => s.properties.title);
@@ -218,7 +224,10 @@ export async function batchGetValues(env, sheetId, ranges) {
   const token = await getAccessToken(env);
   const params = ranges.map((r) => `ranges=${encodeURIComponent(r)}`).join("&");
   const url = `https://sheets.googleapis.com/v4/spreadsheets/${sheetId}/values:batchGet?${params}&valueRenderOption=FORMATTED_VALUE`;
-  const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+  const res = await fetch(url, {
+    headers: { Authorization: `Bearer ${token}`, "Cache-Control": "no-cache" },
+    cf: { cacheTtl: -1, cacheEverything: false },
+  });
   if (!res.ok) throw new Error(`Sheets batchGet failed (${res.status}): ${await res.text()}`);
   const data = await res.json();
   return data.valueRanges || [];
@@ -249,7 +258,20 @@ export async function getNextSequenceValue(env, sheetId, tab, column) {
   const token = await getAccessToken(env);
   const range = `${tab}!${column}2:${column}100000`;
   const url = `https://sheets.googleapis.com/v4/spreadsheets/${sheetId}/values/${encodeURIComponent(range)}`;
-  const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+  // This URL is IDENTICAL on every call (same fixed range, regardless of
+  // how much data is actually in the sheet) — exactly the condition that
+  // makes Cloudflare's edge cache (which fetch() respects by default,
+  // even for third-party origins like the Sheets API) serve back a
+  // STALE cached response instead of re-querying Google Sheets, if the
+  // API response happens to include cacheable headers. That would show
+  // up as "the Generate button hands back an old TID even though the
+  // sheet itself is correct" — not a race condition at all, just plain
+  // stale data. `cf: { cacheTtl: -1 ... }` + a `no-cache` request header
+  // both explicitly opt this request out of caching, at every layer.
+  const res = await fetch(url, {
+    headers: { Authorization: `Bearer ${token}`, "Cache-Control": "no-cache" },
+    cf: { cacheTtl: -1, cacheEverything: false },
+  });
   if (!res.ok) throw new Error(`Sheets read failed (${res.status}): ${await res.text()}`);
   const data = await res.json();
   const rows = data.values || [];
