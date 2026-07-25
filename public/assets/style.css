@@ -1237,8 +1237,8 @@ h1 {
    immediately rather than getting stuck invisible. */
 @keyframes pageFadeIn { from { opacity: 0; } to { opacity: 1; } }
 @keyframes pageFadeOut { to { opacity: 0; } }
-body.page-transition-in { animation: pageFadeIn 0.22s ease; }
-body.page-transition-out { animation: pageFadeOut 0.16s ease forwards; }
+body.page-transition-in { animation: pageFadeIn 0.12s ease; }
+body.page-transition-out { animation: pageFadeOut 0.09s ease forwards; }
 
 /* ---- "Edit fields — syncs Telegram + Sheet" modal, threads.html only.
    Field rows themselves reuse the existing .field/label/input/select/

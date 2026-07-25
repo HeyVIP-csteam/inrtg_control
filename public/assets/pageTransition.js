@@ -15,7 +15,7 @@
  * just following the link normally.
  */
 (function () {
-  const FADE_OUT_MS = 160; // matches .page-transition-out's animation-duration in style.css
+  const FADE_OUT_MS = 90; // matches .page-transition-out's animation-duration in style.css
 
   window.fadeNavigate = function fadeNavigate(url) {
     document.body.classList.remove("page-transition-in");
