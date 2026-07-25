@@ -60,7 +60,37 @@ the complete current state of the project.
 一个 `attachmentNames` 参数,但那是**另一个还没合并进 INR 的功能**
 (不在这次 patch 自己写的 CHANGES.md 范围内),这次没有引入。
 
-## 🐛 修复,2026-07-25 — 防重复提交那次改动,KV TTL 写死了 30 秒,导致所有提交全部失败
+## 🐛 修复,2026-07-25 — 星空背景消失,这次是真正的根因(前两次都没挖对)
+
+**这个问题排查了三轮才真正找到根子,记录清楚方便以后不要再踩同一个坑：**
+
+- **第一轮猜测**(`animation` 让 `<body>` 强制建立堆叠层)：方向部分
+  正确(`page-transition-in` 这个 class 确实该在动画播完后摘掉,这个
+  修复本身没错,保留了),但代码有 bug(`document.body` 在 `<head>`
+  阶段还不存在),根本没跑起来
+- **第二轮**：把执行时机的 bug 修好了,但背景还是没恢复——说明
+  堆叠层不是唯一原因,甚至可能都不是主要原因
+
+**真正原因**："防白屏"那次改动加的内联样式写的是
+`html, body { background: #090c1c; }`——**把 `<body>` 也一起写死了**。
+但 `style.css` 里 `body` 自己的规则是：
+
+```css
+body { background: var(--page-bg); transition: background 0.2s ease; }
+```
+
+`body` 的背景**设计成主题切换时要有过渡动画**。我的内联样式把 body
+背景强行设成纯色之后,浏览器要把它**过渡**到 `style.css` 里真正的
+星空渐变——但"纯色"和"渐变图片"这两种值,浏览器没法做平滑过渡插值,
+这个过渡经常卡住、切不过去,星空背景就这么没了。
+
+**修复**：内联样式**只设置 `<html>` 的背景,不再碰 `<body>`**。原理
+不变——`style.css` 加载完之前,`<body>` 自己没有任何背景规则(透明),
+`<html>` 的深色背景一样能透出来防白屏;但不再直接给 `<body>` 设置
+背景,就不会跟它自己的 `transition`/渐变系统打架。改了
+`index.html`/`form.html` 两个文件的 `<head>` 内联样式部分。
+
+
 
 **现象**：提交任何工单,不管是不是重复提交,一律报错
 `KV PUT failed: 400 Invalid expiration_ttl of 30. Expiration TTL must be

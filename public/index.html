@@ -11,13 +11,26 @@
      shows through for a beat between "old page faded out" and "new
      page's real CSS painted" — a real gap in a genuine full-page
      navigation, not something any particular transition animation can
-     paper over. Falls back to a light-theme-ish tint only for browsers/
-     OSes reporting prefers-color-scheme: light — this can't read the
-     saved theme.js/localStorage choice (that needs JS to run first),
-     but this project's usage skews dark, so this covers the common case
-     with zero flash and is still strictly better than white for the rest. */
-  html, body { background: #090c1c; }
-  @media (prefers-color-scheme: light) { html, body { background: #dbe7fb; } }
+     paper over.
+     ONLY <html> is set here, deliberately NOT <body> too (an earlier
+     version of this rule set both, which was the actual bug behind the
+     starfield background vanishing — style.css's `body { background:
+     var(--page-bg); transition: background 0.2s ease; }` then had to
+     TRANSITION from this rule's solid color to the real gradient, and a
+     solid color -> gradient transition can't be interpolated, so it
+     would get stuck instead of ever completing). Leaving <body> alone
+     here is fine: before style.css loads, <body> has no background
+     rule of its own yet (transparent), so <html>'s dark background
+     shows through underneath it exactly the same as if <body> had it
+     directly — same fix, without fighting body's own more complex
+     background setup. Falls back to a light-theme-ish tint only for
+     browsers/OSes reporting prefers-color-scheme: light — this can't
+     read the saved theme.js/localStorage choice (that needs JS to run
+     first), but this project's usage skews dark, so this covers the
+     common case with zero flash and is still strictly better than
+     white for the rest. */
+  html { background: #090c1c; }
+  @media (prefers-color-scheme: light) { html { background: #dbe7fb; } }
 </style>
 <link rel="stylesheet" href="/assets/style.css" />
 <script src="/assets/theme.js"></script>
