@@ -85,6 +85,18 @@ body {
   background: var(--page-bg);
   background-attachment: fixed;
   transition: background 0.2s ease, color 0.2s ease;
+  /* Forces <body> to establish its own stacking context, cleanly (no
+     side effects on layout, unlike position:relative + z-index) — this
+     is what makes #starfieldRoot's z-index: -2 (see below) actually
+     land BETWEEN body's own background and body's other content,
+     instead of underneath body's own background entirely. Without this,
+     whether the starfield is visible at all ends up depending on
+     incidental things elsewhere on the page that happen to give body a
+     stacking context as a side effect (an animation/transition
+     currently affecting a compositable property, etc.) — fragile and
+     exactly what broke here. isolation: isolate makes it explicit and
+     permanent, independent of anything else on the page. */
+  isolation: isolate;
 }
 
 /* ---- Animated space-photo background (both themes) ----
