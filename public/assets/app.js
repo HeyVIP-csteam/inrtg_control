@@ -347,6 +347,13 @@
         reporter: formData.get("reporter"),
         fields,
         attachments,
+        // A fresh random ID per submit CLICK (not tied to the form's
+        // content, so a failed submission can just be retried normally)
+        // — lets the server recognize "this exact click's request, sent
+        // twice" (flaky network retry, double-tap on mobile, an edge
+        // node retrying) and only actually process it once. See
+        // submit.js's idempotencyKey handling.
+        idempotencyKey: (crypto.randomUUID && crypto.randomUUID()) || `${Date.now()}-${Math.random().toString(36).slice(2)}`,
       };
 
       const res = await window.AgentAuth.authFetch("/api/submit", {

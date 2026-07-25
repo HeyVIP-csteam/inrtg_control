@@ -40,7 +40,7 @@ async function handleSubmit({ request, env }) {
     return json({ ok: false, error: "Invalid JSON body." }, 400);
   }
 
-  const { module: moduleId, brand: brandId, reporter, fields, attachments } = body || {};
+  const { module: moduleId, brand: brandId, reporter, fields, attachments, idempotencyKey } = body || {};
 
   if (!VALID_MODULES.includes(moduleId)) {
     return json({ ok: false, error: `Unknown module "${moduleId}".` }, 400);
@@ -59,6 +59,27 @@ async function handleSubmit({ request, env }) {
   }
   if (!reporter || !Array.isArray(fields)) {
     return json({ ok: false, error: "Missing reporter or fields." }, 400);
+  }
+
+  // Idempotency check — same submit CLICK occasionally reaches the server
+  // twice for real (flaky mobile network retrying the request, a double-
+  // tap, an edge node retry), which used to mean a duplicate Telegram
+  // message, a duplicate thread record, and sometimes a Sheet row
+  // conflict from two near-simultaneous writes. idempotencyKey (see
+  // app.js) is a fresh random ID per click, not tied to the form's
+  // content, so retrying after a genuine failure still submits normally.
+  if (idempotencyKey && env.THREADS_KV) {
+    const dedupeKey = `submit_dedupe:${idempotencyKey}`;
+    const already = await env.THREADS_KV.get(dedupeKey);
+    if (already) {
+      // Already processed (or currently mid-processing) — hand back the
+      // exact same result instead of doing everything a second time.
+      return new Response(already, { status: 200, headers: { "Content-Type": "application/json" } });
+    }
+    // Placeholder first, 30s TTL — so a near-simultaneous duplicate
+    // request (arriving before the real processing below has finished)
+    // still gets caught immediately instead of racing past this check too.
+    await env.THREADS_KV.put(dedupeKey, JSON.stringify({ ok: true, duplicate: true, note: "Original submission was still processing — this is not a second ticket." }), { expirationTtl: 30 });
   }
 
   const botToken = env.TELEGRAM_BOT_TOKEN;
@@ -217,7 +238,7 @@ async function handleSubmit({ request, env }) {
     }
   }
 
-  return json({
+  const finalResponse = {
     ok: true,
     telegramMessageId: tgResult.messageId,
     threadId,
@@ -226,7 +247,16 @@ async function handleSubmit({ request, env }) {
     sheetError,
     attachmentErrors: attachmentErrors.length ? attachmentErrors : undefined,
     r2Errors: r2Errors.length ? r2Errors : undefined,
-  });
+  };
+  if (idempotencyKey && env.THREADS_KV) {
+    // Overwrite the 30s placeholder from the check above with the real
+    // result, now that processing actually finished — and extend the
+    // TTL to 10 minutes, long enough to catch a slow retry (e.g. a
+    // mobile network that took a while to give up and resend) without
+    // keeping every submission's dedupe key around indefinitely.
+    await env.THREADS_KV.put(`submit_dedupe:${idempotencyKey}`, JSON.stringify(finalResponse), { expirationTtl: 600 });
+  }
+  return json(finalResponse);
 }
 
 async function sendTelegramMessage({ botToken, route, text }) {

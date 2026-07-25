@@ -60,7 +60,34 @@ the complete current state of the project.
 一个 `attachmentNames` 参数,但那是**另一个还没合并进 INR 的功能**
 (不在这次 patch 自己写的 CHANGES.md 范围内),这次没有引入。
 
-## 🐛 修复,2026-07-25 — "淡入淡出"功能误伤了 Account Management 下拉
+## 🔁 移植,2026-07-25 — 防止同一次提交被处理两次(重复工单 / 重复 TG 消息)
+
+**背景问题**：同一次提交,偶尔会因为前端网络重传/手机误触/边缘节点重试
+等原因,实际打到服务器两次,导致 Telegram 发两条一样的消息、网站建两条
+一样的工单记录、Sheet 有时候只多/少一行(并发写入冲突)。
+
+**改动 1 — `public/assets/app.js`**：提交时给 `payload` 加一个
+`idempotencyKey` 字段,每次点提交按钮都生成一个新的随机 ID(不跟表单
+内容绑定,提交失败后重新填写照样能正常提交)。
+
+**改动 2 — `functions/api/submit.js`**：
+- 解析 body 时多取 `idempotencyKey`
+- 基础校验(reporter/fields 是否存在)通过之后、真正开始处理(发
+  Telegram/写 Sheet/建工单)之前,先查 `THREADS_KV` 里
+  `submit_dedupe:<idempotencyKey>` 这个 key 有没有值——有就说明已经
+  处理过(或正在处理),直接把之前存的结果原样返回,不再重复处理；
+  没有就先占位(30 秒 TTL),让几乎同时到达的第二个重复请求也能立刻
+  被拦下
+- 真正处理完、返回成功结果之前,把占位符覆盖成真正的结果,TTL 延长到
+  10 分钟
+
+**依赖 `env.THREADS_KV`**——INR 这边本来就绑了这个 KV(TG Reply
+Threads 功能用的那个),条件天然满足,不用额外配置。
+
+**这个修复不会清理已经产生的历史重复数据**——部署完之后,已经存在于
+Sheet/TG/网站上的重复记录,还是需要手动清一遍。
+
+
 
 **现象**：点侧边栏的 "Account Management",不会展开选项,反而直接跳飞
 到一个空白/报错页面。
