@@ -4,6 +4,21 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>INR CS Team - TBC</title>
+<style>
+  /* Critical, inline, zero-network-cost — the very first paint of every
+     navigation must already be dark, before style.css even finishes
+     downloading. Without this, the plain white browser-default canvas
+     shows through for a beat between "old page faded out" and "new
+     page's real CSS painted" — a real gap in a genuine full-page
+     navigation, not something any particular transition animation can
+     paper over. Falls back to a light-theme-ish tint only for browsers/
+     OSes reporting prefers-color-scheme: light — this can't read the
+     saved theme.js/localStorage choice (that needs JS to run first),
+     but this project's usage skews dark, so this covers the common case
+     with zero flash and is still strictly better than white for the rest. */
+  html, body { background: #090c1c; }
+  @media (prefers-color-scheme: light) { html, body { background: #dbe7fb; } }
+</style>
 <link rel="stylesheet" href="/assets/style.css" />
 <script src="/assets/theme.js"></script>
 <script src="/assets/starfield.js" defer></script>
