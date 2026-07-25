@@ -172,7 +172,7 @@ async function handleSubmit({ request, env }) {
     if (!fallback.ok) {
       return json({ ok: false, error: `Telegram send failed: ${fallback.error}` }, 502);
     }
-    tgResult = { messageId: fallback.messageId, attachmentLinks: [], attachmentFileIds: [] };
+    tgResult = { messageId: fallback.messageId, attachmentLinks: [], attachmentFileIds: [], attachmentNames: [] };
   }
   const attachmentLinks = tgResult.attachmentLinks;
 
@@ -265,6 +265,7 @@ async function handleSubmit({ request, env }) {
         rootText: text,
         hasMedia: Array.isArray(attachments) && attachments.length > 0,
         attachmentFileIds: tgResult.attachmentFileIds || [],
+        attachmentNames: tgResult.attachmentNames || [],
         summary,
         fieldMap,
         screenshotLink,
@@ -335,12 +336,26 @@ async function sendTelegramWithAttachments({ botToken, route, text, attachments 
   if (!attachments.length) {
     const r = await sendTelegramMessage({ botToken, route, text });
     if (!r.ok) throw new Error(r.error);
-    return { messageId: r.messageId, attachmentLinks: [], attachmentFileIds: [] };
+    return { messageId: r.messageId, attachmentLinks: [], attachmentFileIds: [], attachmentNames: [] };
   }
 
   if (attachments.length === 1) {
     const { messageId, fileId } = await sendSingleWithCaption({ botToken, route, text, attachment: attachments[0] });
-    return { messageId, attachmentLinks: [buildMessageLink(route, messageId)], attachmentFileIds: fileId ? [fileId] : [] };
+    return {
+      messageId,
+      attachmentLinks: [buildMessageLink(route, messageId)],
+      attachmentFileIds: fileId ? [fileId] : [],
+      // Real original filename, kept 1:1 aligned with attachmentFileIds
+      // (only pushed when fileId itself was non-null, same filter as
+      // above) — this is what lets threads.html correctly detect "this
+      // is an image" for the ORIGINAL ticket's own attachments (not just
+      // reply attachments, which already had this) via a real file
+      // extension, instead of a generic placeholder name with no
+      // extension defaulting to "unknown file, show a download link"
+      // even for actual photos. See /api/attachment/[fileId].js's
+      // ?name= priority ordering.
+      attachmentNames: fileId ? [attachments[0].name] : [],
+    };
   }
 
   const allImages = attachments.every((a) => looksLikeImage(a.type, a.name));
@@ -350,6 +365,7 @@ async function sendTelegramWithAttachments({ botToken, route, text, attachments 
       messageId: sent[0].messageId,
       attachmentLinks: sent.map((s) => buildMessageLink(route, s.messageId)),
       attachmentFileIds: sent.map((s) => s.fileId).filter(Boolean),
+      attachmentNames: sent.filter((s) => s.fileId).map((s) => s.name),
     };
   }
 
@@ -365,6 +381,7 @@ async function sendTelegramWithAttachments({ botToken, route, text, attachments 
     messageId: sent[0].messageId,
     attachmentLinks: sent.map((s) => buildMessageLink(route, s.messageId)),
     attachmentFileIds: sent.map((s) => s.fileId).filter(Boolean),
+    attachmentNames: sent.filter((s) => s.fileId).map((s) => s.name),
   };
 }
 
@@ -392,7 +409,7 @@ async function sendSingleWithCaption({ botToken, route, text, attachment }) {
   const fileId = isImage
     ? data.result.photo?.[data.result.photo.length - 1]?.file_id || null
     : data.result.document?.file_id || null;
-  return { messageId: data.result.message_id, fileId };
+  return { messageId: data.result.message_id, fileId, name };
 }
 
 async function sendMediaGroup({ botToken, route, text, attachments }) {
@@ -419,9 +436,12 @@ async function sendMediaGroup({ botToken, route, text, attachments }) {
   const res = await fetch(`https://api.telegram.org/bot${botToken}/sendMediaGroup`, { method: "POST", body: form });
   const data = await res.json();
   if (!data.ok) throw new Error(data.description || "unknown Telegram error");
-  return data.result.map((m) => ({
+  // attachments[i] lines up positionally with data.result[i] — sendMediaGroup
+  // returns results in the same order the media items were submitted in.
+  return data.result.map((m, i) => ({
     messageId: m.message_id,
     fileId: m.photo?.[m.photo.length - 1]?.file_id || null,
+    name: attachments[i]?.name,
   }));
 }
 

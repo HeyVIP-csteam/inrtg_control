@@ -440,10 +440,11 @@
           // undefined for older ones, so this cleanly renders nothing
           // rather than a broken button.
           const fileIds = t.attachmentFileIds || [];
+          const fileNames = t.attachmentNames || [];
           const attachmentButtons = fileIds.length ? `
             <div class="thread-summary-attachments">
               ${fileIds.map((fid, i) => `
-                <div class="inline-attach-slot" data-attachment-file="${escapeAttr(fid)}" data-attachment-name="ticket-attachment-${i + 1}">
+                <div class="inline-attach-slot" data-attachment-file="${escapeAttr(fid)}" data-attachment-name="${escapeAttr(fileNames[i] || `ticket-attachment-${i + 1}`)}">
                   <div class="inline-attach-loading">Loading attachment…</div>
                 </div>
               `).join("")}

@@ -193,7 +193,7 @@ async function sweepExpired(env, list) {
   return keep;
 }
 
-export async function createThread(env, { module: moduleId, moduleName, icon, accent, brand, brandId, title, submitter, chatId, topicId, rootMessageId, rootText, hasMedia, attachmentFileIds, summary, fieldMap, screenshotLink, sheetRef }) {
+export async function createThread(env, { module: moduleId, moduleName, icon, accent, brand, brandId, title, submitter, chatId, topicId, rootMessageId, rootText, hasMedia, attachmentFileIds, attachmentNames, summary, fieldMap, screenshotLink, sheetRef }) {
   const now = new Date().toISOString();
   const thread = {
     id: newId(),
@@ -223,6 +223,15 @@ export async function createThread(env, { module: moduleId, moduleName, icon, ac
     // captured at ticket-creation time instead of reply time. Empty array
     // for text-only tickets, or if the module doesn't collect attachments.
     attachmentFileIds: attachmentFileIds || [],
+    // Real original filenames, positionally aligned 1:1 with
+    // attachmentFileIds above (see submit.js's sendTelegramWithAttachments)
+    // — used by threads.html to correctly detect image vs video vs other
+    // file types via a real file extension. Empty/missing for threads
+    // created before this existed; threads.html falls back to a generic
+    // "ticket-attachment-N" label for those (no extension, so it can't
+    // auto-detect image type and just offers a download link instead —
+    // degraded but not broken).
+    attachmentNames: attachmentNames || [],
     rootRecalled: false,
     msgIds: [rootMessageId],
     summary: summary || [],
