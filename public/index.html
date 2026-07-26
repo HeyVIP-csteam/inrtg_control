@@ -78,6 +78,7 @@
       <button type="button" class="modal-close-btn" id="acctModalClose" title="Close" aria-label="Close">✕</button>
       <div class="edit-modal-header-row">
         <p class="edit-modal-title" id="acctModalTitle">Account Management</p>
+        <input type="text" id="acctProfileSearch" class="acct-profile-search" placeholder="🔍 Search username, full name, PSD…" autocomplete="off" style="display:none;" />
         <select id="acctProfileRoleFilter" class="acct-role-filter" style="display:none;">
           <option value="all">All roles</option>
           <option value="agent">Agent</option>
@@ -366,6 +367,7 @@
     document.getElementById("subResetPassword").addEventListener("click", () => openAcctModal("reset"));
     document.getElementById("subAgentProfile").addEventListener("click", () => openAcctModal("profile"));
     document.getElementById("acctProfileRoleFilter").addEventListener("change", () => renderAgentProfileTable());
+    document.getElementById("acctProfileSearch").addEventListener("input", () => renderAgentProfileTable());
 
 
     const acctBackdrop = document.getElementById("acctModalBackdrop");
@@ -415,6 +417,9 @@
       const roleFilterEl = document.getElementById("acctProfileRoleFilter");
       roleFilterEl.style.display = mode === "profile" ? "" : "none";
       if (mode === "profile") roleFilterEl.value = "all";
+      const searchEl = document.getElementById("acctProfileSearch");
+      searchEl.style.display = mode === "profile" ? "" : "none";
+      if (mode === "profile") searchEl.value = "";
 
       if (mode === "create") {
         acctTitle.textContent = "Create Account";
@@ -680,7 +685,15 @@
 
     function renderAgentProfileTable() {
       const roleFilter = document.getElementById("acctProfileRoleFilter").value || "all";
-      const visibleAccounts = roleFilter === "all" ? acctAccounts : acctAccounts.filter((a) => a.role === roleFilter);
+      const searchTerm = document.getElementById("acctProfileSearch").value.trim().toLowerCase();
+      let visibleAccounts = roleFilter === "all" ? acctAccounts : acctAccounts.filter((a) => a.role === roleFilter);
+      if (searchTerm) {
+        visibleAccounts = visibleAccounts.filter((a) =>
+          (a.username || "").toLowerCase().includes(searchTerm) ||
+          (a.fullName || "").toLowerCase().includes(searchTerm) ||
+          (a.pid || "").toLowerCase().includes(searchTerm)
+        );
+      }
 
       const rows = visibleAccounts.map((a) => {
         // Office / IP — SuperAdmin can log in from anywhere with no office
@@ -815,8 +828,8 @@
               <div class="field" style="flex:1;">
                 <label>Status</label>
                 <div class="agent-profile-status-row">
-                  <span class="${a.locked ? "office-missing" : ""}" style="${a.locked ? "" : "color:var(--ink-soft);"}">${a.locked ? "🔒 Locked" : "Active"}</span>
-                  ${isSuperAdmin ? `<button type="button" class="row-btn" id="ap_lockToggle" title="${a.locked ? "Unlock" : "Lock"} this account">${a.locked ? "🔓" : "🔒"}</button>` : ""}
+                  <span class="agent-profile-status-text ${a.locked ? "is-locked" : "is-active"}">${a.locked ? "🔒 Locked" : "Active"}</span>
+                  ${isSuperAdmin ? `<button type="button" class="icon-btn" id="ap_lockToggle" title="${a.locked ? "Unlock" : "Lock"} this account">${a.locked ? "🔓" : "🔒"}</button>` : ""}
                 </div>
               </div>
             </div>
@@ -838,7 +851,7 @@
 
           <div class="edit-details-status" id="agentProfileStatus"></div>
           <div class="edit-details-actions">
-            <button type="button" id="agentProfileCancel">Cancel</button>
+            <button type="button" class="icon-btn" id="agentProfileCancel" style="width:auto; padding:0 16px;">Cancel</button>
             <button type="button" class="btn-submit" id="agentProfileSave" style="width:auto; padding:10px 22px;">Save</button>
           </div>
         </div>`;

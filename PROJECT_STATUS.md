@@ -60,7 +60,34 @@ the complete current state of the project.
 一个 `attachmentNames` 参数,但那是**另一个还没合并进 INR 的功能**
 (不在这次 patch 自己写的 CHANGES.md 范围内),这次没有引入。
 
-## ✨ 新增,2026-07-25 — Agent Personal Profile 弹窗 + Topic Access 权限
+## ✨ 新增,2026-07-25 — Agent Profile 表格加了搜索框
+
+在 "All roles" 筛选下拉旁边加了一个搜索框,可以按 **Username / Full
+Name / PSD** 实时过滤表格(打字就更新,不用按回车),跟角色筛选可以
+叠加使用。只改了 `public/index.html`(加输入框 + 过滤逻辑)、
+`public/assets/style.css`(样式跟角色筛选下拉保持一致)。
+
+
+
+**现象**：弹窗里 Status 的 "Active" 文字没有边框、Cancel 和锁定按钮
+显示成浏览器默认的白色按钮,跟网站深色主题不搭。
+
+**根因**：这几个按钮当时漏套了网站已有的深色按钮样式类
+(`.icon-btn`,`threads.html` 的 "🔄 Sync to Sheet" 弹窗里 Cancel 就是
+用这个),直接吃了浏览器默认样式。
+
+**改动(只改了 `public/index.html`、`public/assets/style.css`)**：
+- Status 文字外面加了跟 Role 下拉一样的边框(`.agent-profile-status-row`
+  改成跟 `.field select` 同款的边框/背景/圆角)——**Active 显示绿色,
+  Locked 显示红色 + 🔒 emoji**
+- Cancel、锁定切换按钮统一换成 `.icon-btn`(深色背景、跟 Save 按钮
+  同一套按钮语言,不是同一个颜色,但不再是刺眼的白色默认样式)
+
+**待办,还没做**：你之前提过想在 Agent Profile 表格顶部加一个搜索框
+(搜 Username / Full Name / PSD),中途被这次的按钮样式问题打断了,还
+没实现——需要的话告诉我一声继续。
+
+
 
 **背景**：Account Management 的 Agent Profile 原来是一张大表格,编辑
 靠行内的 ✏️ 按钮,而且账号系统一直只有"品牌权限"(`allowedBrands`),
