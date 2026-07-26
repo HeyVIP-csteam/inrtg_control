@@ -18,6 +18,22 @@
     return;
   }
 
+  // Topic Access — catches someone typing/bookmarking a form.html?module=...
+  // URL directly for a topic their account isn't allowed to use, since the
+  // Home page sidebar hiding it (see index.html) only stops the NORMAL
+  // click path, not a direct URL visit. This is still just the frontend
+  // half of the check — the real enforcement is server-side in
+  // functions/api/submit.js, which rejects the actual submission
+  // regardless of what this page does; this is purely so a blocked agent
+  // gets a clear message immediately instead of filling out a form only
+  // to have Submit fail at the very end.
+  if (window.AgentAuth && window.AgentAuth.filterAllowedModules([module]).length === 0) {
+    titleEl.textContent = "Not available";
+    hintEl.textContent = "Your account doesn't have access to this topic. Contact a SuperAdmin if you think this is wrong.";
+    formCard.querySelector("form").style.display = "none";
+    return;
+  }
+
   document.title = `${module.name} — Issue Submission`;
   iconEl.textContent = module.icon;
   titleEl.textContent = module.formTitle || `${module.name} Request`;

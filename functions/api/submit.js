@@ -6,7 +6,7 @@ import {
 import { appendRowToSheet, appendRowByColumns, writeRowForDate, getNextSequenceValue } from "../_shared/googleSheets.js";
 import { uploadAttachmentToR2, screenshotUrl } from "../_shared/r2.js";
 import { createThread } from "../_shared/threads.js";
-import { verifyRequest, canSeeBrand } from "../_shared/accounts.js";
+import { verifyRequest, canSeeBrand, canSeeModule } from "../_shared/accounts.js";
 import { getRouteOverride } from "../_shared/routes.js";
 
 const VALID_MODULES = Object.keys(MODULE_META);
@@ -44,6 +44,15 @@ async function handleSubmit({ request, env }) {
 
   if (!VALID_MODULES.includes(moduleId)) {
     return json({ ok: false, error: `Unknown module "${moduleId}".` }, 400);
+  }
+  // Real enforcement, not just hiding it from the sidebar — an agent
+  // scoped away from a topic (account.allowedModules, set in the Agent
+  // Personal Profile modal) can't submit to it even by calling this
+  // endpoint directly, bypassing the Home page and app.js's own checks
+  // entirely. Checked before the brand lookup below on purpose — no
+  // reason to even validate brandId for a module this account can't use.
+  if (!canSeeModule(account, moduleId)) {
+    return json({ ok: false, error: `Your account doesn't have access to the ${MODULE_META[moduleId]?.name || moduleId} topic.` }, 403);
   }
   const brand = BRANDS[brandId];
   if (!brand) {

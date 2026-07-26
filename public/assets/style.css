@@ -402,6 +402,31 @@ a { color: inherit; text-decoration: none; }
 .agent-profile-table .office-missing { color: #e0577a; font-weight: 700; font-size: 11.5px; }
 .agent-profile-table .office-none { color: var(--ink-soft); font-size: 11.5px; }
 .agent-profile-table .row-btn { background: none; border: none; cursor: pointer; font-size: 13px; padding: 2px 4px; }
+/* Username-as-entry-point into the Agent Personal Profile popup — reset
+   <button> defaults so it still reads as a plain table cell with a
+   clickable-link affordance, same underline-on-hover treatment
+   .msg-attach-link already uses elsewhere for the same reason. */
+.agent-profile-table .link-btn {
+  border: none; background: none; padding: 0; margin: 0; font: inherit; font-size: 12.5px;
+  color: var(--label-blue); text-decoration: underline; text-underline-offset: 2px; cursor: pointer;
+}
+.agent-profile-table .link-btn:hover { color: var(--accent-gold); }
+
+/* ---- Agent Personal Profile popup (opened by clicking a username in
+   the table above) — field groups inside .edit-details-fields ---- */
+.agent-profile-section-label {
+  font-size: 11px; font-weight: 800; letter-spacing: 0.04em; text-transform: uppercase;
+  color: var(--ink-soft); margin: 0 0 8px;
+}
+.agent-profile-locked-note { text-transform: none; font-weight: 600; letter-spacing: 0; color: var(--ink-soft); }
+.agent-profile-status-row { display: flex; align-items: center; gap: 8px; height: 38px; font-size: 13px; }
+.agent-profile-status-row .row-btn { margin-left: auto; font-size: 15px; }
+.agent-profile-module-list { display: flex; flex-direction: column; gap: 2px; }
+.agent-profile-module-check {
+  display: flex; align-items: center; gap: 8px; font-size: 13px; padding: 4px 2px;
+  color: var(--ink);
+}
+.agent-profile-module-check input[disabled] { cursor: not-allowed; }
 
 /* ---- TG Group / Channel (live-editable Telegram routing) ---- */
 .tgroute-layout { display: flex; gap: 14px; max-height: 78vh; }

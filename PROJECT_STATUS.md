@@ -60,7 +60,49 @@ the complete current state of the project.
 一个 `attachmentNames` 参数,但那是**另一个还没合并进 INR 的功能**
 (不在这次 patch 自己写的 CHANGES.md 范围内),这次没有引入。
 
-## 🐛 修复,2026-07-25 — 原始工单附件不会自动显示成图片,变成"点击下载"链接
+## ✨ 新增,2026-07-25 — Agent Personal Profile 弹窗 + Topic Access 权限
+
+**背景**：Account Management 的 Agent Profile 原来是一张大表格,编辑
+靠行内的 ✏️ 按钮,而且账号系统一直只有"品牌权限"(`allowedBrands`),
+没有"模块/Topic 权限"——没法限制"这个 agent 不能用 Daily Report"这种
+需求。这次先讨论定了方案,给了 preview 确认过效果,才动手做。
+
+### 交互改动
+- **表格简化**：只保留 Username、Role、Office、Brands、Status、
+  Full Name、PSD 这几列 + Lock/Unlock 按钮;"Last Log In
+  Time"、"Password Changed"这两列挪进了弹窗里(不是删掉,是收起来)
+- **点用户名**(Admin 及以上才能点)弹出 **"Agent Personal Profile"**
+  弹窗——Edit Profile 区块(Username 只读、Role+Status 一起一行、
+  Office、Brands 改成跟 Create Account 一样的品牌勾选格子、Full Name、
+  Agent PSD)+ 新增的 **Topic Access** 区块(6 个模块各一个勾选框)
+
+### 权限模型(新)
+- 账号新增 `allowedModules` 字段,形状跟 `allowedBrands` 一样(`"all"`
+  或者具体的模块 id 数组),**默认 `"all"`**——新建账号、以及这次上线
+  之前就存在的老账号,都是"全部 Topic 能用",不会有人平白无故被这次
+  改动收走权限
+- **改 Topic Access 的权限,跟改 Role 一个级别——只有 SuperAdmin 能
+  改**,Admin 打开弹窗能看到这个区块但勾选框是禁用的(跟 Role/Office/
+  Brands 这几个字段一样的处理)
+
+### 强制生效,不是纯前端隐藏(这点你特意要求过)
+- **首页侧边栏**：被限制的 Topic 直接不出现在列表里
+- **表单页**：就算直接拼 URL 硬进被限制的模块的 `form.html`,也会被
+  拦下显示"Not available"
+- **服务器端(`functions/api/submit.js`)**：这是真正兜底的一层——就算
+  懂技术的人绕过前端、直接调 `/api/submit` 接口,服务器也会用
+  `canSeeModule()` 真的拒绝掉这次提交,返回 403
+
+**涉及的文件(9 个)**：`functions/_shared/accounts.js`、
+`functions/api/admin/accounts.js`、`functions/api/submit.js`、
+`functions/api/auth/login.js`、`public/login.html`、
+`public/accounts-admin.html`、`public/assets/authguard.js`、
+`public/assets/app.js`、`public/index.html`、`public/assets/style.css`。
+
+**部署前无需新增任何东西**——复用现有的 `THREADS_KV`,没有新的
+Cloudflare 密钥/绑定要加。
+
+
 
 **现象**：工单摘要卡片里的原始截图(不是回复里带的),显示成
 `📎 ticket-attachment-1 — click to download` 这种下载链接,不会像
