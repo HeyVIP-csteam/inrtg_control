@@ -60,7 +60,26 @@ the complete current state of the project.
 一个 `attachmentNames` 参数,但那是**另一个还没合并进 INR 的功能**
 (不在这次 patch 自己写的 CHANGES.md 范围内),这次没有引入。
 
-## ✨ 新增,2026-07-25 — Agent Profile 表格加了搜索框
+## 🐛 修复,2026-07-26 — Risk Issue 的 "Verify Bank Detail" 类型,Remark 永远提交不上去
+
+**现象**：agent 在 "Verify Bank Detail" 这个类型的 Remark 框里明明
+写了内容,提交后 Telegram 消息里完全没有 Remark 这一行。
+
+**根因**：`public/assets/schemas.js` 的 `risk_issue` 模块里,**`remark`
+这个 key 被定义了两次**——一次给 "Bonus Auto Force" 等 5 种类型用,
+另一次单独给 "Verify Bank Detail" 用。两个字段渲染到页面上变成两个
+`name="remark"` 的输入框(一个隐藏、一个显示),浏览器的
+`FormData.get("remark")` 只会取**第一个**同名字段的值——选中
+"Verify Bank Detail" 时,第一个字段是隐藏且空的,所以不管 agent 在
+页面上看到的那个框里写了什么,提交时读到的永远是那个隐藏空框,
+自然是空的。
+
+**修复**：把 "Verify Bank Detail" 合并进第一个 `remark` 字段的
+`showIf` 列表,删掉重复定义的第二个。只改了 `public/assets/schemas.js`
+一个文件。顺手写了个小脚本扫了一遍整个文件,确认**没有其他模块存在
+同样的 key 重复问题**,这次是唯一一处。
+
+
 
 在 "All roles" 筛选下拉旁边加了一个搜索框,可以按 **Username / Full
 Name / PSD** 实时过滤表格(打字就更新,不用按回车),跟角色筛选可以
