@@ -16,7 +16,7 @@
  * array of column values" functions, no I/O. submit.js and
  * threads/[id].js are both responsible for the actual network calls.
  */
-import { RISK_ISSUE_AUTO_REMARKS, RISK_ISSUE_FIELD_EMOJI, ACCOUNT_ISSUE_FIELD_STYLE } from "./routing.js";
+import { RISK_ISSUE_AUTO_REMARKS, RISK_ISSUE_FIELD_EMOJI, ACCOUNT_ISSUE_FIELD_STYLE, WITHDRAW_ISSUE_FIELD_STYLE } from "./routing.js";
 
 export function escapeHtml(str) {
   return String(str)
@@ -50,6 +50,11 @@ export function resolveColumnValues(columns, { fieldMap, brand, reporter, screen
       if (col === "pic") return reporter || "-";
       if (col === "screenshotLink") return (screenshotLink || (attachmentLinks || []).join(", ")) || "-";
       if (col === "dateFormatted") return formatDateDDMMYYYY(fieldMap.reportDate || fieldMap.date) || "-";
+      // "autoDate" — today's date, written automatically with no form
+      // field needed (unlike "dateFormatted" above, which reads a real
+      // field the agent filled in). Used by modules whose form doesn't
+      // ask the agent to pick a date at all (e.g. Withdraw Issue).
+      if (col === "autoDate") return formatDateDDMMYYYY(new Date().toISOString().slice(0, 10));
       return fieldMap[col] || "-";
     }
     // { details: ["remark", "issueDetails"] } — first non-empty field wins
@@ -202,6 +207,31 @@ export function buildAccountIssueDynamicMessage({ brandName, fields, fieldMap, r
   return lines.join("\n");
 }
 
+// Withdraw Issue: header shows Issue Type, Username right under Brand
+// (no blank line between them), then any type-specific extra fields
+// (only "Withdraw Amount Received Less" has any), then a blank line
+// before Remark and another before PIC. Identifier field here is
+// "username" (not "uid" like most other modules) — that's this
+// module's own design, not a mismatch to fix.
+export function buildWithdrawIssueDynamicMessage({ brandName, fields, fieldMap, reporter }) {
+  const lines = [`💸 <b>Withdraw Issue — ${escapeHtml(fieldMap.issueType || "-")}</b>`, ""];
+  lines.push(`🎮 <b>Brand/Platform:</b> ${escapeHtml(brandCurrencyLabel(brandName))}`);
+  lines.push(`👤 <b>Username:</b> ${escapeHtml(fieldMap.username || "-")}`);
+
+  fields
+    .filter((f) => !["issueType", "username", "remark"].includes(f.key) && f.value)
+    .forEach((f) => {
+      const style = WITHDRAW_ISSUE_FIELD_STYLE[f.key];
+      const emoji = style ? style.emoji : "🔸";
+      const label = style && style.label ? style.label : f.label;
+      lines.push(`${emoji} <b>${escapeHtml(label)}:</b> ${escapeHtml(f.value)}`);
+    });
+
+  lines.push("", `📝 <b>Remark:</b> ${escapeHtml(fieldMap.remark || "-")}`);
+  lines.push("", `👷 <b>PIC:</b> ${escapeHtml(reporter)}`);
+  return lines.join("\n");
+}
+
 export function buildMessage({ meta, brandName, reporter, fields, moduleId, fieldMap }) {
   const autoNote = moduleId === "risk_issue" ? resolveAutoRemark(fieldMap) : null;
   const lines = [
@@ -250,6 +280,7 @@ export function buildTicketMessage({ moduleId, brandId, meta, brand, fieldMap, f
   }
   if (moduleId === "risk_issue") return buildRiskIssueDynamicMessage({ brandName: brand.name, fields, fieldMap, reporter });
   if (moduleId === "account_issue") return buildAccountIssueDynamicMessage({ brandName: brand.name, fields, fieldMap, reporter });
+  if (moduleId === "withdraw_issue") return buildWithdrawIssueDynamicMessage({ brandName: brand.name, fields, fieldMap, reporter });
   if (moduleId === "promotion_request" && promotionMessageTemplate[`${brandId}|${fieldMap.promotion}`]) {
     return buildPromotionRequestMessage(promotionMessageTemplate[`${brandId}|${fieldMap.promotion}`], { brandName: brand.name, fieldMap, reporter });
   }

@@ -35,6 +35,7 @@ export const BRANDS = {
       promotion_request: { chatId: "-1003844665813", topicId: 30 },
       daily_report: { chatId: "-1004488354399", topicId: 22 },
       genie_issue: { chatId: "-1004488354399", topicId: 24 },
+      withdraw_issue: { chatId: "", topicId: null },
     },
   },
   betjili: {
@@ -48,6 +49,7 @@ export const BRANDS = {
       promotion_request: { chatId: "-1003844665813", topicId: 30 },
       daily_report: { chatId: "-1004488354399", topicId: 22 },
       genie_issue: { chatId: "-1004488354399", topicId: 24 },
+      withdraw_issue: { chatId: "", topicId: null },
     },
   },
   mostplay: {
@@ -61,6 +63,7 @@ export const BRANDS = {
       promotion_request: { chatId: "-1003844665813", topicId: 30 },
       daily_report: { chatId: "-1004488354399", topicId: 22 },
       genie_issue: { chatId: "-1004488354399", topicId: 24 },
+      withdraw_issue: { chatId: "", topicId: null },
     },
   },
   betvisa: {
@@ -77,6 +80,7 @@ export const BRANDS = {
       promotion_request: { chatId: "-1003844665813", topicId: 30 },
       daily_report: { chatId: "-1004488354399", topicId: 22 },
       genie_issue: { chatId: "-1004488354399", topicId: 24 },
+      withdraw_issue: { chatId: "", topicId: null },
     },
   },
   jeetway: {
@@ -90,6 +94,7 @@ export const BRANDS = {
       promotion_request: { chatId: "-1003844665813", topicId: 30 },
       daily_report: { chatId: "-1004488354399", topicId: 22 },
       genie_issue: { chatId: "-1004488354399", topicId: 24 },
+      withdraw_issue: { chatId: "", topicId: null },
     },
   },
 };
@@ -103,6 +108,11 @@ export const RECORD_TO_SHEET = {
   promotion_request: true,
   daily_report: true,
   genie_issue: true,
+  // Real Sheet structure already confirmed (tab "Withdraw Issue", columns
+  // A-I: Date/Brand/Username/Issue Type/TID/Submitted Amount/Received
+  // Amount/Remark/PIC — see SHEET_LAYOUT.withdraw_issue below) — set
+  // straight to true, no "verify structure first" precaution needed.
+  withdraw_issue: true,
 };
 
 // Emoji + display name per module, used to build the Telegram message header.
@@ -113,6 +123,7 @@ export const MODULE_META = {
   promotion_request: { emoji: "🎟️", name: "Promotion Request", accent: "#F472B6" },
   daily_report: { emoji: "📊", name: "Daily Report", accent: "#34D399" },
   genie_issue: { emoji: "🤖", name: "Genie Issue", accent: "#A78BFA" },
+  withdraw_issue: { emoji: "💸", name: "Withdraw Issue", accent: "#4ADE80" },
 };
 
 /**
@@ -192,6 +203,18 @@ export const ACCOUNT_ISSUE_FIELD_STYLE = {
   updateRequest: { emoji: "✏️" },
   fullName: { emoji: "🧾" },
   aadharPan: { emoji: "🆔" },
+};
+
+/**
+ * Emoji (and optional label override) per field, for the Telegram
+ * message Withdraw Issue's submissions produce. "issueType"/"username"/
+ * "remark" are handled separately (fixed header/footer lines), don't
+ * need an entry here.
+ */
+export const WITHDRAW_ISSUE_FIELD_STYLE = {
+  tid: { emoji: "🆔" },
+  submittedAmount: { emoji: "💵" },
+  receivedAmount: { emoji: "💰" },
 };
 
 /**
@@ -432,6 +455,20 @@ export const SHEET_LAYOUT = {
     tab: "Genie Issues",
     startColumn: "B",
     columns: ["brand", "issueDetails", "chatLinks", "pic"],
+  },
+  // Confirmed against the real Sheet (screenshot from business owner) —
+  // starts at column A (Date is the very first column, unlike most other
+  // modules which start at B), and deliberately has NO Screenshot Link
+  // column — business owner confirmed Withdraw Issue attachments don't
+  // need to be logged to the Sheet (they still show up fine in TG Reply
+  // Threads either way, since that's driven by Telegram's own file_id,
+  // completely independent of whether this module writes to a Sheet at
+  // all — see SCREENSHOT_R2_ENABLED, which withdraw_issue is
+  // deliberately NOT in).
+  withdraw_issue: {
+    tab: "Withdraw Issue",
+    startColumn: "A",
+    columns: ["autoDate", "brand", "username", "issueType", "tid", "submittedAmount", "receivedAmount", "remark", "pic"],
   },
   account_issue: {
     tab: "Account Issue",

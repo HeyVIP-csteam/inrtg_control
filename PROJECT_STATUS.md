@@ -60,7 +60,49 @@ the complete current state of the project.
 一个 `attachmentNames` 参数,但那是**另一个还没合并进 INR 的功能**
 (不在这次 patch 自己写的 CHANGES.md 范围内),这次没有引入。
 
-## ↗️ 新增,2026-07-27 — "Generate to another Topic"(转发到另一个 Topic)
+## 💸 新增,2026-07-27 — Withdraw Issue(提款问题)模块
+
+按 `WITHDRAW_ISSUE_SETUP.md`(设计文档,已放进项目根目录)实现。7 种
+Issue Type(门控字段),只有 "Withdraw Amount Received Less" 才会展开
+Submitted Amount / Received Amount 这两个金额字段。
+
+**这个模块的两个特殊点**(设计上如此,不是疏漏)：
+- 识别字段用的是 `username`,不是大部分模块常用的 `uid`
+- Sheet **没有 Screenshot Link 这一列**——业务方明确要求提款问题不需要
+  记录截图链接,但截图本身照样会正常显示在 TG Reply Threads 里(这套
+  预览走的是 Telegram 自己的 `file_id`,跟要不要接 Sheet 完全独立,
+  这个模块特意没加进 `SCREENSHOT_R2_ENABLED`)
+
+**Sheet 结构已经用业主提供的截图确认过,直接按真实结构接上,`RECORD_TO_SHEET.withdraw_issue`
+从一开始就是 `true`**（tab 名 "Withdraw Issue",起始列是 A 不是常见的
+B,因为 Date 就在 A 列;列顺序 Date/Brand/Username/Issue Type/TID/
+Submitted Amount/Received Amount/Remark/PIC）。
+
+**涉及的文件(3 个)**：
+- `public/assets/schemas.js` —— 新增模块定义,货币符号沿用 INR 项目
+  已有的 "Rs." 写法
+- `functions/_shared/routing.js` —— 5 个品牌都加了路由占位(chatId
+  留空,**部署后需要去 TG Group / Channel 面板填真实值**)、
+  `MODULE_META`、新增 `WITHDRAW_ISSUE_FIELD_STYLE`、
+  `SHEET_LAYOUT.withdraw_issue`、`RECORD_TO_SHEET.withdraw_issue: true`
+- `functions/_shared/messageBuilders.js` —— 新增
+  `buildWithdrawIssueDynamicMessage()`、调度分支、`resolveColumnValues()`
+  加了 `autoDate` 这个列关键字(今天日期,自动写入,不需要表单字段)
+
+**`app.js`/`threads.html` 完全没改**——门控字段(`emphasize: true`)
+和截图预览都是通用逻辑,新模块直接就能用。
+
+**部署后必须做的事**：去 TG Group / Channel 管理面板,给 5 个品牌都
+填上 Withdraw Issue 真实的 Telegram chatId/topicId(现在是空占位,
+不填的话这个模块没法发消息)。
+
+**测试顺序**：先测一个"普通类型"(比如 Withdraw Disapproved)和
+"Withdraw Amount Received Less"(唯一带金额字段的)各提交一次,确认
+Telegram 消息格式、字段展开/收起逻辑都正常;再确认 Sheet 里
+Date/Brand/Username 这些列写对了位置、没有 Screenshot Link 那一列;
+最后确认截图能在 TG Reply Threads 里正常预览。
+
+
 
 按 `FORWARD_FEATURE_SETUP.md`(设计文档,业主提供)完整实现。在工单
 详情页点 ↗️,基于当前工单在**另一个 Topic** 生成一张全新工单——效果
