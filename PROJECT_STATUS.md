@@ -60,7 +60,62 @@ the complete current state of the project.
 一个 `attachmentNames` 参数,但那是**另一个还没合并进 INR 的功能**
 (不在这次 patch 自己写的 CHANGES.md 范围内),这次没有引入。
 
-## 🐛 修复,2026-07-26 — Risk Issue 的 "Verify Bank Detail" 类型,Remark 永远提交不上去
+## 👑 新增,2026-07-26 — Owner 隐藏角色(最高权限,完全隐身)
+
+按 `OWNER_ROLE_SETUP.md`(已经放进项目根目录)完整实现。核心规则只有
+一条,取代了原本手写的白名单式权限:
+
+> **actor 只能管理 `actor.rank > target.rank` 的账号。同级不能管
+> 同级。**
+
+等级体系：`Owner(4) > SuperAdmin(3) > Admin(2) > Senior(1) > Agent(0)`。
+
+**Owner 的特性**：权限最高、能管所有其他角色、**没有任何人(包括
+SuperAdmin)能改 Owner 的权限**、账号**完全隐藏**(不出现在 Agent
+Profile 表格/账号列表/任何查询接口,除了 Owner 自己能看到自己)、
+**不受 Office+IP 白名单限制**登录。
+
+**⚠️⚠️⚠️ 部署前必须做的事,这个非常重要,不检查会直接把人锁在门外：**
+
+**SuperAdmin 从此不再免检查 Office+IP,变成必须绑定才能登录**(这是
+设计上刻意的改动,豁免权从 SuperAdmin 转移给了 Owner)。**部署前必须
+先确认现有的每一个 SuperAdmin 账号,都已经绑了 Office,而且这个
+Office 的 IP 白名单包含了这个人实际登录会用的 IP**——不然这次代码
+一上线,原来能正常登录的 SuperAdmin 会立刻被拒绝登录,而且**这不是
+bug,是权限模型改了**,得先手动去 Agent Profile 弹窗里逐个检查、
+补上 Office 绑定,再部署。
+
+**涉及的文件(9 个改动 + 2 个新建)**：
+- `functions/_shared/accounts.js` —— `ROLE_RANK`/`ASSIGNABLE_ROLES`、
+  `saveAccount()` 的 role 赋值逻辑、`officeIpCheckPasses()`、
+  `listAccounts()` 加 `viewerUsername` 参数
+- `functions/api/admin/accounts.js` —— 整个权限判断主逻辑重写,
+  `canManage()`/`isHiddenTarget()` 取代原来的 `MANAGE_SCOPE` 手写
+  白名单;**顺带修了一个真实漏洞**：原来 SuperAdmin 之间可以互相
+  锁定账号(lock/unlock 只看"是不是 SuperAdmin",不比较目标等级),
+  现在也纳入等级比较
+- `functions/api/auth/login.js` —— 登录流程里独立的一份 office 检查,
+  同步从 superadmin 改成 owner
+- `public/index.html` —— 客户端 `ROLE_RANK` 加 owner;建账号角色
+  下拉、Reset Password 目标列表都改成"严格低于自己等级";Agent
+  Profile 弹窗(Role/Office/Brands/Topic Access/锁定按钮)从"只看
+  isSuperAdmin"改成针对具体目标账号的 `canManageAccess` 判断;
+  `saveAgentProfileModal()` 改成检查 DOM 元素是否存在而不是全局变量;
+  表格里 Office 单元格和锁定按钮也做了同样的按目标判断处理;Owner
+  自己那一行 Office 显示"unrestricted, OK for Owner"
+- `public/accounts-admin.html`、`public/threads.html` —— 客户端
+  `ROLE_RANK` 加 owner(这两个文件按文档说明只需要这一处改动)
+- (新建)`create-owner-account.js` —— 本地跑的脚本,生成写入 Owner
+  账号的 KV 命令,密码不会发送到任何地方
+- (新建)`OWNER_ROLE_SETUP.md` —— 完整设计文档,放在项目根目录
+
+**创建 Owner 账号**：网站里没有任何路径能创建/提升出 Owner,唯一方法
+是直接操作 Cloudflare KV——具体两种方法(全新建号 / 把现有账号直接
+升级)见 `OWNER_ROLE_SETUP.md` 第 5 节。
+
+**部署后建议走一遍 `OWNER_ROLE_SETUP.md` 第 6.3 节的完整验证清单。**
+
+
 
 **现象**：agent 在 "Verify Bank Detail" 这个类型的 Remark 框里明明
 写了内容,提交后 Telegram 消息里完全没有 Remark 这一行。

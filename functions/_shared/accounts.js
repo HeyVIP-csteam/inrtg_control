@@ -47,11 +47,22 @@
 const OFFICES_INDEX_KEY = "offices-index";
 const ACCOUNTS_INDEX_KEY = "accounts-index";
 
-// Role hierarchy — each tier can act on anything strictly below it (see
-// the per-endpoint checks in functions/api/admin/*.js and
-// functions/api/account/*.js for exactly what each tier can do).
-export const ROLE_RANK = { agent: 0, senior: 1, admin: 2, superadmin: 3 };
+// Role hierarchy — each tier can act on anything STRICTLY below it (same
+// rank can't manage same rank either — see canManage() in
+// functions/api/admin/accounts.js). "owner" sits above superadmin: hidden
+// from every account listing, can't be assigned through the website at
+// all (see ASSIGNABLE_ROLES below and saveAccount()'s role handling),
+// and is the only rank exempt from the office/IP login requirement (see
+// officeIpCheckPasses()). Created once, directly in KV, outside the
+// website entirely — see OWNER_ROLE_SETUP.md for that one-time step.
+export const ROLE_RANK = { agent: 0, senior: 1, admin: 2, superadmin: 3, owner: 4 };
 const VALID_ROLES = Object.keys(ROLE_RANK);
+// "owner" deliberately excluded — saveAccount() below only ever accepts
+// a role from THIS list, so there is no code path anywhere (regardless
+// of what a caller further up the stack does or doesn't check) that can
+// result in a new "owner" account. The only way to create one is the
+// direct-KV-write process in OWNER_ROLE_SETUP.md.
+const ASSIGNABLE_ROLES = VALID_ROLES.filter((r) => r !== "owner");
 export function rankOf(role) { return ROLE_RANK[role] ?? ROLE_RANK.agent; }
 
 // ---- password hashing (PBKDF2 via Web Crypto, available in Workers) ----
@@ -243,11 +254,22 @@ export async function deleteOffice(env, id) {
 
 // ---- accounts ----
 
-export async function listAccounts(env) {
+// The ONE data exit point for "list every account" — anyAdminExists(),
+// anySuperAdminExists(), and GET /api/admin/accounts (functions/api/
+// admin/accounts.js) all go through this, so filtering owner out HERE
+// makes it disappear from all three automatically, with no risk of one
+// of them forgetting to filter separately. `viewerUsername` defaults to
+// undefined (fully hidden, including from itself) — only pass it when
+// the caller has already confirmed the CURRENT viewer IS that owner
+// account, which lets exactly that one row through so an owner viewing
+// their own Agent Profile table can see themselves.
+export async function listAccounts(env, { viewerUsername } = {}) {
   const raw = await env.THREADS_KV.get(ACCOUNTS_INDEX_KEY);
   const usernames = raw ? JSON.parse(raw) : [];
   const accounts = await Promise.all(usernames.map((u) => env.THREADS_KV.get(`account:${u}`)));
-  return accounts.filter(Boolean).map((a) => stripSecret(JSON.parse(a)));
+  return accounts.filter(Boolean).map((a) => JSON.parse(a))
+    .filter((a) => a.role !== "owner" || a.username === viewerUsername)
+    .map(stripSecret);
 }
 
 export async function getAccount(env, username) {
@@ -299,7 +321,17 @@ export async function saveAccount(env, { username, password, passwordChangedBy, 
     hash,
     iterations,
     tokenVersion,
-    role: role !== undefined ? (VALID_ROLES.includes(role) ? role : "agent") : (existing?.role || "agent"),
+    // ASSIGNABLE_ROLES (not VALID_ROLES) on purpose — see its definition
+    // above. If anything, anywhere, ever passes role: "owner" here: an
+    // existing account keeps its current role unchanged (never
+    // downgraded, never "upgraded" to owner); a brand-new account falls
+    // back to "agent". This is the actual enforcement point — every
+    // other check (canManage(), the explicit early rejection in
+    // functions/api/admin/accounts.js, etc.) is defense in depth on top
+    // of this, not instead of it.
+    role: role !== undefined
+      ? (ASSIGNABLE_ROLES.includes(role) ? role : (existing?.role || "agent"))
+      : (existing?.role || "agent"),
     officeId: officeId !== undefined ? (officeId || null) : (existing?.officeId ?? null),
     allowedBrands: allowedBrands !== undefined
       ? (allowedBrands === "all" ? "all" : (Array.isArray(allowedBrands) ? allowedBrands : []))
@@ -406,16 +438,18 @@ async function touchLastActive(env, account) {
 
 /**
  * Whether an account passes the office/IP check for a given request.
- * SuperAdmin is the ONE deliberate exception — every other role MUST be
- * bound to an office with a matching IP; an account with no officeId that
- * isn't SuperAdmin now fails this outright instead of silently skipping
- * the check. Shared by verifyRequest() (every protected endpoint) AND
- * auth/login.js (the login form itself, which can't just call
- * verifyRequest() since there's no verified identity yet at that point)
- * so the two can never drift out of sync with each other.
+ * Owner is the ONE deliberate exception now — SuperAdmin used to be
+ * exempt too, but per OWNER_ROLE_SETUP.md's design, SuperAdmin now MUST
+ * be bound to an office with a matching IP just like every other visible
+ * role; an account with no officeId that isn't Owner fails this outright
+ * instead of silently skipping the check. Shared by verifyRequest()
+ * (every protected endpoint) AND auth/login.js (the login form itself,
+ * which can't just call verifyRequest() since there's no verified
+ * identity yet at that point) so the two can never drift out of sync
+ * with each other.
  */
 export async function officeIpCheckPasses(env, account, request) {
-  if (account.role === "superadmin") return true;
+  if (account.role === "owner") return true;
   if (!account.officeId) return false;
   const office = await getOffice(env, account.officeId);
   const ip = requestIP(request);
