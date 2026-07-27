@@ -271,8 +271,19 @@ async function handleThreadAction({ request, env, params }) {
     if (!env.TELEGRAM_BOT_TOKEN) return json({ ok: false, error: "Server is missing TELEGRAM_BOT_TOKEN." }, 500);
 
     const thread = existingThread;
-    const tg = await callTelegram(env, "deleteMessage", { chat_id: thread.chatId, message_id: thread.rootMessageId });
-    if (!tg.ok) return json({ ok: false, error: telegramDeleteError(tg) }, 502);
+    // A multi-photo submission/forward lands in Telegram as a media
+    // group — one message_id PER photo, only the first carrying the
+    // caption. This used to only ever remember/delete that first one
+    // (thread.rootMessageId), silently leaving every other photo in the
+    // group behind forever on Recall — not a bug specific to forwarding,
+    // just one that forwarding's own multi-photo testing happened to
+    // surface. rootMessageIds (see createThread() in _shared/threads.js)
+    // is the full array; falls back to the single id for older threads
+    // that predate this field.
+    const idsToDelete = thread.rootMessageIds && thread.rootMessageIds.length ? thread.rootMessageIds : [thread.rootMessageId];
+    const results = await Promise.all(idsToDelete.map((mid) => callTelegram(env, "deleteMessage", { chat_id: thread.chatId, message_id: mid })));
+    const firstFailure = results.find((r) => !r.ok);
+    if (firstFailure) return json({ ok: false, error: telegramDeleteError(firstFailure) }, 502);
 
     const updated = await markRootRecalled(env, id);
     await logDeletion(env, {

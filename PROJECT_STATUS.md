@@ -60,7 +60,52 @@ the complete current state of the project.
 一个 `attachmentNames` 参数,但那是**另一个还没合并进 INR 的功能**
 (不在这次 patch 自己写的 CHANGES.md 范围内),这次没有引入。
 
-## 👑 新增,2026-07-26 — Owner 隐藏角色(最高权限,完全隐身)
+## ↗️ 新增,2026-07-27 — "Generate to another Topic"(转发到另一个 Topic)
+
+按 `FORWARD_FEATURE_SETUP.md`(设计文档,业主提供)完整实现。在工单
+详情页点 ↗️,基于当前工单在**另一个 Topic** 生成一张全新工单——效果
+跟在那个 Topic 正常提交一次表单完全一样:新 Telegram 消息、新 Sheet
+记录(如果那个模块接了 Sheet)、新的可追踪工单记录。
+
+**设计要点**：
+- 同名字段(UID/Number/Email 等)自动带过去,**但全部可编辑**
+- **Brand 锁死**,转发时不能改成别的品牌
+- 附件走"转发"效果——复用 Telegram 自己的 `file_id`,不重新上传
+- 可以在转发时额外加新附件(目标 Topic 的群可能要求原 Topic 不需要的
+  照片),拖拽上传区域直接复用了 `threads.html` 页面里回复框已经有的
+  同一套实现(`fileToDataUrl`/`.dropzone`/`.file-chip`),没有重新写
+- PIC 默认填当前点击转发的这个人,可以改
+- 两边互相留痕迹:新工单显示"↩️ Forwarded from",原工单显示
+  "↗️ Forwarded to",都能点击跳转
+- 该写 Sheet 就写 Sheet,包括 Screenshot Link 这一列
+
+**涉及的文件(6 个,1 个全新)**：
+- (新建)`functions/api/forward.js` —— 核心接口,INR 现有的
+  `messageBuilders.js`/`routing.js` 各项导出全部对得上,直接能用,
+  没做额外改动
+- `functions/_shared/threads.js` —— `createThread()` 加
+  `rootMessageIds`/`forwardedFrom` 两个参数,新增 `addForwardedToLink()`
+- `functions/api/threads/[id].js` —— `recallRoot` 改成删除相册里的
+  每一张图,不只是第一张(**这个 bug 不是转发功能才有的,是从最早的
+  提交逻辑就存在**,只是转发功能测试多附件场景时更容易暴露)
+- `functions/api/submit.js` —— 三个发送分支 + fallback 分支都改成
+  返回完整的 `messageIds` 数组(配合上面的 recall 修复)
+- `public/threads.html` —— ↗️ 按钮、两边"Forwarded from/to"引用卡片
+  (可点击跳转)、`openForwardModal()`(两阶段弹窗:先选 Topic,再展开
+  预填表单 + 拖拽上传区域)
+- `public/assets/style.css` —— 新增 `.forward-link-card` 样式
+
+**部署后建议测试顺序(照抄自设计文档第 7 节)**：
+1. 挑一张有 2+ 张附件的旧工单,转发到另一个 Topic,确认字段预填对不对、
+   Brand 是不是锁死的
+2. 加一张新附件,确认转发出去的消息里旧图+新图都在
+3. 去 Sheet 确认 Screenshot Link 那一列有没有值(如果该模块接了 R2)
+4. 两边工单互相点"Forwarded from/to"确认能跳转
+5. **单独测试 Recall**:提交一张带 3+ 张图的工单,点 Recall,去 Telegram
+   确认**每一张**图都被删掉了,不是只删了第一张——这个顺带修复的老 bug
+   务必测一下
+
+
 
 按 `OWNER_ROLE_SETUP.md`(已经放进项目根目录)完整实现。核心规则只有
 一条,取代了原本手写的白名单式权限:

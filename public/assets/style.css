@@ -1325,3 +1325,22 @@ body.page-transition-out { animation: pageFadeOut 0.09s ease forwards; }
 .edit-details-status { font-size: 13px; font-weight: 600; margin-top: 4px; min-height: 18px; }
 .edit-details-status.err { color: #e0577a; }
 @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+
+/* "Generate to another Topic" (forward.js) — the bidirectional reference
+   cards rendered in buildSummaryHTML() in threads.html: "↩️ Forwarded
+   from ..." on the new ticket, "↗️ Forwarded to ..." on the original.
+   Dashed border deliberately distinguishes it from .thread-summary-card
+   (solid border) — this is a pointer to ANOTHER ticket, not this
+   ticket's own content. */
+.forward-link-card {
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px dashed var(--panel-border);
+  border-radius: 10px;
+  padding: 10px 14px;
+  font-size: 12.5px;
+  margin-top: 10px;
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+.forward-link-card:hover { border-color: var(--accent-gold); background: rgba(255, 255, 255, 0.05); }
+.forward-link-time { color: var(--ink-soft); font-size: 11.5px; }

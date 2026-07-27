@@ -193,8 +193,16 @@ async function sweepExpired(env, list) {
   return keep;
 }
 
-export async function createThread(env, { module: moduleId, moduleName, icon, accent, brand, brandId, title, submitter, chatId, topicId, rootMessageId, rootText, hasMedia, attachmentFileIds, attachmentNames, summary, fieldMap, screenshotLink, sheetRef }) {
+export async function createThread(env, { module: moduleId, moduleName, icon, accent, brand, brandId, title, submitter, chatId, topicId, rootMessageId, rootMessageIds, rootText, hasMedia, attachmentFileIds, attachmentNames, summary, fieldMap, screenshotLink, sheetRef, forwardedFrom }) {
   const now = new Date().toISOString();
+  // Every message_id in the album, not just the first/captioned one —
+  // submit.js and forward.js both now return the FULL array from
+  // sendMediaGroup (previously only the first was ever captured, which
+  // meant recallRoot() could only ever delete that one — the rest of a
+  // multi-photo submission stayed in the group forever). Falls back to
+  // the single rootMessageId for text-only/single-attachment tickets, or
+  // any caller that hasn't been updated to pass the array yet.
+  const allRootIds = rootMessageIds && rootMessageIds.length ? rootMessageIds : [rootMessageId];
   const thread = {
     id: newId(),
     module: moduleId,
@@ -214,6 +222,11 @@ export async function createThread(env, { module: moduleId, moduleName, icon, ac
     chatId: String(chatId),
     topicId: topicId ?? null,
     rootMessageId,
+    // Full album array — see the comment on allRootIds above. Kept
+    // alongside rootMessageId (not replacing it) since a lot of existing
+    // code only cares about "the" root message and reads that single
+    // field; this is additive.
+    rootMessageIds: allRootIds,
     rootText: rootText || "",
     rootEdited: false,
     hasMedia: !!hasMedia,
@@ -233,7 +246,7 @@ export async function createThread(env, { module: moduleId, moduleName, icon, ac
     // degraded but not broken).
     attachmentNames: attachmentNames || [],
     rootRecalled: false,
-    msgIds: [rootMessageId],
+    msgIds: [...allRootIds],
     summary: summary || [],
     messages: [],
     solved: false,
@@ -254,12 +267,43 @@ export async function createThread(env, { module: moduleId, moduleName, icon, ac
     // could change after the fact; the row this ticket ACTUALLY landed
     // on never does).
     sheetRef: sheetRef || null,
+    // "Generate to another Topic" (functions/api/forward.js) traceability
+    // — set ONCE at creation, on the NEW ticket, pointing back at the
+    // ticket it was forwarded FROM. Never mutated after creation (unlike
+    // forwardedTo below, which grows over time). null for every ticket
+    // that wasn't created via a forward.
+    forwardedFrom: forwardedFrom || null,
+    // The REVERSE direction — appended to over time by
+    // addForwardedToLink() below, on the ORIGINAL ticket, once per
+    // forward made FROM it. A single ticket can be forwarded to more
+    // than one other Topic, hence an array, not a single value.
+    forwardedTo: [],
   };
   await Promise.all([
     saveThread(env, thread),
-    env.THREADS_KV.put(`msgid:${thread.chatId}:${rootMessageId}`, thread.id),
+    // One msgid: pointer per message in the album, not just the first —
+    // needed so the webhook (functions/api/telegram-webhook.js) can
+    // correctly resolve a reply to ANY photo in a multi-photo ticket back
+    // to this thread, not just replies to the first/captioned one.
+    ...allRootIds.map((mid) => env.THREADS_KV.put(`msgid:${thread.chatId}:${mid}`, thread.id)),
   ]);
   await patchListCache(env, thread); // instant sidebar visibility — see that function's comment for why
+  return thread;
+}
+
+// "Generate to another Topic" (functions/api/forward.js) — appends a
+// backlink to the ORIGINAL ticket once a forward FROM it succeeds. See
+// the forwardedFrom/forwardedTo comments in createThread() above for how
+// the two directions relate. Best-effort by design (see forward.js's own
+// try/catch around this call) — the forward itself has already fully
+// succeeded by the time this runs; a failure here only means the
+// original ticket's "↗️ Forwarded to..." reference card doesn't show up,
+// nothing about the new ticket is affected.
+export async function addForwardedToLink(env, threadId, link) {
+  const thread = await getThread(env, threadId);
+  if (!thread) return null;
+  thread.forwardedTo = [...(thread.forwardedTo || []), link];
+  await saveThread(env, thread);
   return thread;
 }
 

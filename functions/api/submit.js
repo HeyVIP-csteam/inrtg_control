@@ -181,7 +181,7 @@ async function handleSubmit({ request, env }) {
     if (!fallback.ok) {
       return json({ ok: false, error: `Telegram send failed: ${fallback.error}` }, 502);
     }
-    tgResult = { messageId: fallback.messageId, attachmentLinks: [], attachmentFileIds: [], attachmentNames: [] };
+    tgResult = { messageId: fallback.messageId, messageIds: [fallback.messageId], attachmentLinks: [], attachmentFileIds: [], attachmentNames: [] };
   }
   const attachmentLinks = tgResult.attachmentLinks;
 
@@ -271,6 +271,7 @@ async function handleSubmit({ request, env }) {
         chatId: route.chatId,
         topicId: route.topicId,
         rootMessageId: tgResult.messageId,
+        rootMessageIds: tgResult.messageIds,
         rootText: text,
         hasMedia: Array.isArray(attachments) && attachments.length > 0,
         attachmentFileIds: tgResult.attachmentFileIds || [],
@@ -345,13 +346,14 @@ async function sendTelegramWithAttachments({ botToken, route, text, attachments 
   if (!attachments.length) {
     const r = await sendTelegramMessage({ botToken, route, text });
     if (!r.ok) throw new Error(r.error);
-    return { messageId: r.messageId, attachmentLinks: [], attachmentFileIds: [], attachmentNames: [] };
+    return { messageId: r.messageId, messageIds: [r.messageId], attachmentLinks: [], attachmentFileIds: [], attachmentNames: [] };
   }
 
   if (attachments.length === 1) {
     const { messageId, fileId } = await sendSingleWithCaption({ botToken, route, text, attachment: attachments[0] });
     return {
       messageId,
+      messageIds: [messageId],
       attachmentLinks: [buildMessageLink(route, messageId)],
       attachmentFileIds: fileId ? [fileId] : [],
       // Real original filename, kept 1:1 aligned with attachmentFileIds
@@ -372,6 +374,15 @@ async function sendTelegramWithAttachments({ botToken, route, text, attachments 
     const sent = await sendMediaGroup({ botToken, route, text, attachments });
     return {
       messageId: sent[0].messageId,
+      // EVERY message_id in the album — a multi-photo submission lands
+      // in Telegram as one message_id PER photo, only the first
+      // carrying the caption. Used to only ever keep the first one
+      // (as the single messageId above), which meant Recall
+      // (functions/api/threads/[id].js) could only ever delete that
+      // one, silently leaving the rest of the photos behind in the
+      // group forever. See createThread()'s rootMessageIds in
+      // _shared/threads.js for where this gets stored.
+      messageIds: sent.map((s) => s.messageId),
       attachmentLinks: sent.map((s) => buildMessageLink(route, s.messageId)),
       attachmentFileIds: sent.map((s) => s.fileId).filter(Boolean),
       attachmentNames: sent.filter((s) => s.fileId).map((s) => s.name),
@@ -388,6 +399,7 @@ async function sendTelegramWithAttachments({ botToken, route, text, attachments 
   }
   return {
     messageId: sent[0].messageId,
+    messageIds: sent.map((s) => s.messageId),
     attachmentLinks: sent.map((s) => buildMessageLink(route, s.messageId)),
     attachmentFileIds: sent.map((s) => s.fileId).filter(Boolean),
     attachmentNames: sent.filter((s) => s.fileId).map((s) => s.name),
