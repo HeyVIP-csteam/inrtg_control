@@ -160,6 +160,40 @@ const MODULES = [
     ],
   },
   {
+    id: "withdraw_issue",
+    name: "Withdraw Issue",
+    icon: "💸",
+    accent: "#4ADE80",
+    description: "Select brand and issue type",
+    reporterLabel: "PIC",
+    attachments: DEFAULT_ATTACHMENTS,
+    fields: [
+      {
+        key: "issueType", label: "Issue Type", type: "select", required: true, emphasize: true,
+        options: [
+          "Withdraw Want to Cancel",
+          "Wrong Wallet — Want to Cancel",
+          "Withdraw Disapproved",
+          "Withdraw Approved but Not Received",
+          "Withdraw Amount Received Less",
+          "Withdraw Reversed Back to Agent",
+          "Withdraw Follow Up",
+        ],
+      },
+      // "username" (not "uid" like most other modules) is this module's
+      // own identifier field, by design — not a naming mismatch to fix.
+      { key: "username", label: "Username", type: "text", required: true, placeholder: "Player username..." },
+      { key: "tid", label: "TID", type: "text", required: true, placeholder: "Transaction ID..." },
+      { key: "submittedAmount", label: "Submitted Amount (Rs.)", type: "number", required: true, placeholder: "0.00",
+        showIf: { field: "issueType", oneOf: ["Withdraw Amount Received Less"] },
+      },
+      { key: "receivedAmount", label: "Received Amount (Rs.)", type: "number", required: true, placeholder: "0.00",
+        showIf: { field: "issueType", oneOf: ["Withdraw Amount Received Less"] },
+      },
+      { key: "remark", label: "Remark", type: "textarea", required: false, placeholder: "Additional remarks..." },
+    ],
+  },
+  {
     id: "risk_issue",
     name: "Risk Issue",
     icon: "⚠️",
@@ -393,40 +427,6 @@ const MODULES = [
     fields: [
       { key: "issueDetails", label: "Issue Details", type: "textarea", required: true, placeholder: "Describe the Genie issue..." },
       { key: "chatLinks", label: "Chat Link(s)", type: "textarea", required: true, placeholder: "Chat links (multiple allowed, one per line)..." },
-    ],
-  },
-  {
-    id: "withdraw_issue",
-    name: "Withdraw Issue",
-    icon: "💸",
-    accent: "#4ADE80",
-    description: "Select brand and issue type",
-    reporterLabel: "PIC",
-    attachments: DEFAULT_ATTACHMENTS,
-    fields: [
-      {
-        key: "issueType", label: "Issue Type", type: "select", required: true, emphasize: true,
-        options: [
-          "Withdraw Want to Cancel",
-          "Wrong Wallet — Want to Cancel",
-          "Withdraw Disapproved",
-          "Withdraw Approved but Not Received",
-          "Withdraw Amount Received Less",
-          "Withdraw Reversed Back to Agent",
-          "Withdraw Follow Up",
-        ],
-      },
-      // "username" (not "uid" like most other modules) is this module's
-      // own identifier field, by design — not a naming mismatch to fix.
-      { key: "username", label: "Username", type: "text", required: true, placeholder: "Player username..." },
-      { key: "tid", label: "TID", type: "text", required: true, placeholder: "Transaction ID..." },
-      { key: "submittedAmount", label: "Submitted Amount (Rs.)", type: "number", required: true, placeholder: "0.00",
-        showIf: { field: "issueType", oneOf: ["Withdraw Amount Received Less"] },
-      },
-      { key: "receivedAmount", label: "Received Amount (Rs.)", type: "number", required: true, placeholder: "0.00",
-        showIf: { field: "issueType", oneOf: ["Withdraw Amount Received Less"] },
-      },
-      { key: "remark", label: "Remark", type: "textarea", required: false, placeholder: "Additional remarks..." },
     ],
   },
 ];
