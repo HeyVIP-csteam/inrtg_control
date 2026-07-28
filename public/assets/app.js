@@ -102,6 +102,85 @@
     if (f.required && !isGated) fieldEls[f.key].control.required = true;
   });
 
+  // ---- Withdraw Issue only: duplicate-TID guard ----
+  // Checks the TID field against the brand's Google Sheet (the durable
+  // record — not KV thread data, which gets cleaned up over time) both
+  // onBlur (early warning) and right before Submit (final backstop, in
+  // case the field was never blurred). A found duplicate locks Submit
+  // until the agent changes the TID.
+  let tidDuplicateInfo = null; // { date, pic } when the current TID value is a duplicate, else null
+  let checkTidNow = null; // only set for the Withdraw Issue module; the submit handler reads this
+  let tidCheckSeq = 0; // guards against a stale in-flight response overwriting a newer one
+
+  if (module.id === "withdraw_issue" && fieldEls.tid) {
+    const tidLabel = fieldEls.tid.wrap.querySelector("label");
+    const tidWarning = document.createElement("span");
+    tidWarning.className = "tid-warning";
+    tidLabel.appendChild(tidWarning);
+    const submitBtnEl = document.getElementById("submitBtn");
+
+    // One function keeps warning text + red input border + Submit
+    // disabled state in lock-step — never end up with e.g. the text
+    // cleared but the border still red.
+    function setTidState(state, text) {
+      tidWarning.textContent = text || "";
+      tidWarning.className = "tid-warning" + (state ? ` ${state}` : "");
+      fieldEls.tid.control.classList.toggle("field-error", state === "found");
+      if (state === "found") {
+        submitBtnEl.disabled = true;
+        submitBtnEl.title = "This TID was already submitted — change it before continuing.";
+      } else if (submitBtnEl.title) {
+        submitBtnEl.disabled = false;
+        submitBtnEl.title = "";
+      }
+    }
+
+    async function checkTid(showChecking) {
+      const brandId = brandSelect.value;
+      const tid = fieldEls.tid.control.value.trim();
+      tidDuplicateInfo = null;
+      if (!brandId || !tid) {
+        setTidState(null, "");
+        return null;
+      }
+
+      const seq = ++tidCheckSeq;
+      if (showChecking) setTidState("checking", "checking…");
+
+      let data;
+      try {
+        const res = await window.AgentAuth.authFetch(`/api/check-tid?brand=${encodeURIComponent(brandId)}&tid=${encodeURIComponent(tid)}`);
+        data = await res.json();
+      } catch {
+        data = { ok: false };
+      }
+
+      if (seq !== tidCheckSeq) return null; // a newer check already replaced this result
+      if (!data.ok) {
+        setTidState(null, "");
+        return null;
+      }
+
+      if (data.found) {
+        tidDuplicateInfo = { date: data.date, pic: data.pic };
+        const parts = [data.date, data.pic].filter(Boolean).join(" by ");
+        setTidState("found", `⚠️ TID has been submitted on${parts ? ` ${parts}` : " before"}.`);
+      } else {
+        setTidState(null, "");
+      }
+      return tidDuplicateInfo;
+    }
+
+    checkTidNow = checkTid;
+    fieldEls.tid.control.addEventListener("blur", () => checkTid(true));
+    // Reset instantly on edit — don't make the agent wait for another blur.
+    fieldEls.tid.control.addEventListener("input", () => {
+      if (tidDuplicateInfo) setTidState(null, "");
+    });
+    // A brand switch invalidates the previous check (it read a different sheet).
+    brandSelect.addEventListener("change", () => setTidState(null, ""));
+  }
+
   // ---- Brand-dependent select options (e.g. Promotion / Tier Level lists
   // that differ per brand) — rebuilt whenever the brand changes. ----
   function refreshBrandDependentOptions() {
@@ -348,6 +427,17 @@
     btn.textContent = "Submitting…";
 
     try {
+      // Withdraw Issue's final TID duplicate check — catches the case
+      // where the field was never blurred, or the last blur check
+      // predates a change back to an already-flagged value.
+      if (checkTidNow) {
+        await checkTidNow(true);
+        if (tidDuplicateInfo) {
+          const parts = [tidDuplicateInfo.date, tidDuplicateInfo.pic].filter(Boolean).join(" by ");
+          throw new Error(`This TID was already submitted${parts ? ` on ${parts}` : ""}. Change the TID or confirm with the team before resubmitting.`);
+        }
+      }
+
       const formData = new FormData(form);
       const fields = module.fields
         .filter((f) => !f.showIf || fieldEls[f.key].wrap.classList.contains("is-visible"))
@@ -395,7 +485,11 @@
       status.textContent = err.message || "Something went wrong. Try again.";
       status.className = "status-msg err";
     } finally {
-      btn.disabled = false;
+      // Only re-enable if the TID isn't still flagged as a duplicate —
+      // otherwise this would clear the "disabled" state that
+      // setTidState() just set, leaving the button clickable while the
+      // red border/warning are still showing.
+      if (!tidDuplicateInfo) btn.disabled = false;
       document.getElementById("submitLabel").textContent = `Submit ${module.name}`;
     }
   });
