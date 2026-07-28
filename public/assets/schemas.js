@@ -92,6 +92,7 @@ const MODULES = [
           "Forgot Password (OTP Limit Exceeded)",
           "Forget Username & Gmail",
           "KYC Issues",
+          "Update Information",
         ],
       },
       { key: "uid", label: "UID", type: "text", required: true, placeholder: "Player UID...",
@@ -99,6 +100,7 @@ const MODULES = [
           "Register Number Verification", "Add Mobile Number Verify", "Add Number Remove",
           "Registration Number Inputted Wrong", "Customer Number Change", "Gmail Verification", "Gmail Remove",
           "Customer Email Change / Inactive / Lost", "Forgot Password (OTP Limit Exceeded)", "KYC Issues",
+          "Update Information",
         ] },
       },
       { key: "registerNumber", label: "Register Number", type: "text", required: false, placeholder: "Register number...",
@@ -155,6 +157,37 @@ const MODULES = [
       },
       { key: "aadharPan", label: "Aadhar / Pan Card Number", type: "text", required: false,
         showIf: { field: "issueType", oneOf: ["Register Number Verification", "Add Number Remove", "KYC Issues"] },
+      },
+      // -- Update Information: two-level cascade (Request dropdown, then
+      // one of 3 field groups). showIf supports an array (AND logic), so
+      // each child field's condition is [issueType===Update Information,
+      // updateInfoType===<its option>]. All 6 child fields stay optional —
+      // agents aren't forced to fill both halves of a pair.
+      {
+        key: "updateInfoType", label: "Request", type: "select", required: true,
+        options: ["Change Name", "Change Birth Date", "Update (Real Name & Birth of Date)"],
+        showIf: { field: "issueType", oneOf: ["Update Information"] },
+      },
+      // -- Change Name --
+      { key: "previousName", label: "Previous Name (Remove)", type: "text", required: false,
+        showIf: [{ field: "issueType", oneOf: ["Update Information"] }, { field: "updateInfoType", oneOf: ["Change Name"] }],
+      },
+      { key: "newName", label: "New Name", type: "text", required: false,
+        showIf: [{ field: "issueType", oneOf: ["Update Information"] }, { field: "updateInfoType", oneOf: ["Change Name"] }],
+      },
+      // -- Change Birth Date --
+      { key: "previousBirthDate", label: "Previous Birth Date (Remove)", type: "text", required: false,
+        showIf: [{ field: "issueType", oneOf: ["Update Information"] }, { field: "updateInfoType", oneOf: ["Change Birth Date"] }],
+      },
+      { key: "newBirthDate", label: "New Birth Date", type: "text", required: false,
+        showIf: [{ field: "issueType", oneOf: ["Update Information"] }, { field: "updateInfoType", oneOf: ["Change Birth Date"] }],
+      },
+      // -- Update (combined) — both optional & independent, agent fills whichever apply --
+      { key: "realName", label: "Real Name", type: "text", required: false,
+        showIf: [{ field: "issueType", oneOf: ["Update Information"] }, { field: "updateInfoType", oneOf: ["Update (Real Name & Birth of Date)"] }],
+      },
+      { key: "birthDate", label: "Birth of Date", type: "text", required: false,
+        showIf: [{ field: "issueType", oneOf: ["Update Information"] }, { field: "updateInfoType", oneOf: ["Update (Real Name & Birth of Date)"] }],
       },
       { key: "remark", label: "Issue & Remark", type: "textarea", required: false, placeholder: "Additional remarks..." },
     ],

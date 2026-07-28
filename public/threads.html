@@ -407,7 +407,7 @@
           <div class="thread-detail-actions">
             <button class="status-chip ${t.solved ? "solved" : "unsolved"}" id="solveBtn">${t.solved ? "✅ Solved" : "❌ Not Solved"}</button>
             ${!t.rootRecalled && (!t.fieldMap || !t.brandId) ? '<button class="icon-btn" id="editRootBtn" title="Edit the original Telegram message (plain text — this ticket predates field-level editing)">✏️</button>' : ""}
-            ${!t.rootRecalled && t.fieldMap && t.brandId ? '<button class="icon-btn" id="editDetailsBtn" title="Edit fields — syncs the Telegram message + the Sheet row (if any)">📊</button>' : ""}
+            ${!t.rootRecalled && t.fieldMap && t.brandId ? '<button class="icon-btn" id="editDetailsBtn" title="Edit fields — syncs the Telegram message + the Sheet row (if any)">✏️</button>' : ""}
             ${t.fieldMap && t.brandId ? '<button class="icon-btn" id="forwardBtn" title="Generate a new ticket in another Topic, pre-filled from this one">↗️</button>' : ""}
             ${!t.rootRecalled ? '<button class="icon-btn" id="recallRootBtn" title="Recall (delete) the original Telegram message">↩️</button>' : ""}
             <button class="icon-btn" id="deleteBtn" title="Delete this tracking record (Telegram + Sheet are untouched)">🗑</button>
@@ -421,7 +421,7 @@
     // Everything that USED to be fixed at the top along with the header
     // (rootRecalled notice, the summary/attachments card) now scrolls
     // together with the conversation instead — only the header itself
-    // (icon/title/Solved/✏️↩️🗑🔄) stays pinned. See renderDetail() and
+    // (icon/title/Solved/✏️↗️↩️🗑🔄) stays pinned. See renderDetail() and
     // updateThreadContent(), which prepend this to the scroll area's
     // innerHTML rather than the fixed one.
     function buildSummaryHTML(t) {
@@ -757,7 +757,7 @@
     // trackable Sheet row — see submit.js's `sheetRef`) that Sheet row,
     // using the exact same builder functions the original submission
     // used. Only offered at all when the thread has t.fieldMap/t.brandId
-    // saved — see the showIf on the 📊 button in buildHeaderHTML.
+    // saved — see the showIf on the ✏️ (editDetailsBtn) button in buildHeaderHTML.
     function openEditDetailsModal() {
       const t = selectedThread;
       const module = (window.MODULES || []).find((m) => m.id === t.module);

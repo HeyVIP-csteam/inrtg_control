@@ -43,7 +43,7 @@
  *     by anyone — see the early rejection below and saveAccount()'s own
  *     independent enforcement in _shared/accounts.js.
  */
-import { listAccounts, saveAccount, deleteAccount, getAccount, authenticateStaff, anySuperAdminExists, setAccountLocked, ROLE_RANK, rankOf } from "../../_shared/accounts.js";
+import { listAccounts, saveAccount, deleteAccount, getAccount, authenticateStaff, anySuperAdminExists, setAccountLocked, ROLE_RANK, rankOf, canSeeAdminSection, canEditAdminSection, canManageOthersAdminAccess } from "../../_shared/accounts.js";
 
 // actor can only manage a target STRICTLY ranked below itself — same
 // rank can't manage same rank (a SuperAdmin can't touch another
@@ -115,6 +115,13 @@ async function handlePost({ request, env }) {
     return json({ ok: false, error: "The Owner role cannot be assigned through this interface." }, 403);
   }
 
+  // Account Management Access itself (which sections a target account can
+  // see/edit) can only ever be changed by the Owner — a SuperAdmin can't
+  // hand out access to sections they don't fully control themselves.
+  if (body.action === "save" && (body.allowedAdminSections !== undefined || body.adminSectionEditAccess !== undefined) && !canManageOthersAdminAccess(auth.account)) {
+    return json({ ok: false, error: "You don't have permission to change Account Management Access." }, 403);
+  }
+
   if (body.action === "save") {
     if (!body.username) return json({ ok: false, error: "Username is required." }, 400);
     const targetUsername = body.username.toLowerCase();
@@ -126,6 +133,9 @@ async function handlePost({ request, env }) {
 
     if (!existingTarget) {
       // ---- Creating a brand-new account ----
+      if (!canSeeAdminSection(auth.account, "createAccount")) {
+        return json({ ok: false, error: "You don't have Create Account access." }, 403);
+      }
       const requestedRole = body.role || "agent";
       if (!canManage(actorRank, rankOf(requestedRole))) {
         return json({ ok: false, error: "You can only create accounts with a role lower than your own." }, 403);
@@ -158,19 +168,23 @@ async function handlePost({ request, env }) {
           !accessChanging &&
           actorRank >= ROLE_RANK.admin;
         const superAdminAlreadyExists = await anySuperAdminExists(env);
-        const hasAuthority = actorRank >= ROLE_RANK.superadmin && canManage(actorRank, targetRank);
+        const hasAuthority = canEditAdminSection(auth.account, "agentProfile") && canManage(actorRank, targetRank);
 
         if (!hasAuthority && !(isSelfPromotionToSuperAdmin && !superAdminAlreadyExists)) {
           return json({ ok: false, error: "You can only change role, office, brand access, or topic access for accounts ranked below your own." }, 403);
         }
       }
-      if (profileChanging && !(actorRank >= ROLE_RANK.admin && (isSelf || canManage(actorRank, targetRank)))) {
-        return json({ ok: false, error: "You can only edit profile fields for your own account, or accounts ranked below your own." }, 403);
+      // Editing your OWN profile fields is a basic self-service right,
+      // unrelated to Account Management Access — untouched by this layer.
+      // Editing someone ELSE's requires agentProfile Can-Edit + outranking them.
+      const othersProfileOk = !isSelf && canEditAdminSection(auth.account, "agentProfile") && canManage(actorRank, targetRank);
+      if (profileChanging && !(isSelf ? actorRank >= ROLE_RANK.admin : othersProfileOk)) {
+        return json({ ok: false, error: "You can only edit profile fields for your own account, or accounts ranked below your own (with Can-Edit access to Agent Profile)." }, 403);
       }
       if (passwordChanging && !roleChanging && !accessChanging) {
         // Password-only change on someone else's account (an assisted reset).
-        if (!isSelf && !canManage(actorRank, targetRank)) {
-          return json({ ok: false, error: "You can only reset a password for accounts ranked below your own." }, 403);
+        if (!isSelf && !(canEditAdminSection(auth.account, "agentProfile") && canManage(actorRank, targetRank))) {
+          return json({ ok: false, error: "You can only reset a password for accounts ranked below your own (with Can-Edit access to Agent Profile)." }, 403);
         }
       }
     }
@@ -184,6 +198,8 @@ async function handlePost({ request, env }) {
         officeId: body.officeId !== undefined ? (body.officeId || null) : undefined,
         allowedBrands: body.allowedBrands !== undefined ? body.allowedBrands : undefined,
         allowedModules: body.allowedModules !== undefined ? body.allowedModules : undefined,
+        allowedAdminSections: body.allowedAdminSections !== undefined ? body.allowedAdminSections : undefined,
+        adminSectionEditAccess: body.adminSectionEditAccess !== undefined ? body.adminSectionEditAccess : undefined,
         fullName: body.fullName !== undefined ? body.fullName : undefined,
         pid: body.pid !== undefined ? body.pid : undefined,
       });
@@ -195,6 +211,7 @@ async function handlePost({ request, env }) {
 
   if (body.action === "delete") {
     if (actorRank < ROLE_RANK.admin) return json({ ok: false, error: "Not authorized." }, 403); // Senior has no delete access at all
+    if (!canEditAdminSection(auth.account, "agentProfile")) return json({ ok: false, error: "You don't have Can-Edit access to Agent Profile." }, 403);
     if (!body.username) return json({ ok: false, error: "Missing username." }, 400);
     const target = await getAccount(env, body.username);
     if (isHiddenTarget(target, actorRank)) return json({ ok: false, error: "Account not found." }, 404);
@@ -216,9 +233,12 @@ async function handlePost({ request, env }) {
     const target = await getAccount(env, body.username);
     if (isHiddenTarget(target, actorRank)) return json({ ok: false, error: "Account not found." }, 404);
     if (!target) return json({ ok: false, error: "Account not found." }, 404);
-    if (!(actorRank >= ROLE_RANK.superadmin && canManage(actorRank, rankOf(target.role)))) {
-      return json({ ok: false, error: "You can only lock or unlock accounts ranked below your own." }, 403);
+    if (!(canEditAdminSection(auth.account, "agentProfile") && canManage(actorRank, rankOf(target.role)))) {
+      return json({ ok: false, error: "You can only lock or unlock accounts ranked below your own (with Can-Edit access to Agent Profile)." }, 403);
     }
+    // (Rank floor itself no longer applies here — Can-Edit access to Agent
+    // Profile is now the gate, same as everything else in this file that
+    // touches an existing account. See ACCOUNT_MGMT_VIEW_EDIT_LEVEL_SETUP.md.)
     const locked = body.action === "lock";
     const account = await setAccountLocked(env, body.username, locked, locked ? (body.reason || `Manually locked by ${actorUsername}`) : null);
     return json({ ok: true, account });

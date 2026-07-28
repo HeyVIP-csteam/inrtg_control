@@ -65,6 +65,70 @@ const VALID_ROLES = Object.keys(ROLE_RANK);
 const ASSIGNABLE_ROLES = VALID_ROLES.filter((r) => r !== "owner");
 export function rankOf(role) { return ROLE_RANK[role] ?? ROLE_RANK.agent; }
 
+// ---- Account Management Access ----
+//
+// The sidebar's "Account Management" dropdown has 4 items: Create
+// Account, Whitelist IP, TG Group/Channel, Agent Profile. Historically
+// which of these an account could see/use was hard-coded purely off rank
+// (a Senior always saw Create Account, an Admin always saw Whitelist IP
+// read-only, etc). This layer makes that a per-account, owner-controlled
+// choice ON TOP of a rank floor — the floor still has to be met (an
+// "agent"-rank account can never see any of these, checkbox or not), but
+// within that floor, the Owner decides per-account which sections are
+// actually visible via `allowedAdminSections` ("all" | array of ids |
+// unset). Unset (never touched by the Owner) means "fall back to
+// whatever the rank floor alone would already allow" — so turning this
+// feature on doesn't retroactively hide anything from anyone who already
+// had access; the Owner has to deliberately restrict someone for the
+// checkbox to start mattering for that account.
+export const ADMIN_SECTIONS_LIST = [
+  { id: "createAccount", name: "Create Account", icon: "➕", floorRank: ROLE_RANK.senior },
+  { id: "whitelistIp", name: "Whitelist IP", icon: "🌐", floorRank: ROLE_RANK.admin },
+  { id: "tgRoutes", name: "TG Group / Channel", icon: "📡", floorRank: ROLE_RANK.admin },
+  { id: "agentProfile", name: "Agent Profile", icon: "🪪", floorRank: ROLE_RANK.admin },
+];
+
+export function canSeeAdminSection(account, sectionId) {
+  if (!account) return true; // bootstrap mode — same full trust bootstrapPassword already had
+  if (account.role === "owner") return true;
+  const section = ADMIN_SECTIONS_LIST.find((s) => s.id === sectionId);
+  if (!section) return false;
+  if (rankOf(account.role) < section.floorRank) return false;
+  if (account.allowedAdminSections === "all") return true;
+  if (account.allowedAdminSections === undefined) return true; // never touched by Owner — legacy rank-only behavior
+  return Array.isArray(account.allowedAdminSections) && account.allowedAdminSections.includes(sectionId);
+}
+
+// Only the Owner can grant/restrict OTHER accounts' Account Management
+// Access (both the see-it layer above and the edit-it layer below) — a
+// SuperAdmin can't hand out access to sections they don't fully control
+// themselves.
+export function canManageOthersAdminAccess(account) {
+  return !!account && account.role === "owner";
+}
+
+// View-vs-Edit split, for the 3 sections where "seeing it" and "changing
+// it" are meaningfully different actions. "createAccount" has no
+// view-only mode — creating an account IS the whole action, so it's
+// excluded here and stays governed by canSeeAdminSection() alone.
+//
+// DESIGN: this is the ONLY gate for edit rights on these 3 sections —
+// rank plays no further role beyond already being required to pass
+// canSeeAdminSection() above. An Admin-rank account CAN be granted
+// Can-Edit on e.g. whitelistIp, and a SuperAdmin CAN be left at
+// View-only. (The separate "actor must outrank the TARGET account" rule
+// for Agent Profile edits, in functions/api/admin/accounts.js, is a
+// different, still-active protection — not replaced by this.)
+export const EDITABLE_ADMIN_SECTIONS = ["whitelistIp", "tgRoutes", "agentProfile"];
+
+export function canEditAdminSection(account, sectionId) {
+  if (!account) return true; // bootstrap mode
+  if (account.role === "owner") return true;
+  if (!canSeeAdminSection(account, sectionId)) return false;
+  if (account.adminSectionEditAccess === "all") return true;
+  return Array.isArray(account.adminSectionEditAccess) && account.adminSectionEditAccess.includes(sectionId);
+}
+
 // ---- password hashing (PBKDF2 via Web Crypto, available in Workers) ----
 //
 // ITERATION COUNT — lowered this session, see below for why.
@@ -290,7 +354,7 @@ function stripSecret(account) {
 // `passwordChangedBy` is only meaningful when `password` is also given —
 // the username of whoever triggered the change (their own, for
 // self-service; the admin's, for an admin-driven reset).
-export async function saveAccount(env, { username, password, passwordChangedBy, role, officeId, allowedBrands, allowedModules, fullName, pid }) {
+export async function saveAccount(env, { username, password, passwordChangedBy, role, officeId, allowedBrands, allowedModules, allowedAdminSections, adminSectionEditAccess, fullName, pid }) {
   const key = username.toLowerCase();
   const existing = await getAccount(env, key);
   let salt = existing?.salt;
@@ -315,23 +379,41 @@ export async function saveAccount(env, { username, password, passwordChangedBy, 
   }
   if (!salt || !hash) throw new Error("A password is required for a new account.");
 
+  // ASSIGNABLE_ROLES (not VALID_ROLES) on purpose — see its definition
+  // above. If anything, anywhere, ever passes role: "owner" here: an
+  // existing account keeps its current role unchanged (never downgraded,
+  // never "upgraded" to owner); a brand-new account falls back to
+  // "agent". This is the actual enforcement point — every other check
+  // (canManage(), the explicit early rejection in
+  // functions/api/admin/accounts.js, etc.) is defense in depth on top of
+  // this, not instead of it.
+  const finalRole = role !== undefined
+    ? (ASSIGNABLE_ROLES.includes(role) ? role : (existing?.role || "agent"))
+    : (existing?.role || "agent");
+
+  // Default Can-Edit set for a NEW account, or any pre-existing account
+  // that has never had adminSectionEditAccess explicitly touched yet —
+  // mirrors what rank ALONE used to determine before this became a
+  // per-account choice (SuperAdmin+ could edit Whitelist IP/Agent
+  // Profile outright, TG Routes too; everyone else was view-only or
+  // couldn't see it at all). This exists purely so switching this
+  // feature on doesn't silently downgrade every existing SuperAdmin to
+  // view-only — the Owner doesn't have to manually re-grant Can-Edit to
+  // accounts that already effectively had it. The instant the Owner
+  // explicitly sets this field (even to an empty array), that value wins
+  // forever after.
+  const defaultAdminSectionEditAccess = rankOf(finalRole) >= ROLE_RANK.superadmin ? "all" : [];
+
   const account = {
     username: key,
     salt,
     hash,
     iterations,
     tokenVersion,
-    // ASSIGNABLE_ROLES (not VALID_ROLES) on purpose — see its definition
-    // above. If anything, anywhere, ever passes role: "owner" here: an
-    // existing account keeps its current role unchanged (never
-    // downgraded, never "upgraded" to owner); a brand-new account falls
-    // back to "agent". This is the actual enforcement point — every
-    // other check (canManage(), the explicit early rejection in
-    // functions/api/admin/accounts.js, etc.) is defense in depth on top
-    // of this, not instead of it.
-    role: role !== undefined
-      ? (ASSIGNABLE_ROLES.includes(role) ? role : (existing?.role || "agent"))
-      : (existing?.role || "agent"),
+    // ASSIGNABLE_ROLES (not VALID_ROLES) on purpose — see finalRole above,
+    // computed once and reused so the same value backs both this field
+    // and the Can-Edit default below.
+    role: finalRole,
     officeId: officeId !== undefined ? (officeId || null) : (existing?.officeId ?? null),
     allowedBrands: allowedBrands !== undefined
       ? (allowedBrands === "all" ? "all" : (Array.isArray(allowedBrands) ? allowedBrands : []))
@@ -346,6 +428,19 @@ export async function saveAccount(env, { username, password, passwordChangedBy, 
     allowedModules: allowedModules !== undefined
       ? (allowedModules === "all" ? "all" : (Array.isArray(allowedModules) ? allowedModules : []))
       : (existing?.allowedModules ?? "all"),
+    // Account Management Access — which of the 4 admin-sidebar sections
+    // this account can even see. "all" | array of ids | left unset
+    // entirely (never touched by the Owner, so canSeeAdminSection() falls
+    // back to rank-floor-only behavior — see that function's comment).
+    allowedAdminSections: allowedAdminSections !== undefined
+      ? (allowedAdminSections === "all" ? "all" : (Array.isArray(allowedAdminSections) ? allowedAdminSections : []))
+      : existing?.allowedAdminSections,
+    // Of the sections this account can see, which it can also EDIT (vs.
+    // View only). See canEditAdminSection() + defaultAdminSectionEditAccess
+    // above for why the fallback is role-based instead of just [].
+    adminSectionEditAccess: adminSectionEditAccess !== undefined
+      ? (adminSectionEditAccess === "all" ? "all" : (Array.isArray(adminSectionEditAccess) ? adminSectionEditAccess : []))
+      : (existing?.adminSectionEditAccess !== undefined ? existing.adminSectionEditAccess : defaultAdminSectionEditAccess),
     fullName: fullName !== undefined ? fullName : (existing?.fullName || ""),
     pid: pid !== undefined ? pid : (existing?.pid || ""),
     lastActiveAt: existing?.lastActiveAt || null,
