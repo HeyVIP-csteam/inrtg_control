@@ -917,7 +917,7 @@ a { color: inherit; text-decoration: none; }
 .icon-btn.icon-btn-labeled span { font-size: 12px; }
 @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
 
-.threads-topline { display: flex; align-items: center; justify-content: flex-end; gap: 14px; padding-right: 24px; }
+.threads-topline { display: flex; align-items: center; justify-content: flex-start; gap: 14px; padding-left: 24px; }
 .agent-whoami { font-size: 12px; font-weight: 600; color: var(--ink-soft); }
 .agent-whoami .role-badge {
   display: inline-block; margin-left: 6px; padding: 2px 8px; border-radius: 20px;
