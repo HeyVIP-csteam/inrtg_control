@@ -115,11 +115,13 @@ async function handlePost({ request, env }) {
     return json({ ok: false, error: "The Owner role cannot be assigned through this interface." }, 403);
   }
 
-  // Account Management Access itself (which sections a target account can
-  // see/edit) can only ever be changed by the Owner — a SuperAdmin can't
-  // hand out access to sections they don't fully control themselves.
-  if (body.action === "save" && (body.allowedAdminSections !== undefined || body.adminSectionEditAccess !== undefined) && !canManageOthersAdminAccess(auth.account)) {
-    return json({ ok: false, error: "You don't have permission to change Account Management Access." }, 403);
+  // "Can manage Account Management Access for other accounts" — the
+  // delegation flag itself — can only ever be granted/revoked by the
+  // real Owner. If a delegated (non-owner) account could flip this flag,
+  // they could hand the same power to themselves or anyone else, which
+  // would defeat the entire point of it being Owner-controlled.
+  if (body.action === "save" && body.canGrantAdminAccess !== undefined && auth.account?.role !== "owner") {
+    return json({ ok: false, error: 'Only the Owner can grant or revoke "Can manage Account Management Access for other accounts".' }, 403);
   }
 
   if (body.action === "save") {
@@ -129,6 +131,22 @@ async function handlePost({ request, env }) {
 
     if (isHiddenTarget(existingTarget, actorRank)) {
       return json({ ok: false, error: "Account not found." }, 404); // 404, not 403 — see isHiddenTarget()'s own comment
+    }
+
+    // Account Management Access itself (which sections a target account
+    // can see/edit) can only be changed by the Owner, or by an account
+    // the Owner has explicitly delegated this to via canGrantAdminAccess
+    // (see canManageOthersAdminAccess()) — and even then, only for a
+    // target ranked STRICTLY below the actor, same rule as every other
+    // cross-account action below (a delegated SuperAdmin still can't
+    // touch another SuperAdmin; only the real Owner can).
+    if (body.allowedAdminSections !== undefined || body.adminSectionEditAccess !== undefined) {
+      if (!canManageOthersAdminAccess(auth.account)) {
+        return json({ ok: false, error: "You don't have permission to change Account Management Access." }, 403);
+      }
+      if (existingTarget && !canManage(actorRank, rankOf(existingTarget.role))) {
+        return json({ ok: false, error: "You can only change Account Management Access for accounts ranked below your own." }, 403);
+      }
     }
 
     if (!existingTarget) {
@@ -200,6 +218,7 @@ async function handlePost({ request, env }) {
         allowedModules: body.allowedModules !== undefined ? body.allowedModules : undefined,
         allowedAdminSections: body.allowedAdminSections !== undefined ? body.allowedAdminSections : undefined,
         adminSectionEditAccess: body.adminSectionEditAccess !== undefined ? body.adminSectionEditAccess : undefined,
+        canGrantAdminAccess: body.canGrantAdminAccess !== undefined ? !!body.canGrantAdminAccess : undefined,
         fullName: body.fullName !== undefined ? body.fullName : undefined,
         pid: body.pid !== undefined ? body.pid : undefined,
       });

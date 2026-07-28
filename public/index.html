@@ -402,7 +402,11 @@
       if (Array.isArray(authInfo.adminSectionEditAccess)) return authInfo.adminSectionEditAccess.includes(sectionId);
       return (ADMIN_SECTIONS_DEFAULT_EDIT[authInfo.role] || []).includes(sectionId);
     }
-    const canManageOthersAdminAccess = authInfo?.role === "owner";
+    const canManageOthersAdminAccess = authInfo?.role === "owner" || authInfo?.canGrantAdminAccess === true;
+    // Only the real Owner can grant/revoke the delegation itself (see
+    // canManageOthersAdminAccess() in functions/_shared/accounts.js) — a
+    // delegated account can use the power but not hand it to anyone else.
+    const isRealOwner = authInfo?.role === "owner";
 
     document.getElementById("subCreateAccount").style.display = canSeeAdminSection("createAccount") ? "flex" : "none";
     document.getElementById("subWhitelistIp").style.display = canSeeAdminSection("whitelistIp") ? "flex" : "none";
@@ -975,10 +979,20 @@
             ${canManageOthersAdminAccess ? `
             <div class="agent-profile-collapsible" style="margin-top:14px;">
               <p class="agent-profile-section-label agent-profile-collapsible-header">
-                <span>🔒 Account Management Access <span class="agent-profile-locked-note">(Owner only — which admin sidebar sections this account can see/edit)</span></span>
+                <span>🔒 Account Management Access <span class="agent-profile-locked-note">(which admin sidebar sections this account can see/edit)</span></span>
                 <span class="arrow">&rarr;</span>
               </p>
-              <div class="agent-profile-admin-section-list agent-profile-collapsible-body">${adminSectionChecks}</div>
+              <div class="agent-profile-collapsible-body" style="flex-direction:column;">
+                <div class="agent-profile-admin-section-list">${adminSectionChecks}</div>
+                ${isRealOwner ? `
+                <div class="agent-profile-admin-delegate-row">
+                  <label class="agent-profile-module-check">
+                    <input type="checkbox" id="ap_canGrantAdminAccess" ${a.canGrantAdminAccess ? "checked" : ""} />
+                    Can manage Account Management Access for other accounts
+                  </label>
+                </div>
+                ` : ""}
+              </div>
             </div>
             ` : ""}
           </div>
@@ -1080,11 +1094,11 @@
         const selectedModules = moduleChecks.filter((c) => c.checked).map((c) => c.value);
         payload.allowedModules = selectedModules.length === moduleChecks.length ? "all" : selectedModules;
       }
-      // Account Management Access — separate block, only rendered for the
-      // Owner (canManageOthersAdminAccess), independent of canManageAccess
-      // above (an Owner might be viewing a target they can't outrank-edit
-      // the profile of, but Account Management Access has no such rank
-      // requirement — only the Owner-only gate).
+      // Account Management Access — separate block, rendered for the Owner
+      // OR a delegated account (canManageOthersAdminAccess), independent
+      // of canManageAccess above (a manager might be viewing a target they
+      // can't outrank-edit the profile of, but Account Management Access
+      // has its own gate — and, server-side, its own outrank check).
       const adminSectionList = document.querySelector(".agent-profile-admin-section-list");
       if (adminSectionList) {
         // NOT "input[type=checkbox]" — that would also catch anything else
@@ -1100,6 +1114,12 @@
         });
         payload.adminSectionEditAccess = editSections.length === EDITABLE_ADMIN_SECTIONS.length ? "all" : editSections;
       }
+      // "Can manage Account Management Access for other accounts" — only
+      // ever rendered for the real Owner (isRealOwner), so its presence in
+      // the DOM alone is enough to know it's safe to send; the server
+      // independently re-checks role === "owner" too either way.
+      const grantCheckbox = document.getElementById("ap_canGrantAdminAccess");
+      if (grantCheckbox) payload.canGrantAdminAccess = grantCheckbox.checked;
       statusEl.textContent = "Saving…";
       statusEl.className = "edit-details-status";
       const res = await window.AgentAuth.authFetch("/api/admin/accounts", {

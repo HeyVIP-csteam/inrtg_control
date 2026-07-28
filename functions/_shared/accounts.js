@@ -136,12 +136,18 @@ export function canSeeAdminSection(account, sectionId) {
   return (ADMIN_SECTIONS_DEFAULT_SEEN[account.role] || []).includes(sectionId);
 }
 
-// Only the Owner can grant/restrict OTHER accounts' Account Management
-// Access (both the see-it layer above and the edit-it layer below) — a
-// SuperAdmin can't hand out access to sections they don't fully control
-// themselves.
+// Only the Owner — or an account the Owner has explicitly delegated this
+// to via the "Can manage Account Management Access for other accounts"
+// checkbox (`canGrantAdminAccess`) — can grant/restrict OTHER accounts'
+// Account Management Access (both the see-it layer above and the edit-it
+// layer below). The delegation flag itself can only ever be set by the
+// real Owner (enforced in functions/api/admin/accounts.js, not here) —
+// so a delegated account can extend Account Management Access to others,
+// but can never hand out the delegation power itself, and (per the
+// caller-side rank check in accounts.js) can only act on accounts
+// ranked below its own.
 export function canManageOthersAdminAccess(account) {
-  return !!account && account.role === "owner";
+  return !!account && (account.role === "owner" || account.canGrantAdminAccess === true);
 }
 
 // View-vs-Edit split, for the 3 sections where "seeing it" and "changing
@@ -395,7 +401,7 @@ function stripSecret(account) {
 // `passwordChangedBy` is only meaningful when `password` is also given —
 // the username of whoever triggered the change (their own, for
 // self-service; the admin's, for an admin-driven reset).
-export async function saveAccount(env, { username, password, passwordChangedBy, role, officeId, allowedBrands, allowedModules, allowedAdminSections, adminSectionEditAccess, fullName, pid }) {
+export async function saveAccount(env, { username, password, passwordChangedBy, role, officeId, allowedBrands, allowedModules, allowedAdminSections, adminSectionEditAccess, canGrantAdminAccess, fullName, pid }) {
   const key = username.toLowerCase();
   const existing = await getAccount(env, key);
   let salt = existing?.salt;
@@ -482,6 +488,13 @@ export async function saveAccount(env, { username, password, passwordChangedBy, 
     adminSectionEditAccess: adminSectionEditAccess !== undefined
       ? (adminSectionEditAccess === "all" ? "all" : (Array.isArray(adminSectionEditAccess) ? adminSectionEditAccess : []))
       : (existing?.adminSectionEditAccess !== undefined ? existing.adminSectionEditAccess : defaultAdminSectionEditAccess),
+    // "Can manage Account Management Access for other accounts" — lets
+    // this account act as a delegate for canManageOthersAdminAccess()
+    // (see that function). Owner-only to set (enforced in
+    // functions/api/admin/accounts.js) — defaults to false for every
+    // account, new or pre-existing, so nobody gains this power just by
+    // this field shipping.
+    canGrantAdminAccess: canGrantAdminAccess !== undefined ? !!canGrantAdminAccess : (existing?.canGrantAdminAccess || false),
     fullName: fullName !== undefined ? fullName : (existing?.fullName || ""),
     pid: pid !== undefined ? pid : (existing?.pid || ""),
     lastActiveAt: existing?.lastActiveAt || null,
