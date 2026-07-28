@@ -425,6 +425,19 @@ a { color: inherit; text-decoration: none; }
   color: var(--ink-soft); margin: 0 0 8px;
 }
 .agent-profile-locked-note { text-transform: none; font-weight: 600; letter-spacing: 0; color: var(--ink-soft); }
+
+/* ---- Collapsible "Topic access" / "Account Management Access" blocks
+   inside the Agent Personal Profile popup — collapsed by default, click
+   the header to expand. Same open/arrow-rotate pattern as the sidebar's
+   .sidebar-item.expandable / .arrow above. ---- */
+.agent-profile-collapsible-header {
+  cursor: pointer; user-select: none; display: flex; align-items: center;
+  justify-content: space-between; gap: 8px; margin-bottom: 0; padding: 2px 0;
+}
+.agent-profile-collapsible-header .arrow { transition: transform 0.15s ease; flex-shrink: 0; }
+.agent-profile-collapsible.open .agent-profile-collapsible-header .arrow { transform: rotate(90deg); }
+.agent-profile-collapsible > .agent-profile-collapsible-body { display: none; margin-top: 8px; }
+.agent-profile-collapsible.open > .agent-profile-collapsible-body { display: flex; }
 .agent-profile-status-row {
   display: flex; align-items: center; justify-content: space-between; gap: 8px;
   border: 1.5px solid var(--border); background: var(--field-bg); border-radius: 12px;

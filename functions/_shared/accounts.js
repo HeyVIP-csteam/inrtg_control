@@ -67,26 +67,60 @@ export function rankOf(role) { return ROLE_RANK[role] ?? ROLE_RANK.agent; }
 
 // ---- Account Management Access ----
 //
-// The sidebar's "Account Management" dropdown has 4 items: Create
-// Account, Whitelist IP, TG Group/Channel, Agent Profile. Historically
-// which of these an account could see/use was hard-coded purely off rank
-// (a Senior always saw Create Account, an Admin always saw Whitelist IP
-// read-only, etc). This layer makes that a per-account, owner-controlled
-// choice ON TOP of a rank floor — the floor still has to be met (an
-// "agent"-rank account can never see any of these, checkbox or not), but
-// within that floor, the Owner decides per-account which sections are
-// actually visible via `allowedAdminSections` ("all" | array of ids |
-// unset). Unset (never touched by the Owner) means "fall back to
-// whatever the rank floor alone would already allow" — so turning this
-// feature on doesn't retroactively hide anything from anyone who already
-// had access; the Owner has to deliberately restrict someone for the
-// checkbox to start mattering for that account.
+// The sidebar's "Account Management" dropdown has 4 gated items: Create
+// Account, Whitelist IP, TG Group/Channel, Agent Profile (Reset Password
+// is a 5th subitem but is intentionally NOT in this list/gate at all —
+// every rank keeps seeing it, unconditionally, same as before). Which of
+// the 4 gated items an account can see/edit is a per-account,
+// Owner-controlled choice ON TOP OF a rank floor — the floor still has to
+// be met (an "agent"-rank account can never see any of these, regardless
+// of any override), but within that floor the Owner decides per-account
+// via `allowedAdminSections` ("all" | array of ids | unset) and, for the
+// 3 editable sections, `adminSectionEditAccess` ("all" | array of ids |
+// unset).
+//
+// SECURITY FIX — 2026-07-28: `unset` used to mean "show/allow everything
+// the rank floor alone would permit", i.e. every Admin+ account defaulted
+// to seeing (and, once the account.js UI is opened, being one Owner click
+// away from being granted) ALL FOUR sections the moment it crossed a
+// floor, with no deliberate Owner action required. That is exactly
+// backwards for a permissions feature — a brand new Admin- or
+// SuperAdmin-rank account should start LOCKED DOWN to a safe minimum and
+// require the Owner to deliberately widen it, not the other way round.
+// `unset` now falls back to a role-based default preset (below) instead
+// of "everything the floor allows". The Owner can still override any
+// individual account, in either direction (narrower OR wider than its
+// role's default — e.g. dropping a SuperAdmin to view-only, or handing an
+// Admin extra sections), by explicitly setting allowedAdminSections /
+// adminSectionEditAccess on that account — that explicit array/"all"
+// value always wins over the role default below.
 export const ADMIN_SECTIONS_LIST = [
   { id: "createAccount", name: "Create Account", icon: "➕", floorRank: ROLE_RANK.senior },
   { id: "whitelistIp", name: "Whitelist IP", icon: "🌐", floorRank: ROLE_RANK.admin },
   { id: "tgRoutes", name: "TG Group / Channel", icon: "📡", floorRank: ROLE_RANK.admin },
   { id: "agentProfile", name: "Agent Profile", icon: "🪪", floorRank: ROLE_RANK.admin },
 ];
+
+// Role-based defaults, used ONLY when the Owner has never explicitly set
+// allowedAdminSections / adminSectionEditAccess on that specific account.
+//   - agent:      sees none of the 4 (Reset Password only, ungated)
+//   - senior:     Create Account only (the one section its floor unlocks)
+//   - admin:      Whitelist IP only, and VIEW-ONLY (can't edit IPs)
+//   - superadmin: all 4 sections, all fully editable
+//   - owner:      always full access — short-circuited before these are
+//                 ever consulted, see canSeeAdminSection()/canEditAdminSection()
+export const ADMIN_SECTIONS_DEFAULT_SEEN = {
+  agent: [],
+  senior: ["createAccount"],
+  admin: ["whitelistIp"],
+  superadmin: ["createAccount", "whitelistIp", "tgRoutes", "agentProfile"],
+};
+export const ADMIN_SECTIONS_DEFAULT_EDIT = {
+  agent: [],
+  senior: [],
+  admin: [], // Whitelist IP visible (above) but view-only by default
+  superadmin: ["whitelistIp", "tgRoutes", "agentProfile"],
+};
 
 export function canSeeAdminSection(account, sectionId) {
   if (!account) return true; // bootstrap mode — same full trust bootstrapPassword already had
@@ -95,8 +129,11 @@ export function canSeeAdminSection(account, sectionId) {
   if (!section) return false;
   if (rankOf(account.role) < section.floorRank) return false;
   if (account.allowedAdminSections === "all") return true;
-  if (account.allowedAdminSections === undefined) return true; // never touched by Owner — legacy rank-only behavior
-  return Array.isArray(account.allowedAdminSections) && account.allowedAdminSections.includes(sectionId);
+  if (Array.isArray(account.allowedAdminSections)) return account.allowedAdminSections.includes(sectionId);
+  // Unset — never explicitly touched by the Owner — falls back to this
+  // account's role default (see ADMIN_SECTIONS_DEFAULT_SEEN above), NOT
+  // to "everything the floor allows" like before the 2026-07-28 fix.
+  return (ADMIN_SECTIONS_DEFAULT_SEEN[account.role] || []).includes(sectionId);
 }
 
 // Only the Owner can grant/restrict OTHER accounts' Account Management
@@ -126,7 +163,11 @@ export function canEditAdminSection(account, sectionId) {
   if (account.role === "owner") return true;
   if (!canSeeAdminSection(account, sectionId)) return false;
   if (account.adminSectionEditAccess === "all") return true;
-  return Array.isArray(account.adminSectionEditAccess) && account.adminSectionEditAccess.includes(sectionId);
+  if (Array.isArray(account.adminSectionEditAccess)) return account.adminSectionEditAccess.includes(sectionId);
+  // Unset — role-default edit level (see ADMIN_SECTIONS_DEFAULT_EDIT
+  // above). Previously defaulted to "no edit" for everyone, which was
+  // safe but ALSO wrongly capped SuperAdmin at view-only by default.
+  return (ADMIN_SECTIONS_DEFAULT_EDIT[account.role] || []).includes(sectionId);
 }
 
 // ---- password hashing (PBKDF2 via Web Crypto, available in Workers) ----
