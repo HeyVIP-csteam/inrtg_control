@@ -426,6 +426,14 @@ a { color: inherit; text-decoration: none; }
 }
 .agent-profile-locked-note { text-transform: none; font-weight: 600; letter-spacing: 0; color: var(--ink-soft); }
 
+/* Plain divider marking the start of a new section (Topic access /
+   Account Management Access) inside the Agent Personal Profile popup —
+   same thin gray line style as .form-divider, just scoped separately in
+   case this section ever needs its own treatment later. */
+.agent-profile-section-divider {
+  height: 1px; margin-bottom: 14px; background: var(--border);
+}
+
 /* ---- Collapsible "Topic access" / "Account Management Access" blocks
    inside the Agent Personal Profile popup — collapsed by default, click
    the header to expand. Same open/arrow-rotate pattern as the sidebar's

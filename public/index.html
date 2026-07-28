@@ -968,7 +968,8 @@
             <div class="field"><label>Full name</label><input type="text" id="ap_fullname" value="${acctEsc(a.fullName || "")}" autocomplete="off" /></div>
             <div class="field"><label>Agent PSD</label><input type="text" id="ap_pid" value="${acctEsc(a.pid || "")}" placeholder="e.g. PSD-014" autocomplete="off" /></div>
 
-            <div class="agent-profile-collapsible" style="margin-top:14px;">
+            <div class="agent-profile-section-divider" style="margin-top:14px;"></div>
+            <div class="agent-profile-collapsible">
               <p class="agent-profile-section-label agent-profile-collapsible-header">
                 <span>🔒 Topic access ${canManageAccess ? "" : '<span class="agent-profile-locked-note">(SuperAdmin only, and only for accounts ranked below your own)</span>'}</span>
                 <span class="arrow">&rarr;</span>
@@ -977,9 +978,10 @@
             </div>
 
             ${canManageOthersAdminAccess ? `
-            <div class="agent-profile-collapsible" style="margin-top:14px;">
+            <div class="agent-profile-section-divider" style="margin-top:14px;"></div>
+            <div class="agent-profile-collapsible">
               <p class="agent-profile-section-label agent-profile-collapsible-header">
-                <span>🔒 Account Management Access <span class="agent-profile-locked-note">(which admin sidebar sections this account can see/edit)</span></span>
+                <span>🔒 Account Management Access</span>
                 <span class="arrow">&rarr;</span>
               </p>
               <div class="agent-profile-collapsible-body" style="flex-direction:column;">
