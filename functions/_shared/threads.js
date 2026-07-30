@@ -582,15 +582,24 @@ export async function appendMessage(env, threadId, message) {
     thread.solved = false;
     thread.solvedAt = null;
   }
-  // Track this outbound message's id (if Telegram returned one) so
+  // Track this outbound message's id(s) (if Telegram returned any) so
   // replies-to-replies still resolve back to the same thread, and so
   // cleanup can find and delete every msgid: pointer for this thread.
-  if (message.messageId) {
-    thread.msgIds = [...(thread.msgIds || [thread.rootMessageId]), message.messageId];
+  // A multi-attachment reply lands in Telegram as an ALBUM — one
+  // message_id PER attachment, not just one for the whole reply — so
+  // message.messageIds (plural, see sendTelegramReplyAttachments in
+  // threads/[id].js) carries all of them when present. Without this, a
+  // reply to any photo in the album OTHER than the first would silently
+  // fail to resolve back to this thread. Falls back to the single
+  // messageId for plain text/single-attachment replies, which only ever
+  // have the one id anyway.
+  const allIds = message.messageIds && message.messageIds.length ? message.messageIds : (message.messageId ? [message.messageId] : []);
+  if (allIds.length) {
+    thread.msgIds = [...(thread.msgIds || [thread.rootMessageId]), ...allIds];
   }
   const writes = [saveThread(env, thread)];
-  if (message.messageId) {
-    writes.push(env.THREADS_KV.put(`msgid:${thread.chatId}:${message.messageId}`, thread.id));
+  for (const mid of allIds) {
+    writes.push(env.THREADS_KV.put(`msgid:${thread.chatId}:${mid}`, thread.id));
   }
   await Promise.all(writes);
   await patchListCache(env, thread); // instant sidebar update — reply count / reopened status

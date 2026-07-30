@@ -992,6 +992,15 @@ a { color: inherit; text-decoration: none; }
 .inline-attach-file:hover { opacity: 1; color: var(--accent-gold); }
 .msg-inline-attach .inline-attach-media { max-height: 220px; }
 
+/* Multiple attachments on one reply (sent as a Telegram album) — a
+   compact thumbnail grid instead of stacking full-size images. */
+.msg-multi-attach {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(110px, 1fr));
+  gap: 6px; margin-top: 6px; max-width: 320px;
+}
+.msg-multi-attach .inline-attach-slot { margin-top: 0; }
+.msg-multi-attach .inline-attach-media { max-height: 110px; width: 100%; object-fit: cover; }
+
 /* Attachment preview lightbox — see viewAttachment() in threads.html.
    Fixed full-screen overlay, hidden by default (.is-open toggles it). */
 .attach-lightbox {

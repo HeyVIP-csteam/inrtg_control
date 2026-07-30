@@ -129,22 +129,33 @@ async function handleThreadAction({ request, env, params }) {
 
   if (action === "reply") {
     const text = (body.text || "").trim();
-    const attachment = body.attachment; // { name, type, dataUrl } | undefined
+    // { name, type, dataUrl }[] — also accepts the old singular
+    // `attachment` shape (pre-multi-select clients) wrapped into a
+    // 1-item array, so nothing older breaks.
+    const attachments = Array.isArray(body.attachments) && body.attachments.length
+      ? body.attachments
+      : (body.attachment ? [body.attachment] : []);
     const replyToMessageId = body.replyToMessageId || null;
-    if (!text && !attachment) return json({ ok: false, error: "Reply text is empty." }, 400);
+    if (!text && !attachments.length) return json({ ok: false, error: "Reply text is empty." }, 400);
+    if (attachments.length > 10) return json({ ok: false, error: "Telegram allows at most 10 attachments in one message — trim your selection and send the rest separately." }, 400);
     if (!env.TELEGRAM_BOT_TOKEN) return json({ ok: false, error: "Server is missing TELEGRAM_BOT_TOKEN." }, 500);
 
     const thread = existingThread;
 
     let messageId;
-    let attachmentFileId = null;
+    let messageIds = [];
+    let attachmentFileIds = [];
+    let attachmentNames = [];
     try {
-      if (attachment) {
-        const sent = await sendTelegramAttachment(env, thread, text, attachment, replyToMessageId);
+      if (attachments.length) {
+        const sent = await sendTelegramReplyAttachments(env, thread, text, attachments, replyToMessageId);
         messageId = sent.messageId;
-        attachmentFileId = sent.fileId;
+        messageIds = sent.messageIds;
+        attachmentFileIds = sent.attachmentFileIds;
+        attachmentNames = sent.attachmentNames;
       } else {
         messageId = await sendTelegramText(env, thread, text, replyToMessageId);
+        messageIds = [messageId];
       }
     } catch (e) {
       return json({ ok: false, error: String(e.message || e) }, 502);
@@ -156,27 +167,35 @@ async function handleThreadAction({ request, env, params }) {
     // plain, unclickable "📎 attachment" label forever). Deliberately NOT
     // storing a copy anywhere (business owner's call, to avoid using any
     // R2 storage for this) — instead, just remember Telegram's own
-    // `file_id` for the upload (returned by sendPhoto/sendDocument above,
-    // valid for as long as the file exists on Telegram's servers). The
-    // dashboard fetches the actual bytes live, on demand, only when
-    // someone actually clicks to view it — see
+    // `file_id`(s) for the upload(s) (returned by sendPhoto/sendDocument/
+    // sendMediaGroup above, valid for as long as the file exists on
+    // Telegram's servers). The dashboard fetches the actual bytes live,
+    // on demand, only when someone actually clicks to view it — see
     // functions/api/attachment/[fileId].js, which resolves that file_id
     // through Telegram's getFile + file download endpoints and proxies
     // the bytes back (never exposing TELEGRAM_BOT_TOKEN to the browser —
     // the token only ever appears in this server-side proxy's own
     // outbound requests, same reasoning as why R2 files get served
     // through /api/screenshot/<key> instead of a raw bucket URL).
+    //
+    // attachmentFileId/attachmentName (singular) are kept alongside the
+    // new attachmentFileIds/attachmentNames arrays purely so older code
+    // paths (and this same dashboard's own single-attachment rendering)
+    // keep working unchanged — they're just [0] of the arrays.
     const updated = await appendMessage(env, id, {
       from: account.username,
       handle: null,
-      text: text || `📎 ${attachment.name}`,
-      hasAttachment: !!attachment,
-      attachmentName: attachment ? attachment.name : null,
-      attachmentFileId,
+      text: text || (attachments.length > 1 ? `📎 ${attachments.length} attachments` : `📎 ${attachments[0]?.name || "attachment"}`),
+      hasAttachment: attachments.length > 0,
+      attachmentName: attachmentNames[0] || null,
+      attachmentFileId: attachmentFileIds[0] || null,
+      attachmentNames,
+      attachmentFileIds,
       ts: new Date().toISOString(),
       self: true,
       delivered: true,
       messageId,
+      messageIds,
       replyToMessageId: replyToMessageId || null,
     });
     return json({ ok: true, thread: updated });
@@ -316,10 +335,18 @@ async function handleThreadAction({ request, env, params }) {
     if (!env.TELEGRAM_BOT_TOKEN) return json({ ok: false, error: "Server is missing TELEGRAM_BOT_TOKEN." }, 500);
 
     const thread = existingThread;
-    const tg = await callTelegram(env, "deleteMessage", { chat_id: thread.chatId, message_id: messageId });
-    if (!tg.ok) return json({ ok: false, error: telegramDeleteError(tg) }, 502);
-
     const recalledMsg = thread.messages.find((m) => m.self && m.messageId === messageId);
+    // A multi-attachment reply went out as a Telegram album — one
+    // message_id PER attachment, only the first (messageId) is what the
+    // ↩️ button references. Delete every id in the group, not just the
+    // first, or the rest silently stay behind in the chat forever (same
+    // class of bug rootMessageIds already fixed for the original ticket
+    // — see recallRoot above).
+    const idsToDelete = recalledMsg?.messageIds && recalledMsg.messageIds.length ? recalledMsg.messageIds : [messageId];
+    const results = await Promise.all(idsToDelete.map((mid) => callTelegram(env, "deleteMessage", { chat_id: thread.chatId, message_id: mid })));
+    const firstFailure = results.find((r) => !r.ok);
+    if (firstFailure) return json({ ok: false, error: telegramDeleteError(firstFailure) }, 502);
+
     const updated = await removeMessageFromThread(env, id, messageId);
     await logDeletion(env, {
       type: "recall-reply",
@@ -367,13 +394,66 @@ function looksLikeImage(type, name) {
   return /\.(jpe?g|png|gif|webp|bmp|heic|heif)$/i.test(name || "");
 }
 
-async function sendTelegramAttachment(env, thread, text, attachment, replyToMessageId) {
-  const { name, type, dataUrl } = attachment;
+function dataUrlToBytes(dataUrl) {
   const base64 = dataUrl.includes(",") ? dataUrl.slice(dataUrl.indexOf(",") + 1) : dataUrl;
   const binary = atob(base64);
   const bytes = new Uint8Array(binary.length);
   for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-  const blob = new Blob([bytes], { type: type || "application/octet-stream" });
+  return bytes;
+}
+
+// Top-level entry point for a reply that has 1+ attachments — mirrors the
+// three-way split submit.js's sendTelegramWithAttachments() already uses
+// for the original ticket (single item / all-images album / mixed types),
+// just with reply_to_message_id threaded through every Telegram call so
+// it lands as a reply instead of a fresh message.
+async function sendTelegramReplyAttachments(env, thread, text, attachments, replyToMessageId) {
+  const replyId = replyToMessageId || thread.rootMessageId;
+
+  if (attachments.length === 1) {
+    const { messageId, fileId, name } = await sendReplySingleWithCaption(env, thread, text, attachments[0], replyId);
+    return {
+      messageId,
+      messageIds: [messageId],
+      attachmentFileIds: fileId ? [fileId] : [],
+      attachmentNames: fileId ? [name] : [],
+    };
+  }
+
+  const allImages = attachments.every((a) => looksLikeImage(a.type, a.name));
+  if (allImages) {
+    // Telegram's sendMediaGroup returns one Message PER photo (album
+    // item), only the first of which carries the caption — same shape
+    // submit.js's own sendMediaGroup already returns, see that function
+    // for the reasoning behind keeping every id (not just the first).
+    const sent = await sendReplyMediaGroup(env, thread, text, attachments, replyId);
+    return {
+      messageId: sent[0].messageId,
+      messageIds: sent.map((s) => s.messageId),
+      attachmentFileIds: sent.map((s) => s.fileId).filter(Boolean),
+      attachmentNames: sent.filter((s) => s.fileId).map((s) => s.name),
+    };
+  }
+
+  // Mixed image/document types can't share one album — send each as its
+  // own message in sequence, caption only on the first so it still reads
+  // as one reply, not repeated noise on every attachment.
+  const sent = [];
+  for (let i = 0; i < attachments.length; i++) {
+    const result = await sendReplySingleWithCaption(env, thread, i === 0 ? text : "", attachments[i], replyId);
+    sent.push(result);
+  }
+  return {
+    messageId: sent[0].messageId,
+    messageIds: sent.map((s) => s.messageId),
+    attachmentFileIds: sent.map((s) => s.fileId).filter(Boolean),
+    attachmentNames: sent.filter((s) => s.fileId).map((s) => s.name),
+  };
+}
+
+async function sendReplySingleWithCaption(env, thread, text, attachment, replyId) {
+  const { name, type, dataUrl } = attachment;
+  const blob = new Blob([dataUrlToBytes(dataUrl)], { type: type || "application/octet-stream" });
 
   const isImage = looksLikeImage(type, name);
   const method = isImage ? "sendPhoto" : "sendDocument";
@@ -382,7 +462,7 @@ async function sendTelegramAttachment(env, thread, text, attachment, replyToMess
   const form = new FormData();
   form.append("chat_id", thread.chatId);
   if (thread.topicId) form.append("message_thread_id", String(thread.topicId));
-  form.append("reply_to_message_id", String(replyToMessageId || thread.rootMessageId));
+  form.append("reply_to_message_id", String(replyId));
   form.append(field, blob, name || "attachment");
   if (text) form.append("caption", text);
 
@@ -401,7 +481,42 @@ async function sendTelegramAttachment(env, thread, text, attachment, replyToMess
     ? data.result.photo?.[data.result.photo.length - 1]?.file_id || null
     : data.result.document?.file_id || null;
 
-  return { messageId: data.result.message_id, fileId };
+  return { messageId: data.result.message_id, fileId, name };
+}
+
+// Sends 2+ images as one Telegram album (sendMediaGroup) — all-or-nothing
+// multipart upload, caption goes on the first item only (Telegram shows
+// it as the whole album's caption regardless of which item it's on).
+async function sendReplyMediaGroup(env, thread, text, attachments, replyId) {
+  const form = new FormData();
+  form.append("chat_id", thread.chatId);
+  if (thread.topicId) form.append("message_thread_id", String(thread.topicId));
+  form.append("reply_to_message_id", String(replyId));
+
+  const media = attachments.map((att, i) => {
+    const entry = { type: "photo", media: `attach://file${i}` };
+    if (i === 0 && text) entry.caption = text;
+    return entry;
+  });
+  form.append("media", JSON.stringify(media));
+
+  attachments.forEach((att, i) => {
+    const blob = new Blob([dataUrlToBytes(att.dataUrl)], { type: att.type || "image/jpeg" });
+    form.append(`file${i}`, blob, att.name || `photo${i}`);
+  });
+
+  const res = await fetch(`https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/sendMediaGroup`, { method: "POST", body: form });
+  const data = await res.json();
+  if (!data.ok) throw new Error(data.description || "Telegram send failed.");
+  // attachments[i] lines up positionally with data.result[i] —
+  // sendMediaGroup returns results in the same order the media items
+  // were submitted in (same assumption submit.js's own sendMediaGroup
+  // already relies on).
+  return data.result.map((m, i) => ({
+    messageId: m.message_id,
+    fileId: m.photo?.[m.photo.length - 1]?.file_id || null,
+    name: attachments[i]?.name,
+  }));
 }
 
 // Telegram's own wording is fairly technical — translate the common cases

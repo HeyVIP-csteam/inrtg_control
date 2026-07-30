@@ -242,7 +242,8 @@
       searchTimer = setTimeout(() => loadList(q), 250);
     });
 
-    let pendingAttachment = null;
+    let pendingAttachments = []; // File[] — queued for the next reply, up to MAX_REPLY_ATTACHMENTS
+    const MAX_REPLY_ATTACHMENTS = 10; // Telegram's own sendMediaGroup album cap
     let replyTarget = null; // { messageId, from, text } | null
 
     function setReplyTarget(messageId, from, text) {
@@ -279,15 +280,17 @@
     function renderAttachPreview() {
       const el = document.getElementById("replyAttachPreview");
       if (!el) return;
-      if (!pendingAttachment) { el.innerHTML = ""; return; }
-      el.innerHTML = `
-        <span class="attach-chip">📎 ${escapeHtml(pendingAttachment.name)} (${Math.round(pendingAttachment.size / 1024)} KB)
-          <button type="button" id="clearAttachBtn">✕</button>
-        </span>`;
-      document.getElementById("clearAttachBtn").addEventListener("click", () => {
-        pendingAttachment = null;
-        document.getElementById("replyFileInput").value = "";
-        renderAttachPreview();
+      if (!pendingAttachments.length) { el.innerHTML = ""; return; }
+      el.innerHTML = pendingAttachments.map((f, i) => `
+        <span class="attach-chip">📎 ${escapeHtml(f.name)} (${Math.round(f.size / 1024)} KB)
+          <button type="button" data-clear-attach="${i}">✕</button>
+        </span>`).join("");
+      el.querySelectorAll("[data-clear-attach]").forEach((btn) => {
+        btn.addEventListener("click", () => {
+          pendingAttachments.splice(Number(btn.dataset.clearAttach), 1);
+          document.getElementById("replyFileInput").value = "";
+          renderAttachPreview();
+        });
       });
       polishEmoji();
     }
@@ -322,7 +325,7 @@
         ${t.solved ? '<span class="t-done">✓</span>' : ""}
       `;
       el.addEventListener("click", () => {
-        if (t.id !== selectedId) { pendingAttachment = null; replyTarget = null; }
+        if (t.id !== selectedId) { pendingAttachments = []; replyTarget = null; }
         openThread(t.id);
       });
       return el;
@@ -576,8 +579,8 @@
           <div class="reply-attach-preview" id="replyAttachPreview"></div>
           <div class="reply-box">
             <div class="reply-input-wrap">
-              <button class="attach-btn" id="attachBtn" title="Attach screenshot or PDF">🔗</button>
-              <input type="file" id="replyFileInput" accept="image/png,image/jpeg,application/pdf" hidden />
+              <button class="attach-btn" id="attachBtn" title="Attach screenshots or PDFs (multiple allowed)">🔗</button>
+              <input type="file" id="replyFileInput" accept="image/png,image/jpeg,application/pdf" multiple hidden />
               <input type="text" id="replyInput" placeholder="Reply into the Telegram thread..." autocomplete="off" />
             </div>
             <button id="replySend">Send</button>
@@ -592,7 +595,15 @@
       });
       document.getElementById("attachBtn").addEventListener("click", () => document.getElementById("replyFileInput").click());
       document.getElementById("replyFileInput").addEventListener("change", (e) => {
-        pendingAttachment = e.target.files[0] || null;
+        // Accumulate across multiple picks (the attach button can be
+        // clicked again to add more) rather than replacing the queue —
+        // matches how the 🔗 button reads as "add an attachment", not
+        // "pick THE attachment". Capped at Telegram's own album limit.
+        const picked = Array.from(e.target.files || []);
+        const room = MAX_REPLY_ATTACHMENTS - pendingAttachments.length;
+        if (picked.length > room) alert(`You can attach up to ${MAX_REPLY_ATTACHMENTS} files in one message — only the first ${Math.max(room, 0)} of your new selection were added.`);
+        pendingAttachments.push(...picked.slice(0, Math.max(room, 0)));
+        e.target.value = ""; // reset so picking the same file again still fires "change"
         renderAttachPreview();
       });
       renderAttachPreview();
@@ -627,9 +638,15 @@
     }
 
     function renderMsg(m, msgById) {
+      // A multi-attachment reply went out as a Telegram album (one
+      // message_id per photo) — Telegram doesn't support text-editing an
+      // album item, so the ✏️ button is hidden for those; ↩️ Recall still
+      // works and deletes every message in the group (see recallReply
+      // backend logic).
+      const isAlbum = m.messageIds && m.messageIds.length > 1;
       const selfControls = m.self && m.messageId ? `
         <span class="msg-actions">
-          <button data-edit-reply="${m.messageId}" data-current-text="${escapeAttr(m.text)}" title="Edit">✏️</button>
+          ${isAlbum ? "" : `<button data-edit-reply="${m.messageId}" data-current-text="${escapeAttr(m.text)}" title="Edit">✏️</button>`}
           <button data-recall-reply="${m.messageId}" title="Recall">↩️</button>
         </span>` : "";
       const replyTargetBtn = m.messageId
@@ -643,9 +660,14 @@
       const color = m.self ? "var(--accent-gold)" : colorFor(m.from || "?");
       const deliveredTick = m.self ? '<span class="msg-tick" title="Delivered">✓</span>' : "";
       const attachTag = m.hasAttachment
-        ? (m.attachmentFileId
-            ? `<div class="inline-attach-slot msg-inline-attach" data-attachment-file="${escapeAttr(m.attachmentFileId)}" data-attachment-name="${escapeAttr(m.attachmentName || "attachment")}"><div class="inline-attach-loading">Loading attachment…</div></div>`
-            : '<span class="msg-attach-tag" title="Sent before this dashboard could look attachments back up — check the Telegram group for it.">📎 attachment</span>')
+        ? (m.attachmentFileIds && m.attachmentFileIds.length > 1
+            ? `<div class="msg-multi-attach">${m.attachmentFileIds.map((fid, i) => `
+                <div class="inline-attach-slot msg-inline-attach" data-attachment-file="${escapeAttr(fid)}" data-attachment-name="${escapeAttr((m.attachmentNames && m.attachmentNames[i]) || `attachment-${i + 1}`)}">
+                  <div class="inline-attach-loading">Loading attachment…</div>
+                </div>`).join("")}</div>`
+            : (m.attachmentFileId
+                ? `<div class="inline-attach-slot msg-inline-attach" data-attachment-file="${escapeAttr(m.attachmentFileId)}" data-attachment-name="${escapeAttr(m.attachmentName || "attachment")}"><div class="inline-attach-loading">Loading attachment…</div></div>`
+                : '<span class="msg-attach-tag" title="Sent before this dashboard could look attachments back up — check the Telegram group for it.">📎 attachment</span>'))
         : "";
       return `
         <div class="msg-row ${m.self ? "self" : ""}">
@@ -698,19 +720,19 @@
     async function sendReply() {
       const input = document.getElementById("replyInput");
       const text = input.value.trim();
-      if (!text && !pendingAttachment) return;
+      if (!text && !pendingAttachments.length) return;
       const btn = document.getElementById("replySend");
       btn.disabled = true;
       btn.textContent = "Sending…";
       try {
         const payload = { action: "reply", text };
         if (replyTarget) payload.replyToMessageId = replyTarget.messageId;
-        if (pendingAttachment) {
-          payload.attachment = {
-            name: pendingAttachment.name,
-            type: pendingAttachment.type,
-            dataUrl: await fileToDataUrl(pendingAttachment),
-          };
+        if (pendingAttachments.length) {
+          payload.attachments = await Promise.all(pendingAttachments.map(async (f) => ({
+            name: f.name,
+            type: f.type,
+            dataUrl: await fileToDataUrl(f),
+          })));
         }
         const res = await authFetch(`/api/threads/${selectedThread.id}`, {
           method: "POST",
@@ -720,11 +742,11 @@
         const data = await res.json();
         if (!data.ok) {
           alert("❌ Send failed: " + (data.error || "unknown error") + "\n\nYour message wasn't sent — try again.");
-          return; // keep input + attachment so the agent can retry without retyping
+          return; // keep input + attachments so the agent can retry without retyping
         }
         selectedThread = data.thread;
         input.value = "";
-        pendingAttachment = null;
+        pendingAttachments = [];
         replyTarget = null;
         renderReplyTargetBanner();
         document.getElementById("replyFileInput").value = "";
