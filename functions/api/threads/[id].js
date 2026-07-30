@@ -394,6 +394,27 @@ function looksLikeImage(type, name) {
   return /\.(jpe?g|png|gif|webp|bmp|heic|heif)$/i.test(name || "");
 }
 
+// Same fallback reasoning as looksLikeImage above — trust the browser's
+// File.type first, fall back to extension for files that arrive with a
+// missing/generic type (e.g. re-uploaded after being saved out of some
+// other app). Used to route video attachments through sendVideo (native
+// inline player + thumbnail in Telegram) instead of sendDocument (bare
+// 📎 filename, no preview/playback in-chat).
+function looksLikeVideo(type, name) {
+  if ((type || "").startsWith("video/")) return true;
+  return /\.(mp4|mov|webm|mkv|avi|m4v|3gp)$/i.test(name || "");
+}
+
+// Classifies one attachment into the three Telegram upload "lanes" this
+// file works with. Centralized here so the single-send path, the
+// media-group grouping decision, and the media-group per-item `type`
+// field all agree on the same classification.
+function attachmentKind(type, name) {
+  if (looksLikeImage(type, name)) return "photo";
+  if (looksLikeVideo(type, name)) return "video";
+  return "document";
+}
+
 function dataUrlToBytes(dataUrl) {
   const base64 = dataUrl.includes(",") ? dataUrl.slice(dataUrl.indexOf(",") + 1) : dataUrl;
   const binary = atob(base64);
@@ -420,8 +441,11 @@ async function sendTelegramReplyAttachments(env, thread, text, attachments, repl
     };
   }
 
-  const allImages = attachments.every((a) => looksLikeImage(a.type, a.name));
-  if (allImages) {
+  // Telegram's sendMediaGroup album accepts a MIX of photos and videos in
+  // one album (just not documents) — so the grouping check is "does
+  // nothing here need sendDocument", not "is everything a photo".
+  const allMedia = attachments.every((a) => attachmentKind(a.type, a.name) !== "document");
+  if (allMedia) {
     // Telegram's sendMediaGroup returns one Message PER photo (album
     // item), only the first of which carries the caption — same shape
     // submit.js's own sendMediaGroup already returns, see that function
@@ -455,9 +479,9 @@ async function sendReplySingleWithCaption(env, thread, text, attachment, replyId
   const { name, type, dataUrl } = attachment;
   const blob = new Blob([dataUrlToBytes(dataUrl)], { type: type || "application/octet-stream" });
 
-  const isImage = looksLikeImage(type, name);
-  const method = isImage ? "sendPhoto" : "sendDocument";
-  const field = isImage ? "photo" : "document";
+  const kind = attachmentKind(type, name);
+  const method = kind === "photo" ? "sendPhoto" : kind === "video" ? "sendVideo" : "sendDocument";
+  const field = kind; // "photo" | "video" | "document" — same names as the FormData field Telegram expects
 
   const form = new FormData();
   form.append("chat_id", thread.chatId);
@@ -472,21 +496,24 @@ async function sendReplySingleWithCaption(env, thread, text, attachment, replyId
 
   // sendPhoto returns an ARRAY of sizes (Telegram auto-generates several
   // resolutions) — the last one is the largest/original-quality version,
-  // which is the one worth keeping. sendDocument returns a single object
-  // instead, no array. Either way, this file_id is what
-  // functions/api/attachment/[fileId].js needs later to fetch the actual
-  // bytes on demand — see the comment where this function is called for
-  // why nothing is stored/uploaded anywhere at send time.
-  const fileId = isImage
+  // which is the one worth keeping. sendVideo and sendDocument each
+  // return a single object instead, no array. Either way, this file_id is
+  // what functions/api/attachment/[fileId].js needs later to fetch the
+  // actual bytes on demand — see the comment where this function is
+  // called for why nothing is stored/uploaded anywhere at send time.
+  const fileId = kind === "photo"
     ? data.result.photo?.[data.result.photo.length - 1]?.file_id || null
-    : data.result.document?.file_id || null;
+    : kind === "video"
+      ? data.result.video?.file_id || null
+      : data.result.document?.file_id || null;
 
   return { messageId: data.result.message_id, fileId, name };
 }
 
-// Sends 2+ images as one Telegram album (sendMediaGroup) — all-or-nothing
-// multipart upload, caption goes on the first item only (Telegram shows
-// it as the whole album's caption regardless of which item it's on).
+// Sends 2+ photos/videos as one Telegram album (sendMediaGroup) —
+// all-or-nothing multipart upload, caption goes on the first item only
+// (Telegram shows it as the whole album's caption regardless of which
+// item it's on). Photos and videos can be freely mixed within one album.
 async function sendReplyMediaGroup(env, thread, text, attachments, replyId) {
   const form = new FormData();
   form.append("chat_id", thread.chatId);
@@ -494,15 +521,15 @@ async function sendReplyMediaGroup(env, thread, text, attachments, replyId) {
   form.append("reply_to_message_id", String(replyId));
 
   const media = attachments.map((att, i) => {
-    const entry = { type: "photo", media: `attach://file${i}` };
+    const entry = { type: attachmentKind(att.type, att.name), media: `attach://file${i}` };
     if (i === 0 && text) entry.caption = text;
     return entry;
   });
   form.append("media", JSON.stringify(media));
 
   attachments.forEach((att, i) => {
-    const blob = new Blob([dataUrlToBytes(att.dataUrl)], { type: att.type || "image/jpeg" });
-    form.append(`file${i}`, blob, att.name || `photo${i}`);
+    const blob = new Blob([dataUrlToBytes(att.dataUrl)], { type: att.type || "application/octet-stream" });
+    form.append(`file${i}`, blob, att.name || `file${i}`);
   });
 
   const res = await fetch(`https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/sendMediaGroup`, { method: "POST", body: form });
@@ -510,11 +537,11 @@ async function sendReplyMediaGroup(env, thread, text, attachments, replyId) {
   if (!data.ok) throw new Error(data.description || "Telegram send failed.");
   // attachments[i] lines up positionally with data.result[i] —
   // sendMediaGroup returns results in the same order the media items
-  // were submitted in (same assumption submit.js's own sendMediaGroup
-  // already relies on).
+  // were submitted in. Each result carries either a `photo` array or a
+  // `video` object depending on which type that particular item was.
   return data.result.map((m, i) => ({
     messageId: m.message_id,
-    fileId: m.photo?.[m.photo.length - 1]?.file_id || null,
+    fileId: (m.photo?.[m.photo.length - 1]?.file_id) || m.video?.file_id || null,
     name: attachments[i]?.name,
   }));
 }

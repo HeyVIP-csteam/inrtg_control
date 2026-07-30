@@ -244,6 +244,7 @@
 
     let pendingAttachments = []; // File[] — queued for the next reply, up to MAX_REPLY_ATTACHMENTS
     const MAX_REPLY_ATTACHMENTS = 10; // Telegram's own sendMediaGroup album cap
+    const MAX_ATTACHMENT_MB = 45; // stays under Telegram Bot API's ~50MB upload ceiling with some margin
     let replyTarget = null; // { messageId, from, text } | null
 
     function setReplyTarget(messageId, from, text) {
@@ -293,6 +294,22 @@
         });
       });
       polishEmoji();
+    }
+
+    // Shared by the file picker (change event) and clipboard paste — both
+    // just hand this a list of File objects and it applies the same
+    // rules: drop anything over MAX_ATTACHMENT_MB (with a heads-up, since
+    // a silent drop would look like a bug), cap the total queued at
+    // MAX_REPLY_ATTACHMENTS, then re-render the chip row.
+    function queueAttachments(files) {
+      if (!files.length) return;
+      const tooBig = files.filter((f) => f.size > MAX_ATTACHMENT_MB * 1024 * 1024);
+      const sized = files.filter((f) => f.size <= MAX_ATTACHMENT_MB * 1024 * 1024);
+      if (tooBig.length) alert(`${tooBig.map((f) => f.name).join(", ")} — over ${MAX_ATTACHMENT_MB}MB, Telegram will reject it. Not added.`);
+      const room = MAX_REPLY_ATTACHMENTS - pendingAttachments.length;
+      if (sized.length > room) alert(`You can attach up to ${MAX_REPLY_ATTACHMENTS} files in one message — only the first ${Math.max(room, 0)} of your new selection were added.`);
+      pendingAttachments.push(...sized.slice(0, Math.max(room, 0)));
+      renderAttachPreview();
     }
 
     function timeAgo(iso) {
@@ -579,8 +596,8 @@
           <div class="reply-attach-preview" id="replyAttachPreview"></div>
           <div class="reply-box">
             <div class="reply-input-wrap">
-              <button class="attach-btn" id="attachBtn" title="Attach screenshots or PDFs (multiple allowed)">🔗</button>
-              <input type="file" id="replyFileInput" accept="image/png,image/jpeg,application/pdf" multiple hidden />
+              <button class="attach-btn" id="attachBtn" title="Attach images, videos, or PDFs (multiple allowed, or paste an image directly into the box)">🔗</button>
+              <input type="file" id="replyFileInput" accept="image/*,video/*,application/pdf" multiple hidden />
               <input type="text" id="replyInput" placeholder="Reply into the Telegram thread..." autocomplete="off" />
             </div>
             <button id="replySend">Send</button>
@@ -595,16 +612,10 @@
       });
       document.getElementById("attachBtn").addEventListener("click", () => document.getElementById("replyFileInput").click());
       document.getElementById("replyFileInput").addEventListener("change", (e) => {
-        // Accumulate across multiple picks (the attach button can be
-        // clicked again to add more) rather than replacing the queue —
-        // matches how the 🔗 button reads as "add an attachment", not
-        // "pick THE attachment". Capped at Telegram's own album limit.
-        const picked = Array.from(e.target.files || []);
-        const room = MAX_REPLY_ATTACHMENTS - pendingAttachments.length;
-        if (picked.length > room) alert(`You can attach up to ${MAX_REPLY_ATTACHMENTS} files in one message — only the first ${Math.max(room, 0)} of your new selection were added.`);
-        pendingAttachments.push(...picked.slice(0, Math.max(room, 0)));
+        // Accumulate across multiple picks (the attach button can be clicked
+        // again to add more) rather than replacing the queue.
+        queueAttachments(Array.from(e.target.files || []));
         e.target.value = ""; // reset so picking the same file again still fires "change"
-        renderAttachPreview();
       });
       renderAttachPreview();
       scrollConversation(true);
@@ -1290,6 +1301,37 @@
     document.getElementById("attachLightboxClose").addEventListener("click", closeAttachLightbox);
     attachLightbox.addEventListener("click", (e) => { if (e.target === attachLightbox) closeAttachLightbox(); });
     document.addEventListener("keydown", (e) => { if (e.key === "Escape" && attachLightbox.classList.contains("is-open")) closeAttachLightbox(); });
+
+    // Paste-anywhere, like Telegram desktop: copy a screenshot and just
+    // Ctrl+V / ⌘V while a thread is open — no need to click into the
+    // reply box first. Scoped with guards instead of to one element:
+    //   - no thread open → nothing to attach it to, let it fall through
+    //   - an edit/forward modal is open → that modal has its own scoped
+    //     paste handling (see pasteHandler in openForwardModal), let it
+    //     own the paste instead of double-queuing onto the reply below
+    //   - the attachment lightbox is open → the person is VIEWING an
+    //     existing attachment, not composing a new reply
+    // Only acts when the clipboard actually contains a file — a normal
+    // text paste (kind "string") always falls through untouched,
+    // wherever on the page it happens.
+    document.addEventListener("paste", (e) => {
+      if (!selectedThread) return;
+      if (document.querySelector(".edit-details-overlay")) return;
+      if (attachLightbox.classList.contains("is-open")) return;
+      const items = Array.from(e.clipboardData?.items || []);
+      const files = items.filter((it) => it.kind === "file").map((it) => it.getAsFile()).filter(Boolean);
+      if (!files.length) return;
+      e.preventDefault();
+      // Clipboard screenshots often come through with a generic name
+      // like "image.png" with no useful info — good enough as-is, but
+      // give it a timestamp so multiple pastes don't look identical in
+      // the chip row.
+      const named = files.map((f, i) => (f.name && f.name !== "image.png") ? f : new File([f], `pasted-${Date.now()}-${i}.${(f.type.split("/")[1] || "png")}`, { type: f.type }));
+      queueAttachments(named);
+      // Land focus in the reply box so the caption is easy to type right
+      // after pasting, same as if the person had clicked 🔗 first.
+      document.getElementById("replyInput")?.focus();
+    });
 
     bootDashboard();
 
