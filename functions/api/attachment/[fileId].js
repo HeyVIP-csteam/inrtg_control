@@ -85,17 +85,44 @@ async function handleGet({ request, env, params }) {
   //      and blindly trusting it would short-circuit past the better
   //      guesses below.
   //   3. Guessing from Telegram's own internal file_path.
-  //   4. Whatever Telegram's header said, even if generic.
-  //   5. Hardcoded fallback, if genuinely nothing else worked out.
+  //   4. Sniffing the file's own magic bytes — the last resort for old
+  //      records where #1-#3 were never captured (no filename saved,
+  //      and Telegram/our side only ever knew "application/octet-stream").
+  //      Filename/metadata are dead ends at that point, but the file's
+  //      first few bytes are a signature (e.g. PDFs always start with
+  //      "%PDF") that survives regardless of what any filename or
+  //      Content-Type header said. Only worth the extra I/O — buffering
+  //      the whole file instead of streaming it straight through — when
+  //      the cheaper checks above all came up empty.
+  //   5. Whatever Telegram's header said, even if generic.
+  //   6. Hardcoded fallback, if genuinely nothing else worked out.
   const originalName = new URL(request.url).searchParams.get("name") || "";
   const tgContentType = fileRes.headers.get("Content-Type") || "";
-  const contentType =
+  let contentType =
     guessContentType(originalName) ||
     (tgContentType && tgContentType !== "application/octet-stream" ? tgContentType : null) ||
-    guessContentType(filePath) ||
-    tgContentType ||
-    "application/octet-stream";
-  return new Response(fileRes.body, {
+    guessContentType(filePath);
+
+  // Only populated if we had to fall through to byte-sniffing below —
+  // otherwise we keep streaming fileRes.body straight through untouched.
+  let bodyBuffer = null;
+
+  if (!contentType) {
+    const buf = await fileRes.arrayBuffer().catch(() => null);
+    if (buf) {
+      bodyBuffer = buf;
+      contentType = sniffContentTypeFromBytes(buf);
+    }
+    // If reading failed, fileRes.body is no longer usable either (the
+    // stream was already consumed by the failed read attempt) — fall
+    // through with an empty buffer rather than a broken/half-read
+    // stream; this is a rare failure case (e.g. the response was
+    // already torn down), not something worth a special error path.
+  }
+
+  contentType = contentType || tgContentType || "application/octet-stream";
+
+  return new Response(bodyBuffer !== null ? bodyBuffer : fileRes.body, {
     status: 200,
     headers: {
       "Content-Type": contentType,
@@ -106,6 +133,26 @@ async function handleGet({ request, env, params }) {
       "Cache-Control": "private, max-age=300",
     },
   });
+}
+
+// Last-resort type detection: reads only the first 12 bytes of the file
+// and compares them against known format signatures ("magic bytes").
+// Unlike filename or Content-Type, this can't be lost or mangled — as
+// long as the file's own content is intact, the signature is still
+// there. Returns a MIME type string, or null if nothing matched (in
+// which case the caller falls back further down the priority chain).
+function sniffContentTypeFromBytes(arrayBuffer) {
+  const head = new Uint8Array(arrayBuffer.slice(0, 12));
+  const hex = Array.from(head).map((b) => b.toString(16).padStart(2, "0")).join("");
+
+  if (hex.startsWith("25504446")) return "application/pdf"; // %PDF
+  if (hex.startsWith("ffd8ff")) return "image/jpeg";
+  if (hex.startsWith("89504e47")) return "image/png";
+  if (hex.startsWith("474946383761") || hex.startsWith("474946383961")) return "image/gif"; // GIF87a / GIF89a
+  if (hex.startsWith("52494646") && hex.slice(16, 24) === "57454250") return "image/webp"; // RIFF....WEBP
+  if (hex.startsWith("504b0304")) return "application/zip"; // also covers docx/xlsx/pptx
+
+  return null;
 }
 
 function guessContentType(pathOrName) {
