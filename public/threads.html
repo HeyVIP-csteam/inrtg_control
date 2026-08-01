@@ -468,11 +468,21 @@
       const bar = document.getElementById("threadsSelectBar");
       bar.classList.toggle("open", selectMode);
       document.getElementById("selCount").textContent = `${checkedThreadIds.size}`;
+      const checkedThreads = [...activeThreads, ...solvedThreads].filter((t) => checkedThreadIds.has(t.id));
+      // Mark as read / Mark as unread — "Mark as read" if any checked
+      // thread still has unread replies, otherwise (every checked thread
+      // is already fully read) "Mark as unread" to bulk-reset them
+      // instead. Mirrors the single-row kebab menu's own toggle.
+      const anyUnread = checkedThreads.some((t) => Math.max(0, (t.replyCount || 0) - getSeenCount(t.id)) > 0);
+      const readBtn = document.getElementById("selMarkReadBtn");
+      readBtn.innerHTML = anyUnread
+        ? '<span style="color:#38bdf8;">✓</span> Mark as read'
+        : '<span style="color:#9aa3c4;">○</span> Mark as unread';
+      readBtn.dataset.makeRead = anyUnread ? "1" : "0";
       // Solved button label — "Solved" if any checked thread still needs
       // solving, otherwise (every checked thread is already solved)
       // "Not solved" to bulk-reopen them instead. Mirrors the single-row
       // kebab menu's own Solved/Not-solved toggle.
-      const checkedThreads = [...activeThreads, ...solvedThreads].filter((t) => checkedThreadIds.has(t.id));
       const anyUnsolved = checkedThreads.some((t) => !t.solved);
       const solveBtn = document.getElementById("selSolveBtn");
       solveBtn.innerHTML = anyUnsolved
@@ -482,8 +492,9 @@
     }
     document.getElementById("selCancelBtn").addEventListener("click", exitSelectMode);
     document.getElementById("selMarkReadBtn").addEventListener("click", () => {
+      const makeRead = document.getElementById("selMarkReadBtn").dataset.makeRead === "1";
       const checkedThreads = [...activeThreads, ...solvedThreads].filter((t) => checkedThreadIds.has(t.id));
-      checkedThreads.forEach((t) => markSeen(t.id, t.replyCount || 0));
+      checkedThreads.forEach((t) => markSeen(t.id, makeRead ? (t.replyCount || 0) : 0));
       exitSelectMode();
     });
     document.getElementById("selSolveBtn").addEventListener("click", async () => {
@@ -762,6 +773,7 @@
               <button class="attach-btn" id="attachBtn" title="Attach images, videos, or PDFs (multiple allowed, or paste an image directly into the box)">🔗</button>
               <input type="file" id="replyFileInput" accept="image/*,video/*,application/pdf" multiple hidden />
               <input type="text" id="replyInput" placeholder="Reply into the Telegram thread..." autocomplete="off" />
+              <div class="mention-dropdown" id="mentionDropdown" style="display:none;"></div>
             </div>
             <button id="replySend">Send</button>
           </div>
@@ -771,7 +783,14 @@
       wireConversationButtons();
       document.getElementById("replySend").addEventListener("click", sendReply);
       document.getElementById("replyInput").addEventListener("keydown", (e) => {
+        if (handleMentionKeydown(e)) return;
         if (e.key === "Enter") sendReply();
+      });
+      document.getElementById("replyInput").addEventListener("input", updateMentionDropdown);
+      document.getElementById("replyInput").addEventListener("blur", () => {
+        // Delay so a click on a mention option (which also blurs the
+        // input) still registers before the dropdown disappears.
+        setTimeout(closeMentionDropdown, 150);
       });
       document.getElementById("attachBtn").addEventListener("click", () => document.getElementById("replyFileInput").click());
       document.getElementById("replyFileInput").addEventListener("change", (e) => {
@@ -889,6 +908,102 @@
       main.innerHTML = `<div class="threads-placeholder">Pick a thread on the left, or submit a form to start one.</div>`;
       removeLocalThread(deletedId);
       loadList();
+    }
+
+    // ---- @mention autocomplete ------------------------------------------
+    // Telegram's Bot API has no way to list a group's members, so this
+    // can't offer "search anyone in the group" — only people who have
+    // actually sent a message the bot has seen get a `handle` recorded
+    // (see telegram-webhook.js's `handle: msg.from?.username`). Scoped to
+    // THIS thread's own conversation, since that's who you're realistically
+    // about to @-tag.
+    let mentionActiveIndex = 0;
+
+    function getMentionCandidates() {
+      const byHandle = new Map();
+      (selectedThread?.messages || []).forEach((m) => {
+        if (m.handle) byHandle.set(m.handle, m.from);
+      });
+      return [...byHandle.entries()].map(([handle, from]) => ({ handle, from }));
+    }
+
+    // Only triggers on an "@fragment" run at the very end of the input
+    // (simple, no cursor-position tracking needed for a single-line box).
+    function currentMentionQuery() {
+      const input = document.getElementById("replyInput");
+      if (!input) return null;
+      const m = input.value.match(/(?:^|\s)@(\w*)$/);
+      return m ? m[1] : null;
+    }
+
+    function updateMentionDropdown() {
+      const query = currentMentionQuery();
+      const dd = document.getElementById("mentionDropdown");
+      if (query === null) { closeMentionDropdown(); return; }
+      const candidates = getMentionCandidates().filter((c) =>
+        c.handle.slice(1).toLowerCase().startsWith(query.toLowerCase())
+      );
+      if (!candidates.length) { closeMentionDropdown(); return; }
+      mentionActiveIndex = 0;
+      dd.innerHTML = candidates.map((c, i) => `
+        <div class="mention-option${i === 0 ? " active" : ""}" data-handle="${escapeAttr(c.handle)}">
+          <span class="mo-handle">${escapeHtml(c.handle)}</span>
+          <span class="mo-from">${escapeHtml(c.from)}</span>
+        </div>
+      `).join("");
+      dd.style.display = "block";
+      dd.querySelectorAll(".mention-option").forEach((opt) => {
+        opt.addEventListener("mousedown", (e) => {
+          e.preventDefault(); // keep focus in the input instead of the dropdown
+          insertMention(opt.dataset.handle);
+        });
+      });
+    }
+
+    function closeMentionDropdown() {
+      const dd = document.getElementById("mentionDropdown");
+      if (dd) { dd.style.display = "none"; dd.innerHTML = ""; }
+    }
+
+    function insertMention(handle) {
+      const input = document.getElementById("replyInput");
+      input.value = input.value.replace(/(?:^|\s)@(\w*)$/, (match) => {
+        return (match.startsWith(" ") ? " " : "") + handle + " ";
+      });
+      closeMentionDropdown();
+      input.focus();
+    }
+
+    // Called from the replyInput keydown handler before the Enter-to-send
+    // shortcut — returns true if it handled the key itself (dropdown open)
+    // so the caller skips its own handling.
+    function handleMentionKeydown(e) {
+      const dd = document.getElementById("mentionDropdown");
+      if (!dd || dd.style.display === "none") return false;
+      const options = [...dd.querySelectorAll(".mention-option")];
+      if (!options.length) return false;
+      if (e.key === "ArrowDown") {
+        e.preventDefault();
+        mentionActiveIndex = (mentionActiveIndex + 1) % options.length;
+        options.forEach((o, i) => o.classList.toggle("active", i === mentionActiveIndex));
+        return true;
+      }
+      if (e.key === "ArrowUp") {
+        e.preventDefault();
+        mentionActiveIndex = (mentionActiveIndex - 1 + options.length) % options.length;
+        options.forEach((o, i) => o.classList.toggle("active", i === mentionActiveIndex));
+        return true;
+      }
+      if (e.key === "Enter" || e.key === "Tab") {
+        e.preventDefault();
+        insertMention(options[mentionActiveIndex].dataset.handle);
+        return true;
+      }
+      if (e.key === "Escape") {
+        closeMentionDropdown();
+        return true;
+      }
+      return false;
     }
 
     async function sendReply() {
