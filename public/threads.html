@@ -45,11 +45,13 @@
       </div>
 
       <div class="threads-select-bar" id="threadsSelectBar">
-        <span class="sel-count" id="selCount">0 selected</span>
+        <div class="sel-top-row">
+          <span class="sel-count" id="selCount">0</span>
+          <span class="sel-cancel" id="selCancelBtn">Cancel</span>
+        </div>
         <div class="sel-actions">
           <button type="button" id="selMarkReadBtn"><span style="color:#38bdf8;">✓</span> Mark as read</button>
           <button type="button" id="selSolveBtn"><span style="color:#34d399;">✅</span> Solved</button>
-          <button type="button" id="selCancelBtn">Cancel</button>
         </div>
       </div>
 
@@ -385,12 +387,13 @@
     function openThreadKebabMenu(t, anchorEl) {
       closeThreadKebabMenu();
       openKebabId = t.id;
+      const isUnread = Math.max(0, (t.replyCount || 0) - getSeenCount(t.id)) > 0;
       const menu = document.createElement("div");
       menu.className = "thread-kebab-menu";
       menu.innerHTML = `
         <div class="thread-kebab-item" data-act="select">☐ Select</div>
         <div class="thread-kebab-divider"></div>
-        <div class="thread-kebab-item" data-act="read"><span style="color:#38bdf8;">✓</span> Mark as read</div>
+        <div class="thread-kebab-item" data-act="read">${isUnread ? '<span style="color:#38bdf8;">✓</span> Mark as read' : '<span style="color:#9aa3c4;">○</span> Mark as unread'}</div>
         <div class="thread-kebab-item" data-act="solve">${t.solved ? '<span style="color:#f87171;">✕</span> Not solved' : '<span style="color:#34d399;">✅</span> Solved'}</div>
       `;
       document.body.appendChild(menu);
@@ -409,7 +412,10 @@
       });
       menu.querySelector('[data-act="read"]').addEventListener("click", () => {
         closeThreadKebabMenu();
-        markSeen(t.id, t.replyCount || 0);
+        // Unread → seen count catches up to the current reply count.
+        // Read → force back to unread by zeroing the seen count, same
+        // "as if never opened" semantics as Gmail's Mark as unread.
+        markSeen(t.id, isUnread ? (t.replyCount || 0) : 0);
         renderLists();
       });
       menu.querySelector('[data-act="solve"]').addEventListener("click", () => {
@@ -461,7 +467,7 @@
     function updateSelectBar() {
       const bar = document.getElementById("threadsSelectBar");
       bar.classList.toggle("open", selectMode);
-      document.getElementById("selCount").textContent = `${checkedThreadIds.size} selected`;
+      document.getElementById("selCount").textContent = `${checkedThreadIds.size}`;
       // Solved button label — "Solved" if any checked thread still needs
       // solving, otherwise (every checked thread is already solved)
       // "Not solved" to bulk-reopen them instead. Mirrors the single-row
