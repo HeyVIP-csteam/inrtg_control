@@ -533,7 +533,14 @@
         warningHtml += '<div class="dep-tab-warning">\u2139\ufe0f Not searched (no sheet linked yet): ' + labels.map(escapeHtml).join(', ') + '</div>';
       }
       showDep(data.results || []);
-      if (warningHtml) gi('depRes').innerHTML = warningHtml + gi('depRes').innerHTML;
+      // insertAdjacentHTML, NOT `gi('depRes').innerHTML = warningHtml + ...` —
+      // reassigning innerHTML destroys and recreates EVERY existing child
+      // node (even ones that look identical), silently dropping any event
+      // listeners showDep() just attached to them (e.g. the Slip image
+      // button's click handler) — this was a real bug, not hypothetical.
+      // insertAdjacentHTML only adds new nodes at the front; the cards
+      // already in the DOM (and their listeners) are left untouched.
+      if (warningHtml) gi('depRes').insertAdjacentHTML('afterbegin', warningHtml);
     } catch (e) {
       btn.disabled = false;
       gi('depRes').innerHTML = '<div class="dep-state err">Search failed — check your connection.</div>';
