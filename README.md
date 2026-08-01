@@ -99,6 +99,38 @@ mix.
 only needed if you ever want a brand's sheet to work without sharing it
 to the service account.
 
+### Deposit Issue / Deposit Backup — different credential, on purpose
+
+Everything above (the service account) is what every other module in
+this hub uses. **Deposit Issue and Deposit Backup are the one
+exception** — their Sheets belong to a different department that will
+not add a service account as a collaborator, so those two modules
+authenticate as a real Google account instead, via OAuth 2.0
+(`functions/_shared/googleOAuth.js`). Three separate Cloudflare
+secrets, already set for Production and Preview:
+
+- `GOOGLE_OAUTH_CLIENT_ID`
+- `GOOGLE_OAUTH_CLIENT_SECRET`
+- `GOOGLE_OAUTH_REFRESH_TOKEN`
+
+The refresh token belongs to a real Google account that the other
+department has already added as an Editor on the Deposit Support
+sheet(s) — the app "impersonates" that person for every Deposit
+Issue/Backup read and write. Setting this up (registering the OAuth
+Client, completing the consent flow once, saving the refresh token) is
+a one-time step already done; nothing in normal operation repeats it.
+
+**If Deposit Issue/Backup start failing with `invalid_grant`:** check
+the OAuth consent screen's publishing status in Google Cloud Console
+first — it must be **"In production"**, not "Testing". Testing-mode
+refresh tokens silently expire after 7 days, which is exactly the
+failure this hub hit once before switching it to production.
+Don't confuse this with the service account above — they're
+independent credentials for different modules; a Deposit Issue/Backup
+outage doesn't mean the rest of the hub's Sheet logging is affected,
+and vice versa.
+
+
 ## 6. Test it
 
 1. `wrangler pages dev public` (or just push and use the Cloudflare

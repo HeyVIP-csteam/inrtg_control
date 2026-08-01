@@ -11,6 +11,16 @@
  * And one thing you must do manually per brand sheet: open the sheet →
  * Share → add the service account's email as an Editor. Without that
  * share, the API calls below will fail with a 403.
+ *
+ * A few exported functions below (updateRowByColumns, getSheetTabs,
+ * batchGetValues) accept an optional trailing `tokenOverride` argument —
+ * pass an access token there to skip the service-account token entirely
+ * and use a different credential instead. This exists ONLY for the
+ * Deposit Issue / Deposit Backup modules, which read/write a Sheet this
+ * service account doesn't have access to and instead use a real user's
+ * OAuth token from googleOAuth.js — see that file's comment for why.
+ * Every other caller should keep passing nothing (uses the service
+ * account, as normal).
  */
 
 // Reused across requests within the same Worker isolate so we don't
@@ -117,8 +127,8 @@ export async function appendRowByColumns(env, sheetId, tabName, startColumn, val
  * wrote to, instead of creating a duplicate. `row` is the 1-indexed
  * Sheets row number returned by appendRowByColumns() at submit time.
  */
-export async function updateRowByColumns(env, sheetId, tabName, startColumn, row, values) {
-  const token = await getAccessToken(env);
+export async function updateRowByColumns(env, sheetId, tabName, startColumn, row, values, tokenOverride) {
+  const token = tokenOverride || await getAccessToken(env);
   const endColumn = columnLetter(columnIndex(startColumn) + values.length - 1);
   const range = `${tabName}!${startColumn}${row}:${endColumn}${row}`;
 
@@ -216,8 +226,8 @@ export async function getSheetTabTitles(env, sheetId) {
  * Google Sheets" deep link) — Promo Code Search only needs titles, so it
  * keeps using getSheetTabTitles above.
  */
-export async function getSheetTabs(env, sheetId) {
-  const token = await getAccessToken(env);
+export async function getSheetTabs(env, sheetId, tokenOverride) {
+  const token = tokenOverride || await getAccessToken(env);
   const url = `https://sheets.googleapis.com/v4/spreadsheets/${sheetId}?fields=sheets.properties(title,sheetId)`;
   const res = await fetch(url, {
     headers: { Authorization: `Bearer ${token}`, "Cache-Control": "no-cache" },
@@ -235,8 +245,8 @@ export async function getSheetTabs(env, sheetId) {
  * 2D array — missing/blank rows are simply absent from the array, so
  * always index defensively). Read-only — used by Promo Code Search.
  */
-export async function batchGetValues(env, sheetId, ranges) {
-  const token = await getAccessToken(env);
+export async function batchGetValues(env, sheetId, ranges, tokenOverride) {
+  const token = tokenOverride || await getAccessToken(env);
   const params = ranges.map((r) => `ranges=${encodeURIComponent(r)}`).join("&");
   const url = `https://sheets.googleapis.com/v4/spreadsheets/${sheetId}/values:batchGet?${params}&valueRenderOption=FORMATTED_VALUE`;
   const res = await fetch(url, {

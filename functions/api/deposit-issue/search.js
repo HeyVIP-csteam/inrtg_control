@@ -23,6 +23,7 @@ import { verifyRequest, canSeeBrand } from "../../_shared/accounts.js";
 import { BRANDS } from "../../_shared/routing.js";
 import { getDepositSheetOverride, DEPOSIT_HIDDEN_BRANDS } from "../../_shared/depositSheets.js";
 import { batchGetValues, getSheetTabs } from "../../_shared/googleSheets.js";
+import { getAccessToken } from "../../_shared/googleOAuth.js";
 
 // Must match MODULE_SLOT in functions/api/admin/deposit-sheets.js and
 // functions/api/deposit-issue/{update,sheet-links}.js.
@@ -96,11 +97,11 @@ function formatRequestDateTime(dateRaw, timeRaw) {
 const tabCache = new Map(); // sheetId -> { tabs: [{title, gid}], expiresAt }
 const TAB_CACHE_MS = 5 * 60 * 1000;
 
-async function resolveExistingTabs(env, sheetId) {
+async function resolveExistingTabs(env, sheetId, token) {
   const now = Date.now();
   const cached = tabCache.get(sheetId);
   if (cached && cached.expiresAt > now) return cached.tabs;
-  const tabs = await getSheetTabs(env, sheetId);
+  const tabs = await getSheetTabs(env, sheetId, token);
   tabCache.set(sheetId, { tabs, expiresAt: now + TAB_CACHE_MS });
   return tabs;
 }
@@ -123,8 +124,14 @@ async function handleSearch({ request, env }) {
   const account = await verifyRequest(request, env);
   if (!account) return json({ ok: false, error: "Login required." }, 401);
 
-  if (!env.GOOGLE_SERVICE_ACCOUNT_EMAIL || !env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY) {
-    return json({ ok: false, error: "Server is missing Google service account credentials." }, 500);
+  if (!env.GOOGLE_OAUTH_CLIENT_ID || !env.GOOGLE_OAUTH_CLIENT_SECRET || !env.GOOGLE_OAUTH_REFRESH_TOKEN) {
+    return json({ ok: false, error: "Server is missing Google OAuth credentials." }, 500);
+  }
+  let token;
+  try {
+    token = await getAccessToken(env);
+  } catch (e) {
+    return json({ ok: false, error: `Google OAuth error: ${String((e && e.message) || e)}` }, 502);
   }
 
   let body;
@@ -173,7 +180,7 @@ async function handleSearch({ request, env }) {
 
     let realTabs;
     try {
-      realTabs = await resolveExistingTabs(env, target.sheetId);
+      realTabs = await resolveExistingTabs(env, target.sheetId, token);
     } catch (e) {
       tabWarnings.push({ brand: target.brandName, missingTabs: target.tabNames, actualSheetTabs: [], error: String((e && e.message) || e) });
       continue;
@@ -195,7 +202,7 @@ async function handleSearch({ request, env }) {
     let valueRanges;
     try {
       const ranges = tabsToQuery.map(({ title }) => `'${title.replace(/'/g, "''")}'!A2:${LAST_COL}`);
-      valueRanges = await batchGetValues(env, target.sheetId, ranges);
+      valueRanges = await batchGetValues(env, target.sheetId, ranges, token);
     } catch (e) {
       tabWarnings.push({ brand: target.brandName, missingTabs: [], actualSheetTabs: [], error: `Sheets API error reading "${target.brandName}": ${String((e && e.message) || e)}` });
       continue;

@@ -16,6 +16,7 @@ import { verifyRequest, canSeeBrand } from "../../_shared/accounts.js";
 import { BRANDS } from "../../_shared/routing.js";
 import { getAllDepositSheetOverrides } from "../../_shared/depositSheets.js";
 import { updateRowByColumns } from "../../_shared/googleSheets.js";
+import { getAccessToken } from "../../_shared/googleOAuth.js";
 
 const MODULE_SLOT = "depositIssue"; // must match search.js / sheet-links.js
 const CS_REMARKS_COL = "P";
@@ -62,7 +63,8 @@ async function handleUpdate({ request, env }) {
   }
 
   try {
-    await updateRowByColumns(env, sheetId, tabName, CS_REMARKS_COL, rowIndex, [csRemarks || ""]);
+    const token = await getAccessToken(env);
+    await updateRowByColumns(env, sheetId, tabName, CS_REMARKS_COL, rowIndex, [csRemarks || ""], token);
   } catch (e) {
     return json({ ok: false, error: `Sheets API error: ${String((e && e.message) || e)}` }, 502);
   }
