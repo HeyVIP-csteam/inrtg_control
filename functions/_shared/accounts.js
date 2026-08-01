@@ -99,6 +99,11 @@ export const ADMIN_SECTIONS_LIST = [
   { id: "whitelistIp", name: "Whitelist IP", icon: "🌐", floorRank: ROLE_RANK.admin },
   { id: "tgRoutes", name: "TG Group / Channel", icon: "📡", floorRank: ROLE_RANK.admin },
   { id: "agentProfile", name: "Agent Profile", icon: "🪪", floorRank: ROLE_RANK.admin },
+  // Sensitive config surface (wrong link = CS reading/editing the wrong
+  // brand's live deposit data) — floor is superadmin, not admin, so
+  // Admin/Senior never see it at all unless individually granted via
+  // allowedAdminSections, same opt-in-only pattern as the others.
+  { id: "depositSheets", name: "Deposit Sheet Link", icon: "🧾", floorRank: ROLE_RANK.superadmin },
 ];
 
 // Role-based defaults, used ONLY when the Owner has never explicitly set
@@ -113,13 +118,13 @@ export const ADMIN_SECTIONS_DEFAULT_SEEN = {
   agent: [],
   senior: ["createAccount"],
   admin: ["whitelistIp"],
-  superadmin: ["createAccount", "whitelistIp", "tgRoutes", "agentProfile"],
+  superadmin: ["createAccount", "whitelistIp", "tgRoutes", "agentProfile", "depositSheets"],
 };
 export const ADMIN_SECTIONS_DEFAULT_EDIT = {
   agent: [],
   senior: [],
   admin: [], // Whitelist IP visible (above) but view-only by default
-  superadmin: ["whitelistIp", "tgRoutes", "agentProfile"],
+  superadmin: ["whitelistIp", "tgRoutes", "agentProfile", "depositSheets"],
 };
 
 export function canSeeAdminSection(account, sectionId) {
@@ -162,7 +167,7 @@ export function canManageOthersAdminAccess(account) {
 // View-only. (The separate "actor must outrank the TARGET account" rule
 // for Agent Profile edits, in functions/api/admin/accounts.js, is a
 // different, still-active protection — not replaced by this.)
-export const EDITABLE_ADMIN_SECTIONS = ["whitelistIp", "tgRoutes", "agentProfile"];
+export const EDITABLE_ADMIN_SECTIONS = ["whitelistIp", "tgRoutes", "agentProfile", "depositSheets"];
 
 export function canEditAdminSection(account, sectionId) {
   if (!account) return true; // bootstrap mode

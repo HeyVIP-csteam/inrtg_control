@@ -202,15 +202,30 @@ export async function writeRowForDate(env, sheetId, tab, { leftBlock, rightBlock
  * tabs that actually exist before calling batchGetValues.
  */
 export async function getSheetTabTitles(env, sheetId) {
+  const tabs = await getSheetTabs(env, sheetId);
+  return tabs.map((t) => t.title);
+}
+
+/**
+ * Same metadata read as getSheetTabTitles, but also keeps each tab's
+ * `gid` (its internal numeric sheetId — different from the spreadsheet's
+ * own ID) alongside the title. Needed to build a direct link straight to
+ * a specific tab/row in Google Sheets:
+ * https://docs.google.com/spreadsheets/d/<sheetId>/edit#gid=<gid>&range=A5
+ * Used by Deposit Issue / Deposit Backup's search results ("Open in
+ * Google Sheets" deep link) — Promo Code Search only needs titles, so it
+ * keeps using getSheetTabTitles above.
+ */
+export async function getSheetTabs(env, sheetId) {
   const token = await getAccessToken(env);
-  const url = `https://sheets.googleapis.com/v4/spreadsheets/${sheetId}?fields=sheets.properties.title`;
+  const url = `https://sheets.googleapis.com/v4/spreadsheets/${sheetId}?fields=sheets.properties(title,sheetId)`;
   const res = await fetch(url, {
     headers: { Authorization: `Bearer ${token}`, "Cache-Control": "no-cache" },
     cf: { cacheTtl: -1, cacheEverything: false },
   });
   if (!res.ok) throw new Error(`Sheets metadata read failed (${res.status}): ${await res.text()}`);
   const data = await res.json();
-  return (data.sheets || []).map((s) => s.properties.title);
+  return (data.sheets || []).map((s) => ({ title: s.properties.title, gid: s.properties.sheetId }));
 }
 
 /**

@@ -120,6 +120,7 @@
         <div class="sidebar-subitem" id="subCreateAccount" style="display:none;"><span class="sub-icon">➕</span> Create Account</div>
         <div class="sidebar-subitem" id="subWhitelistIp" style="display:none;"><span class="sub-icon">🌐</span> Whitelist IP</div>
         <div class="sidebar-subitem" id="subTgRoutes" style="display:none;"><span class="sub-icon">📡</span> TG Group / Channel</div>
+        <div class="sidebar-subitem" id="subDepositSheets" style="display:none;"><span class="sub-icon">🧾</span> Deposit Sheet Link</div>
         <div class="sidebar-subitem" id="subResetPassword"><span class="sub-icon">🔑</span> Reset Password</div>
         <div class="sidebar-subitem" id="subAgentProfile" style="display:none;"><span class="sub-icon">🪪</span> Agent Profile</div>
       </div>
@@ -137,6 +138,16 @@
             <div class="t-icon" style="background:#f472b633;">🎟️</div>
             <div class="t-name">Promo Code Search</div>
             <div class="t-desc">Search multiple promo codes at once</div>
+          </a>
+          <a href="/deposit-issue.html" class="tool-card" style="--tool-accent:#2f6fed;">
+            <div class="t-icon" style="background:#2f6fed33;">💳</div>
+            <div class="t-name">Deposit Issue</div>
+            <div class="t-desc">Search Deposit Support records and update CS fields</div>
+          </a>
+          <a href="/deposit-backup.html" class="tool-card" style="--tool-accent:#2f6fed;">
+            <div class="t-icon" style="background:#2f6fed33;">💻</div>
+            <div class="t-name">Deposit Backup</div>
+            <div class="t-desc">Search This Month + Last Month backup sheets (read-only)</div>
           </a>
         </div>
 
@@ -360,8 +371,9 @@
       { id: "whitelistIp", name: "Whitelist IP", icon: "🌐", floorRank: ROLE_RANK.admin },
       { id: "tgRoutes", name: "TG Group / Channel", icon: "📡", floorRank: ROLE_RANK.admin },
       { id: "agentProfile", name: "Agent Profile", icon: "🪪", floorRank: ROLE_RANK.admin },
+      { id: "depositSheets", name: "Deposit Sheet Link", icon: "🧾", floorRank: ROLE_RANK.superadmin },
     ];
-    const EDITABLE_ADMIN_SECTIONS = ["whitelistIp", "tgRoutes", "agentProfile"];
+    const EDITABLE_ADMIN_SECTIONS = ["whitelistIp", "tgRoutes", "agentProfile", "depositSheets"];
     // SECURITY FIX — 2026-07-28: role-based defaults for accounts the
     // Owner has never explicitly touched. Mirrors
     // ADMIN_SECTIONS_DEFAULT_SEEN / ADMIN_SECTIONS_DEFAULT_EDIT in
@@ -375,13 +387,13 @@
       agent: [],
       senior: ["createAccount"],
       admin: ["whitelistIp"],
-      superadmin: ["createAccount", "whitelistIp", "tgRoutes", "agentProfile"],
+      superadmin: ["createAccount", "whitelistIp", "tgRoutes", "agentProfile", "depositSheets"],
     };
     const ADMIN_SECTIONS_DEFAULT_EDIT = {
       agent: [],
       senior: [],
       admin: [], // Whitelist IP visible by default, but view-only
-      superadmin: ["whitelistIp", "tgRoutes", "agentProfile"],
+      superadmin: ["whitelistIp", "tgRoutes", "agentProfile", "depositSheets"],
     };
     function canSeeAdminSection(sectionId) {
       if (!authInfo) return false;
@@ -411,6 +423,7 @@
     document.getElementById("subWhitelistIp").style.display = canSeeAdminSection("whitelistIp") ? "flex" : "none";
     document.getElementById("subTgRoutes").style.display = canSeeAdminSection("tgRoutes") ? "flex" : "none";
     document.getElementById("subAgentProfile").style.display = canSeeAdminSection("agentProfile") ? "flex" : "none";
+    document.getElementById("subDepositSheets").style.display = canSeeAdminSection("depositSheets") ? "flex" : "none";
 
     const acctToggle = document.getElementById("acctMgmtToggle");
     const acctSubitems = document.getElementById("acctMgmtSubitems");
@@ -422,6 +435,7 @@
     document.getElementById("subCreateAccount").addEventListener("click", () => openAcctModal("create"));
     document.getElementById("subWhitelistIp").addEventListener("click", () => openAcctModal("whitelist"));
     document.getElementById("subTgRoutes").addEventListener("click", () => openAcctModal("tgroutes"));
+    document.getElementById("subDepositSheets").addEventListener("click", () => openAcctModal("depositsheets"));
     document.getElementById("subResetPassword").addEventListener("click", () => openAcctModal("reset"));
     document.getElementById("subAgentProfile").addEventListener("click", () => openAcctModal("profile"));
     document.getElementById("acctProfileRoleFilter").addEventListener("change", () => renderAgentProfileTable());
@@ -567,6 +581,11 @@
       if (mode === "tgroutes") {
         acctTitle.textContent = "TG Group / Channel";
         await loadTgRoutes();
+      }
+
+      if (mode === "depositsheets") {
+        acctTitle.textContent = "Deposit Sheet Link";
+        await loadDepositSheets();
       }
     }
 
@@ -737,6 +756,159 @@
     }
 
     let acctOfficesById = {};
+
+    // ---- Deposit Sheet Link (live-editable Google Sheet links for
+    // Deposit Issue + Deposit Backup) ----
+    // Same brand-sidebar layout as TG Group/Channel above (reuses the
+    // .tgroute-* CSS classes as-is — this is the same "pick a brand on
+    // the left, edit its rows on the right" shape, just with Sheet
+    // link + tab names instead of Chat ID + Topic ID). Backed by
+    // /api/admin/deposit-sheets — see functions/_shared/depositSheets.js
+    // for the KV layer and functions/api/admin/deposit-sheets.js for the
+    // full action list.
+    let acctDepositData = null;
+    let acctDepositSelectedBrand = null;
+
+    async function loadDepositSheets() {
+      const res = await window.AgentAuth.authFetch("/api/admin/deposit-sheets");
+      const data = await res.json();
+      if (!data.ok) {
+        acctBody.innerHTML = `<p class="edit-modal-note err">${acctEsc(data.error || "Failed to load.")}</p>`;
+        return;
+      }
+      acctDepositData = data;
+      if (!acctDepositSelectedBrand || !data.brands.some((b) => b.id === acctDepositSelectedBrand)) {
+        acctDepositSelectedBrand = data.brands[0]?.id || null;
+      }
+      renderDepositSheets();
+    }
+
+    function renderDepositSheets() {
+      if (!acctDepositData) return;
+      const { brands, sheets, backup } = acctDepositData;
+      const canEdit = canEditAdminSection("depositSheets");
+      const roAttr = canEdit ? "" : "disabled";
+
+      const brandListHtml = brands.map((b) => `
+        <div class="tgroute-brand${b.id === acctDepositSelectedBrand ? " selected" : ""}" data-brand="${acctEsc(b.id)}">${acctEsc(b.name)}</div>
+      `).join("");
+
+      const issue = sheets[acctDepositSelectedBrand] || { sheetId: "", tabNames: [], isOverride: false };
+      const back = backup[acctDepositSelectedBrand] || { thisMonth: null, lastMonth: null };
+      const thisMonth = back.thisMonth || { sheetId: "", tabNames: [] };
+      const lastMonth = back.lastMonth; // null = not linked, never directly editable
+
+      acctBody.innerHTML = `
+        <div class="tgroute-layout">
+          <div class="tgroute-brands">${brandListHtml}</div>
+          <div class="tgroute-modules">
+
+            <div class="tgroute-row" data-row="issue">
+              <div class="tgroute-mod-name">💳 Deposit Issue
+                <span class="route-tag${issue.isOverride ? " custom" : ""}">${issue.isOverride ? "linked" : "not linked"}</span>
+              </div>
+              <div class="tgroute-fields">
+                <input type="text" class="ds-sheet" placeholder="Google Sheet URL or ID" value="${acctEsc(issue.sheetId)}" autocomplete="off" ${roAttr} />
+                <input type="text" class="ds-tabs" placeholder="Tab names, comma-separated" value="${acctEsc((issue.tabNames || []).join(", "))}" autocomplete="off" ${roAttr} />
+                ${canEdit ? `<div class="tgroute-row-actions">
+                  <button type="button" class="tgroute-action-btn ds-save-issue">Save</button>
+                  ${issue.isOverride ? '<button type="button" class="tgroute-action-btn tgroute-action-secondary ds-reset-issue">Reset</button>' : ""}
+                </div>` : ""}
+              </div>
+            </div>
+
+            <div class="tgroute-row" data-row="backup-this">
+              <div class="tgroute-mod-name">📅 Deposit Backup — This Month
+                <span class="route-tag${back.thisMonth ? " custom" : ""}">${back.thisMonth ? "linked" : "not linked"}</span>
+              </div>
+              <div class="tgroute-fields">
+                <input type="text" class="ds-sheet" placeholder="Google Sheet URL or ID" value="${acctEsc(thisMonth.sheetId)}" autocomplete="off" ${roAttr} />
+                <input type="text" class="ds-tabs" placeholder="Tab names, comma-separated" value="${acctEsc((thisMonth.tabNames || []).join(", "))}" autocomplete="off" ${roAttr} />
+                ${canEdit ? `<div class="tgroute-row-actions">
+                  <button type="button" class="tgroute-action-btn ds-save-this">Save</button>
+                  ${back.thisMonth ? '<button type="button" class="tgroute-action-btn tgroute-action-secondary ds-clear-this">Clear</button>' : ""}
+                </div>` : ""}
+              </div>
+            </div>
+
+            <div class="tgroute-row" data-row="backup-last">
+              <div class="tgroute-mod-name">🗓️ Deposit Backup — Last Month
+                <span class="route-tag${lastMonth ? " custom" : ""}">${lastMonth ? "linked" : "not linked"}</span>
+              </div>
+              <div class="tgroute-fields">
+                <input type="text" value="${acctEsc(lastMonth ? lastMonth.sheetId : "")}" placeholder="(set automatically by rollover)" disabled />
+                <input type="text" value="${acctEsc(lastMonth ? (lastMonth.tabNames || []).join(", ") : "")}" disabled />
+              </div>
+              <p class="edit-modal-note tgroute-footnote" style="margin-top:8px;">Last Month is read-only — it's always "whatever This Month was, before the most recent rollover." ${canEdit ? 'Use the button below at the start of a new month, after saving the new sheet into "This Month" above is no longer needed for the old one.' : ''}</p>
+              ${canEdit ? `<button type="button" class="tgroute-action-btn tgroute-action-secondary ds-roll" style="margin-top:4px;">Roll: This Month → Last Month</button>` : ""}
+            </div>
+
+          </div>
+        </div>
+        <hr class="tgroute-divider" />
+        ${canEdit ? "" : '<p class="edit-modal-note">View only.</p>'}
+        <p class="edit-modal-note tgroute-footnote">Changes apply to the very next search/update for that brand — no redeploy needed. Every brand starts fully unlinked; searching an unlinked brand tells the agent it isn't configured yet rather than guessing.</p>`;
+
+      acctBody.querySelectorAll(".tgroute-brand").forEach((el) => {
+        el.addEventListener("click", () => {
+          acctDepositSelectedBrand = el.dataset.brand;
+          setAcctNote("");
+          renderDepositSheets();
+        });
+      });
+      const issueRow = acctBody.querySelector('[data-row="issue"]');
+      const thisRow = acctBody.querySelector('[data-row="backup-this"]');
+      if (issueRow) {
+        issueRow.querySelector(".ds-save-issue")?.addEventListener("click", () => saveDepositSheetRow(issueRow, "save"));
+        issueRow.querySelector(".ds-reset-issue")?.addEventListener("click", () => resetDepositSheetRow("reset"));
+      }
+      if (thisRow) {
+        thisRow.querySelector(".ds-save-this")?.addEventListener("click", () => saveDepositSheetRow(thisRow, "saveBackupThisMonth"));
+        thisRow.querySelector(".ds-clear-this")?.addEventListener("click", () => resetDepositSheetRow("clearBackupThisMonth"));
+      }
+      acctBody.querySelector(".ds-roll")?.addEventListener("click", () => {
+        if (!confirm(`Roll over ${acctDepositData.brands.find((b) => b.id === acctDepositSelectedBrand)?.name || ""}'s Deposit Backup? This Month becomes the new Last Month (discarding whatever was there before), and This Month is cleared out.`)) return;
+        resetDepositSheetRow("rollBackup");
+      });
+    }
+
+    async function saveDepositSheetRow(row, action) {
+      const sheetUrlOrId = row.querySelector(".ds-sheet").value.trim();
+      const tabNames = row.querySelector(".ds-tabs").value.trim();
+      if (!sheetUrlOrId) return setAcctNote("Sheet URL or ID is required.", "err");
+      if (!tabNames) return setAcctNote("At least one tab name is required.", "err");
+      setAcctNote("Saving…");
+      const res = await window.AgentAuth.authFetch("/api/admin/deposit-sheets", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action, brandId: acctDepositSelectedBrand, sheetUrlOrId, tabNames }),
+      });
+      const data = await res.json();
+      if (!data.ok) return setAcctNote(data.error || "Save failed.", "err");
+      applyDepositSheetResult(action, data);
+      setAcctNote("Saved.", "ok");
+      renderDepositSheets();
+    }
+
+    async function resetDepositSheetRow(action) {
+      setAcctNote(action === "rollBackup" ? "Rolling over…" : "Resetting…");
+      const res = await window.AgentAuth.authFetch("/api/admin/deposit-sheets", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action, brandId: acctDepositSelectedBrand }),
+      });
+      const data = await res.json();
+      if (!data.ok) return setAcctNote(data.error || "Failed.", "err");
+      applyDepositSheetResult(action, data);
+      setAcctNote(action === "rollBackup" ? "Rolled over." : "Reset.", "ok");
+      renderDepositSheets();
+    }
+
+    function applyDepositSheetResult(action, data) {
+      if (action === "save" || action === "reset") {
+        acctDepositData.sheets[acctDepositSelectedBrand] = data.sheet;
+      } else {
+        acctDepositData.backup[acctDepositSelectedBrand] = data.backup;
+      }
+    }
 
     async function loadAgentProfileTable() {
       const [accountsRes, officesRes] = await Promise.all([
