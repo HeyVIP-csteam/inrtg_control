@@ -1,10 +1,12 @@
 /**
  * POST /api/deposit-issue/update
  *
- * Writes back exactly ONE column — CS Remarks (P) — the only CS-editable
- * field on the real INR sheet (confirmed from a screenshot, 2026-08-01;
- * earlier revisions of this file assumed a 4-column PKR-style edit —
- * that's gone).
+ * Writes back exactly ONE column — CS Remarks — the only CS-editable
+ * field on the real INR sheet. The column letter comes from
+ * ISSUE_COLUMNS (functions/_shared/depositColumns.js), same for every
+ * brand's Deposit Issue sheet — Deposit Backup uses a different layout
+ * entirely, but that module has no update endpoint (read-only), so it's
+ * irrelevant here.
  *
  * Takes { sheetId, tabName, rowIndex, csRemarks }. `sheetId` is resolved
  * back to a brand (via the live "Deposit Sheet Link" overrides, not
@@ -17,9 +19,10 @@ import { BRANDS } from "../../_shared/routing.js";
 import { getAllDepositSheetOverrides } from "../../_shared/depositSheets.js";
 import { updateRowByColumns } from "../../_shared/googleSheets.js";
 import { getAccessToken } from "../../_shared/googleOAuth.js";
+import { ISSUE_COLUMNS } from "../../_shared/depositColumns.js";
 
 const MODULE_SLOT = "depositIssue"; // must match search.js / sheet-links.js
-const CS_REMARKS_COL = "P";
+const CS_REMARKS_COL = ISSUE_COLUMNS.csRemarks;
 
 async function findBrandForSheetId(env, sheetId) {
   const overrides = await getAllDepositSheetOverrides(env, MODULE_SLOT, Object.keys(BRANDS));

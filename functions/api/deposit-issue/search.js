@@ -24,41 +24,15 @@ import { BRANDS } from "../../_shared/routing.js";
 import { getDepositSheetOverride, DEPOSIT_HIDDEN_BRANDS } from "../../_shared/depositSheets.js";
 import { batchGetValues, getSheetTabs } from "../../_shared/googleSheets.js";
 import { getAccessToken } from "../../_shared/googleOAuth.js";
+import { ISSUE_COLUMNS as cols } from "../../_shared/depositColumns.js";
 
 // Must match MODULE_SLOT in functions/api/admin/deposit-sheets.js and
 // functions/api/deposit-issue/{update,sheet-links}.js.
 const MODULE_SLOT = "depositIssue";
 
-// Column layout — confirmed from a real screenshot of the INR Deposit
-// Support sheet (2026-08-01). Column H (no header, checkbox-formatted,
-// data shows "forwarded") is deliberately skipped — not surfaced
-// anywhere below; add it back here if it turns out to matter later.
-const COLS = {
-  date: "A",
-  time: "B",
-  username: "C",
-  pg: "D",
-  utr: "E",
-  slip: "F",
-  pgStaffName: "G",
-  // H — skipped, see comment above
-  pgTid: "I",
-  slipAmount: "J",
-  status: "K",
-  followUpTimes: "L",
-  chatIds: "M",
-  agentUpi: "N",
-  pgRemarks: "O",
-  csRemarks: "P", // the ONLY CS-editable column — see update.js
-  paymentStatus: "Q",
-  orderId: "R",
-  picName: "S",
-  cartId: "T",
-  amount: "U",
-  statusFinal: "V", // sheet has two "Status" columns (K and V) — distinct keys, same display label
-  upi: "W",
-};
-const LAST_COL = "W"; // must match the last key in COLS above
+// Column layout is the SAME for every brand's Deposit Issue sheet — see
+// depositColumns.js. (Deposit Backup uses a different layout, also
+// per-module not per-brand — don't confuse the two.)
 const MAX_RESULTS = 500; // global cap across ALL brands searched in one request
 
 function normalizeTabName(name) {
@@ -178,6 +152,8 @@ async function handleSearch({ request, env }) {
   for (const target of targets) {
     if (results.length >= MAX_RESULTS) break;
 
+    // cols is the module-level ISSUE_COLUMNS constant — same for every brand
+
     let realTabs;
     try {
       realTabs = await resolveExistingTabs(env, target.sheetId, token);
@@ -201,7 +177,7 @@ async function handleSearch({ request, env }) {
     // Brands" mode is fanning out across several sheets in one request.
     let valueRanges;
     try {
-      const ranges = tabsToQuery.map(({ title }) => `'${title.replace(/'/g, "''")}'!A2:${LAST_COL}`);
+      const ranges = tabsToQuery.map(({ title }) => `'${title.replace(/'/g, "''")}'!A2:${cols.lastCol}`);
       valueRanges = await batchGetValues(env, target.sheetId, ranges, token);
     } catch (e) {
       tabWarnings.push({ brand: target.brandName, missingTabs: [], actualSheetTabs: [], error: `Sheets API error reading "${target.brandName}": ${String((e && e.message) || e)}` });
@@ -213,18 +189,21 @@ async function handleSearch({ request, env }) {
       const rows = (valueRanges[tabI] && valueRanges[tabI].values) || [];
       rows.forEach((row, i) => {
         if (results.length >= MAX_RESULTS) return;
-        const get = (colLetter) => row[colIndex(colLetter)] || "";
-        const pgTid = get(COLS.pgTid);
-        const utr = get(COLS.utr);
-        const username = get(COLS.username);
-        const orderId = get(COLS.orderId);
+        // A field this brand's profile doesn't define (e.g. Cart ID for
+        // a BetVisa-style sheet) safely returns "" instead of reading
+        // the wrong column or throwing.
+        const get = (colLetter) => (colLetter ? row[colIndex(colLetter)] || "" : "");
+        const pgTid = get(cols.pgTid);
+        const utr = get(cols.utr);
+        const username = get(cols.username);
+        const orderId = get(cols.orderId);
         // Match if ANY query is a substring of PG TID, UTR, Username, or Order ID.
         const haystack = (pgTid + " " + utr + " " + username + " " + orderId).toLowerCase();
         if (!queries.some((q) => haystack.includes(q))) return;
 
         const rowIndex = i + 2; // header is row 1
         results.push({
-          _sortTs: sortTimestamp(get(COLS.date), get(COLS.time)),
+          _sortTs: sortTimestamp(get(cols.date), get(cols.time)),
           brand: target.brandId,
           brandName: target.brandName,
           tabName: tab,
@@ -232,26 +211,29 @@ async function handleSearch({ request, env }) {
           rowIndex,
           sheetUrl: `https://docs.google.com/spreadsheets/d/${target.sheetId}/edit#gid=${gid}&range=A${rowIndex}`,
           transaction: pgTid,
-          requestTime: formatRequestDateTime(get(COLS.date), get(COLS.time)),
+          requestTime: formatRequestDateTime(get(cols.date), get(cols.time)),
           username,
-          pg: get(COLS.pg),
+          pg: get(cols.pg),
           utr,
-          slip: get(COLS.slip),
-          pgStaffName: get(COLS.pgStaffName),
-          slipAmount: get(COLS.slipAmount),
-          status: get(COLS.status),
-          followUpTimes: get(COLS.followUpTimes),
-          chatIds: get(COLS.chatIds),
-          agentUpi: get(COLS.agentUpi),
-          pgRemarks: get(COLS.pgRemarks),
-          csRemarks: get(COLS.csRemarks),
-          paymentStatus: get(COLS.paymentStatus),
+          slip: get(cols.slip),
+          pgStaffName: get(cols.pgStaffName),
+          slipAmount: get(cols.slipAmount),
+          status: get(cols.status),
+          followUpTimes: get(cols.followUpTimes),
+          chatIds: get(cols.chatIds),
+          agentUpi: get(cols.agentUpi),
+          pgRemarks: get(cols.pgRemarks),
+          csRemarks: get(cols.csRemarks),
+          paymentStatus: get(cols.paymentStatus),
           orderId,
-          picName: get(COLS.picName),
-          cartId: get(COLS.cartId),
-          amount: get(COLS.amount),
-          statusFinal: get(COLS.statusFinal),
-          upi: get(COLS.upi),
+          picName: get(cols.picName),
+          cartId: get(cols.cartId),
+          amount: get(cols.amount),
+          statusFinal: get(cols.statusFinal),
+          upi: get(cols.upi),
+          remarkPic: get(cols.remarkPic),
+          memo: get(cols.memo),
+          condition: get(cols.condition),
         });
       });
     });

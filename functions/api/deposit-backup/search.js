@@ -17,45 +17,21 @@
  *      which at least still has a directory mode) — a specific brand is
  *      always required. No hardcoded default sheet for any brand.
  *
- * Column layout is assumed identical to Deposit Issue's own sheet (same
- * A–W order) — confirm this against a real INR backup sheet before
- * relying on it (see the COLS comment in deposit-issue/search.js).
+ * Column layout differs from Deposit Issue's — per MODULE, not per
+ * brand — see functions/_shared/depositColumns.js. Confirmed 2026-08-01
+ * from BetVisa's real backup sheet screenshot; applies to every brand's
+ * Deposit Backup sheet the same way.
  */
 import { verifyRequest, canSeeBrand } from "../../_shared/accounts.js";
 import { BRANDS } from "../../_shared/routing.js";
 import { getDepositBackup, DEPOSIT_HIDDEN_BRANDS } from "../../_shared/depositSheets.js";
 import { batchGetValues, getSheetTabs } from "../../_shared/googleSheets.js";
 import { getAccessToken } from "../../_shared/googleOAuth.js";
+import { BACKUP_COLUMNS as cols } from "../../_shared/depositColumns.js";
 
-// Column layout — confirmed identical to Deposit Issue's own sheet (same
-// screenshot, same A–W order, 2026-08-01). Column H (no header,
-// checkbox-formatted, data shows "forwarded") is deliberately skipped.
-const COLS = {
-  date: "A",
-  time: "B",
-  username: "C",
-  pg: "D",
-  utr: "E",
-  slip: "F",
-  pgStaffName: "G",
-  // H — skipped, see comment above
-  pgTid: "I",
-  slipAmount: "J",
-  status: "K",
-  followUpTimes: "L",
-  chatIds: "M",
-  agentUpi: "N",
-  pgRemarks: "O",
-  csRemarks: "P",
-  paymentStatus: "Q",
-  orderId: "R",
-  picName: "S",
-  cartId: "T",
-  amount: "U",
-  statusFinal: "V",
-  upi: "W",
-};
-const LAST_COL = "W";
+// Column layout is the SAME for every brand's Deposit Backup sheet — see
+// depositColumns.js. (Deposit Issue uses a different layout, also
+// per-module not per-brand — don't confuse the two.)
 const MAX_RESULTS = 500; // global cap across This Month + Last Month combined
 
 function normalizeTabName(name) {
@@ -189,7 +165,7 @@ async function handleSearch({ request, env }) {
 
     let valueRanges;
     try {
-      const ranges = tabsToQuery.map(({ title }) => `'${title.replace(/'/g, "''")}'!A2:${LAST_COL}`);
+      const ranges = tabsToQuery.map(({ title }) => `'${title.replace(/'/g, "''")}'!A2:${cols.lastCol}`);
       valueRanges = await batchGetValues(env, month.sheetId, ranges, token);
     } catch (e) {
       tabWarnings.push({ brand: BRANDS[requestedBrand].name, month: month.label, missingTabs: [], actualSheetTabs: [], error: `Sheets API error: ${String((e && e.message) || e)}` });
@@ -201,17 +177,17 @@ async function handleSearch({ request, env }) {
       const rows = (valueRanges[tabI] && valueRanges[tabI].values) || [];
       rows.forEach((row, i) => {
         if (results.length >= MAX_RESULTS) return;
-        const get = (colLetter) => row[colIndex(colLetter)] || "";
-        const pgTid = get(COLS.pgTid);
-        const utr = get(COLS.utr);
-        const username = get(COLS.username);
-        const orderId = get(COLS.orderId);
+        const get = (colLetter) => (colLetter ? row[colIndex(colLetter)] || "" : "");
+        const pgTid = get(cols.pgTid);
+        const utr = get(cols.utr);
+        const username = get(cols.username);
+        const orderId = get(cols.orderId);
         const haystack = (pgTid + " " + utr + " " + username + " " + orderId).toLowerCase();
         if (!queries.some((q) => haystack.includes(q))) return;
 
         const rowIndex = i + 2;
         results.push({
-          _sortTs: sortTimestamp(get(COLS.date), get(COLS.time)),
+          _sortTs: sortTimestamp(get(cols.date), get(cols.time)),
           brand: requestedBrand,
           brandName: BRANDS[requestedBrand].name,
           month: month.key,
@@ -221,26 +197,29 @@ async function handleSearch({ request, env }) {
           rowIndex,
           sheetUrl: `https://docs.google.com/spreadsheets/d/${month.sheetId}/edit#gid=${gid}&range=A${rowIndex}`,
           transaction: pgTid,
-          requestTime: formatRequestDateTime(get(COLS.date), get(COLS.time)),
+          requestTime: formatRequestDateTime(get(cols.date), get(cols.time)),
           username,
-          pg: get(COLS.pg),
+          pg: get(cols.pg),
           utr,
-          slip: get(COLS.slip),
-          pgStaffName: get(COLS.pgStaffName),
-          slipAmount: get(COLS.slipAmount),
-          status: get(COLS.status),
-          followUpTimes: get(COLS.followUpTimes),
-          chatIds: get(COLS.chatIds),
-          agentUpi: get(COLS.agentUpi),
-          pgRemarks: get(COLS.pgRemarks),
-          csRemarks: get(COLS.csRemarks),
-          paymentStatus: get(COLS.paymentStatus),
+          slip: get(cols.slip),
+          pgStaffName: get(cols.pgStaffName),
+          slipAmount: get(cols.slipAmount),
+          status: get(cols.status),
+          followUpTimes: get(cols.followUpTimes),
+          chatIds: get(cols.chatIds),
+          agentUpi: get(cols.agentUpi),
+          pgRemarks: get(cols.pgRemarks),
+          csRemarks: get(cols.csRemarks),
+          paymentStatus: get(cols.paymentStatus),
           orderId,
-          picName: get(COLS.picName),
-          cartId: get(COLS.cartId),
-          amount: get(COLS.amount),
-          statusFinal: get(COLS.statusFinal),
-          upi: get(COLS.upi),
+          picName: get(cols.picName),
+          cartId: get(cols.cartId),
+          amount: get(cols.amount),
+          statusFinal: get(cols.statusFinal),
+          upi: get(cols.upi),
+          remarkPic: get(cols.remarkPic),
+          memo: get(cols.memo),
+          condition: get(cols.condition),
         });
       });
     });
