@@ -44,13 +44,22 @@
         <input type="text" id="threadSearch" placeholder="Search username, TID, UID..." autocomplete="off" />
       </div>
 
+      <div class="threads-select-bar" id="threadsSelectBar">
+        <span class="sel-count" id="selCount">0 selected</span>
+        <div class="sel-actions">
+          <button type="button" id="selMarkReadBtn"><span style="color:#38bdf8;">✓</span> Mark as read</button>
+          <button type="button" id="selSolveBtn"><span style="color:#34d399;">✅</span> Solved</button>
+          <button type="button" id="selCancelBtn">Cancel</button>
+        </div>
+      </div>
+
       <div class="threads-section" id="activeSection">
-        <div class="threads-section-title" data-target="activeList"><span><span class="chev">▾</span> Active Threads</span><span class="count" id="activeCount">0</span></div>
+        <div class="threads-section-title" data-target="activeList"><span><input type="checkbox" class="select-all-checkbox" id="activeSelectAll" style="display:none;" /><span class="chev">▾</span> Active Threads</span><span class="count" id="activeCount">0</span></div>
         <div class="thread-list" id="activeList"></div>
       </div>
 
       <div class="threads-section collapsed" id="solvedSection">
-        <div class="threads-section-title collapsed" data-target="solvedList"><span><span class="chev">▾</span> Solved Chat History</span><span class="count" id="solvedCount">0</span></div>
+        <div class="threads-section-title collapsed" data-target="solvedList"><span><input type="checkbox" class="select-all-checkbox" id="solvedSelectAll" style="display:none;" /><span class="chev">▾</span> Solved Chat History</span><span class="count" id="solvedCount">0</span></div>
         <div class="thread-list" id="solvedList"></div>
       </div>
 
@@ -125,6 +134,11 @@
     let pollTimer = null;
     let listPollTimer = null;
     let searchTimer = null;
+
+    // ---- Select mode (bulk Mark as read / Solved) ---------------------
+    let selectMode = false;
+    const checkedThreadIds = new Set();
+    let openKebabId = null;
 
     // ---- Local "optimistic" sidebar patches --------------------------
     // The sidebar list comes from THREADS_KV.list() (see threads.js),
@@ -329,10 +343,12 @@
 
     function renderItem(t) {
       const el = document.createElement("div");
-      el.className = "thread-item" + (t.id === selectedId ? " selected" : "");
+      const isChecked = checkedThreadIds.has(t.id);
+      el.className = "thread-item" + (t.id === selectedId ? " selected" : "") + (isChecked ? " checked" : "");
       el.style.setProperty("--thread-accent", t.accent || "#7c6cf0");
       const unread = Math.max(0, (t.replyCount || 0) - getSeenCount(t.id));
       el.innerHTML = `
+        ${selectMode ? `<input type="checkbox" class="thread-item-checkbox" ${isChecked ? "checked" : ""} />` : ""}
         <div class="icon" style="background:${(t.accent || "#7c6cf0")}33;">${t.icon || "🔔"}</div>
         <div class="meta">
           <div class="t-title">${escapeHtml(t.title)}</div>
@@ -340,13 +356,148 @@
         </div>
         ${unread > 0 ? `<span class="unread-badge">${unread > 99 ? "99+" : unread}</span>` : ""}
         ${t.solved ? '<span class="t-done">✓</span>' : ""}
+        ${!selectMode ? '<span class="thread-kebab">⋮</span>' : ""}
       `;
-      el.addEventListener("click", () => {
-        if (t.id !== selectedId) { pendingAttachments = []; replyTarget = null; }
-        openThread(t.id);
-      });
+      if (selectMode) {
+        el.querySelector(".thread-item-checkbox").addEventListener("click", (e) => {
+          e.stopPropagation();
+          toggleThreadChecked(t.id);
+        });
+        el.addEventListener("click", () => toggleThreadChecked(t.id));
+      } else {
+        el.querySelector(".thread-kebab").addEventListener("click", (e) => {
+          e.stopPropagation();
+          openThreadKebabMenu(t, e.currentTarget);
+        });
+        el.addEventListener("click", () => {
+          if (t.id !== selectedId) { pendingAttachments = []; replyTarget = null; }
+          openThread(t.id);
+        });
+      }
       return el;
     }
+
+    // ---- Per-row ⋮ menu: Select / Mark as read / Solved(-Not solved) --
+    function closeThreadKebabMenu() {
+      document.querySelectorAll(".thread-kebab-menu").forEach((m) => m.remove());
+      openKebabId = null;
+    }
+    function openThreadKebabMenu(t, anchorEl) {
+      closeThreadKebabMenu();
+      openKebabId = t.id;
+      const menu = document.createElement("div");
+      menu.className = "thread-kebab-menu";
+      menu.innerHTML = `
+        <div class="thread-kebab-item" data-act="select">☐ Select</div>
+        <div class="thread-kebab-divider"></div>
+        <div class="thread-kebab-item" data-act="read"><span style="color:#38bdf8;">✓</span> Mark as read</div>
+        <div class="thread-kebab-item" data-act="solve">${t.solved ? '<span style="color:#f87171;">✕</span> Not solved' : '<span style="color:#34d399;">✅</span> Solved'}</div>
+      `;
+      document.body.appendChild(menu);
+      const rect = anchorEl.getBoundingClientRect();
+      menu.style.top = `${rect.bottom + 4}px`;
+      menu.style.left = `${Math.max(8, rect.right - menu.offsetWidth || 170)}px`;
+      // Flip up if it would run off the bottom of the viewport.
+      const menuHeight = menu.scrollHeight || 130;
+      if (rect.bottom + menuHeight + 8 > window.innerHeight) {
+        menu.style.top = "";
+        menu.style.bottom = `${window.innerHeight - rect.top + 4}px`;
+      }
+      menu.querySelector('[data-act="select"]').addEventListener("click", () => {
+        closeThreadKebabMenu();
+        enterSelectMode(t.id);
+      });
+      menu.querySelector('[data-act="read"]').addEventListener("click", () => {
+        closeThreadKebabMenu();
+        markSeen(t.id, t.replyCount || 0);
+        renderLists();
+      });
+      menu.querySelector('[data-act="solve"]').addEventListener("click", () => {
+        closeThreadKebabMenu();
+        toggleThreadSolvedById(t.id, !t.solved);
+      });
+    }
+    document.addEventListener("click", closeThreadKebabMenu);
+    document.addEventListener("scroll", (e) => {
+      if (e.target.closest && e.target.closest(".thread-kebab-menu")) return;
+      closeThreadKebabMenu();
+    }, true);
+
+    // Single-thread solve/unsolve without opening the detail view — same
+    // /api/threads/<id> action toggleSolved() below uses, just addressed
+    // by id instead of always acting on selectedThread.
+    async function toggleThreadSolvedById(id, makeSolved) {
+      const res = await authFetch(`/api/threads/${id}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: makeSolved ? "solve" : "unsolve" }),
+      });
+      const data = await res.json();
+      if (!data.ok) return;
+      patchLocalThread(data.thread);
+      if (selectedId === id) { selectedThread = data.thread; updateThreadContent(selectedThread, true); }
+    }
+
+    // ---- Select mode (bulk actions) ------------------------------------
+    function enterSelectMode(preselectId) {
+      selectMode = true;
+      checkedThreadIds.clear();
+      if (preselectId) checkedThreadIds.add(preselectId);
+      renderLists();
+      updateSelectBar();
+    }
+    function exitSelectMode() {
+      selectMode = false;
+      checkedThreadIds.clear();
+      renderLists();
+      updateSelectBar();
+    }
+    function toggleThreadChecked(id) {
+      if (checkedThreadIds.has(id)) checkedThreadIds.delete(id);
+      else checkedThreadIds.add(id);
+      renderLists();
+      updateSelectBar();
+    }
+    function updateSelectBar() {
+      const bar = document.getElementById("threadsSelectBar");
+      bar.classList.toggle("open", selectMode);
+      document.getElementById("selCount").textContent = `${checkedThreadIds.size} selected`;
+      // Solved button label — "Solved" if any checked thread still needs
+      // solving, otherwise (every checked thread is already solved)
+      // "Not solved" to bulk-reopen them instead. Mirrors the single-row
+      // kebab menu's own Solved/Not-solved toggle.
+      const checkedThreads = [...activeThreads, ...solvedThreads].filter((t) => checkedThreadIds.has(t.id));
+      const anyUnsolved = checkedThreads.some((t) => !t.solved);
+      const solveBtn = document.getElementById("selSolveBtn");
+      solveBtn.innerHTML = anyUnsolved
+        ? '<span style="color:#34d399;">✅</span> Solved'
+        : '<span style="color:#f87171;">✕</span> Not solved';
+      solveBtn.dataset.makeSolved = anyUnsolved ? "1" : "0";
+    }
+    document.getElementById("selCancelBtn").addEventListener("click", exitSelectMode);
+    document.getElementById("selMarkReadBtn").addEventListener("click", () => {
+      const checkedThreads = [...activeThreads, ...solvedThreads].filter((t) => checkedThreadIds.has(t.id));
+      checkedThreads.forEach((t) => markSeen(t.id, t.replyCount || 0));
+      exitSelectMode();
+    });
+    document.getElementById("selSolveBtn").addEventListener("click", async () => {
+      const makeSolved = document.getElementById("selSolveBtn").dataset.makeSolved === "1";
+      const ids = [...checkedThreadIds];
+      await Promise.all(ids.map((id) => toggleThreadSolvedById(id, makeSolved)));
+      exitSelectMode();
+    });
+    ["activeSelectAll", "solvedSelectAll"].forEach((elId) => {
+      document.getElementById(elId).addEventListener("click", (e) => {
+        e.stopPropagation();
+        const isActive = elId === "activeSelectAll";
+        const list = isActive ? activeThreads : solvedThreads;
+        if (!selectMode) enterSelectMode(null);
+        const allChecked = list.every((t) => checkedThreadIds.has(t.id));
+        list.forEach((t) => { if (allChecked) checkedThreadIds.delete(t.id); else checkedThreadIds.add(t.id); });
+        renderLists();
+        updateSelectBar();
+      });
+    });
 
     function polishEmoji() {
       if (window.twemoji) window.twemoji.parse(document.body, { folder: "svg", ext: ".svg" });
@@ -355,6 +506,12 @@
     function renderLists() {
       activeCount.textContent = activeThreads.length;
       solvedCount.textContent = solvedThreads.length;
+      const activeSelectAll = document.getElementById("activeSelectAll");
+      const solvedSelectAll = document.getElementById("solvedSelectAll");
+      activeSelectAll.style.display = selectMode ? "inline-block" : "none";
+      solvedSelectAll.style.display = selectMode ? "inline-block" : "none";
+      activeSelectAll.checked = selectMode && activeThreads.length > 0 && activeThreads.every((t) => checkedThreadIds.has(t.id));
+      solvedSelectAll.checked = selectMode && solvedThreads.length > 0 && solvedThreads.every((t) => checkedThreadIds.has(t.id));
       activeList.innerHTML = "";
       if (!activeThreads.length) {
         activeList.innerHTML = '<div class="threads-empty">No active threads.<br/>Submit a form to start one.</div>';

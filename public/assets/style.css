@@ -901,6 +901,40 @@ a { color: inherit; text-decoration: none; }
 .thread-item .t-title { font-size: 12.5px; font-weight: 700; color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .thread-item .t-sub { font-size: 11px; color: var(--ink-soft); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .thread-item .t-done { color: #34d399; font-size: 13px; flex-shrink: 0; }
+.thread-item-checkbox { flex-shrink: 0; width: 15px; height: 15px; accent-color: #38bdf8; cursor: pointer; }
+.thread-item.checked { background: rgba(56, 189, 248, 0.1); border-left-color: #38bdf8; }
+.thread-kebab {
+  flex-shrink: 0; color: var(--ink-soft); font-size: 15px; letter-spacing: 1px; line-height: 1;
+  padding: 3px 6px; border-radius: 6px; cursor: pointer;
+}
+.thread-kebab:hover { background: var(--sidebar-item-hover); color: var(--ink); }
+.thread-kebab-menu {
+  position: fixed; z-index: 1000; min-width: 170px;
+  background: var(--card-bg); border: 1px solid var(--panel-border); border-radius: 12px;
+  padding: 5px; box-shadow: 0 10px 24px -8px rgba(0, 0, 0, 0.5);
+}
+.thread-kebab-item {
+  display: flex; align-items: center; gap: 9px; padding: 8px 10px; border-radius: 8px;
+  font-size: 12px; font-weight: 600; color: var(--ink); cursor: pointer; white-space: nowrap;
+}
+.thread-kebab-item:hover { background: var(--sidebar-item-hover); }
+.thread-kebab-divider { height: 1px; background: var(--panel-border); margin: 3px 6px; }
+
+.threads-select-bar {
+  display: none; align-items: center; justify-content: space-between; gap: 8px;
+  background: rgba(56, 189, 248, 0.1); border: 1px solid rgba(56, 189, 248, 0.3);
+  border-radius: 10px; padding: 8px 10px; margin: 0 0 14px;
+}
+.threads-select-bar.open { display: flex; }
+.threads-select-bar .sel-count { color: #38bdf8; font-size: 12px; font-weight: 700; flex-shrink: 0; }
+.threads-select-bar .sel-actions { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
+.threads-select-bar button {
+  display: flex; align-items: center; gap: 5px; background: rgba(255, 255, 255, 0.06);
+  border: 1px solid var(--panel-border); color: var(--ink); border-radius: 8px;
+  padding: 6px 9px; font-size: 11px; font-weight: 700; cursor: pointer; font-family: inherit;
+}
+.threads-select-bar button:hover { background: var(--sidebar-item-hover); }
+.threads-section-title .select-all-checkbox { accent-color: #38bdf8; margin-right: 2px; vertical-align: -2px; }
 .unread-badge {
   flex-shrink: 0;
   min-width: 18px;
