@@ -41,6 +41,28 @@
   document.getElementById("submitLabel").textContent = `Submit ${module.name}`;
   document.getElementById("reporterLabelText").textContent = module.reporterLabel || "Agent Name";
 
+  // Maintenance/Coming-soon toggle — catches a direct/bookmarked
+  // form.html?module=... URL for a topic a SuperAdmin/Owner has switched
+  // off, since the Home page sidebar graying it out (see index.html)
+  // only stops the normal click path. Same "frontend is UX only" caveat
+  // as the Topic Access check above — functions/api/submit.js rejects
+  // the actual submission regardless of what this does.
+  if (window.AgentAuth) {
+    window.AgentAuth.authFetch("/api/feature-status").then((r) => r.json()).then((data) => {
+      const item = data.ok && data.items[module.id];
+      if (item && item.blocked) {
+        titleEl.textContent = "Not available";
+        hintEl.textContent = item.status === "coming_soon"
+          ? "🔜 Not available yet, please check back later."
+          : "⚠️ Under maintenance, please try again later.";
+        formCard.querySelector("form").style.display = "none";
+      }
+    }).catch(() => {
+      // Non-fatal — form just stays usable; server-side submit.js still
+      // enforces the real block.
+    });
+  }
+
   // ---- Brand dropdown ----
   // Only the brands this logged-in agent is actually allowed to see —
   // an agent scoped to one brand shouldn't even see other brands' names

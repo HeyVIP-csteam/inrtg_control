@@ -167,6 +167,20 @@
     window.initClock();
     window.AgentAuth.renderWhoami("agentWhoami");
 
+    // Maintenance/Coming-soon toggle — catches a direct/bookmarked visit
+    // while a SuperAdmin/Owner has switched this off. Real enforcement is
+    // server-side in functions/api/promo-search.js.
+    window.AgentAuth.authFetch("/api/feature-status").then((r) => r.json()).then((data) => {
+      const item = data.ok && data.items["promo_code_search"];
+      if (item && item.blocked) {
+        document.body.innerHTML = `<div style="display:flex;align-items:center;justify-content:center;height:100vh;color:#e5e7eb;font-family:system-ui;font-size:15px;text-align:center;padding:24px;">${
+          item.status === "coming_soon"
+            ? "🔜 Not available yet, please check back later."
+            : "⚠️ Under maintenance, please try again later."
+        }</div>`;
+      }
+    }).catch(() => {});
+
     const input = document.getElementById("codesInput");
     const btn = document.getElementById("searchBtn");
     const chipsRow = document.getElementById("chipsRow");

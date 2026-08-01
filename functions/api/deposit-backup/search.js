@@ -28,6 +28,7 @@ import { getDepositBackup, DEPOSIT_HIDDEN_BRANDS } from "../../_shared/depositSh
 import { batchGetValues, getSheetTabs } from "../../_shared/googleSheets.js";
 import { getAccessToken } from "../../_shared/googleOAuth.js";
 import { BACKUP_COLUMNS as cols } from "../../_shared/depositColumns.js";
+import { getFeatureStatus, accountCanBypass } from "../../_shared/featureStatus.js";
 
 // Column layout is the SAME for every brand's Deposit Backup sheet — see
 // depositColumns.js. (Deposit Issue uses a different layout, also
@@ -91,6 +92,13 @@ export async function onRequestPost(context) {
 async function handleSearch({ request, env }) {
   const account = await verifyRequest(request, env);
   if (!account) return json({ ok: false, error: "Login required." }, 401);
+
+  // Maintenance/Coming-soon toggle (Settings admin panel) — see
+  // _shared/featureStatus.js.
+  const featureStatus = await getFeatureStatus(env, "deposit_backup");
+  if (featureStatus.status !== "active" && !accountCanBypass(account, featureStatus.bypassRoles)) {
+    return json({ ok: false, error: "Currently unavailable." }, 403);
+  }
 
   if (!env.GOOGLE_OAUTH_CLIENT_ID || !env.GOOGLE_OAUTH_CLIENT_SECRET || !env.GOOGLE_OAUTH_REFRESH_TOKEN) {
     return json({ ok: false, error: "Server is missing Google OAuth credentials." }, 500);

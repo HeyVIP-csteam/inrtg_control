@@ -20,6 +20,7 @@ import { getAllDepositSheetOverrides } from "../../_shared/depositSheets.js";
 import { updateRowByColumns } from "../../_shared/googleSheets.js";
 import { getAccessToken } from "../../_shared/googleOAuth.js";
 import { ISSUE_COLUMNS } from "../../_shared/depositColumns.js";
+import { getFeatureStatus, accountCanBypass } from "../../_shared/featureStatus.js";
 
 const MODULE_SLOT = "depositIssue"; // must match search.js / sheet-links.js
 const CS_REMARKS_COL = ISSUE_COLUMNS.csRemarks;
@@ -41,6 +42,13 @@ export async function onRequestPost(context) {
 async function handleUpdate({ request, env }) {
   const account = await verifyRequest(request, env);
   if (!account) return json({ ok: false, error: "Login required." }, 401);
+
+  // Maintenance/Coming-soon toggle (Settings admin panel) — see
+  // _shared/featureStatus.js.
+  const featureStatus = await getFeatureStatus(env, "deposit_issue");
+  if (featureStatus.status !== "active" && !accountCanBypass(account, featureStatus.bypassRoles)) {
+    return json({ ok: false, error: "Currently unavailable." }, 403);
+  }
 
   let body;
   try {

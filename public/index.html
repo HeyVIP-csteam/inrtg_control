@@ -36,6 +36,8 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;600&display=swap" />
 <link rel="stylesheet" href="/assets/style.css" />
+<link rel="stylesheet" href="/assets/maintenance-breathing-light.css" />
+<link rel="stylesheet" href="/assets/settings-dropdown.css" />
 <script src="/assets/theme.js"></script>
 <script src="/assets/starfield.js" defer></script>
 <script src="/assets/authguard.js"></script>
@@ -123,28 +125,29 @@
         <div class="sidebar-subitem" id="subDepositSheets" style="display:none;"><span class="sub-icon">🧾</span> Deposit Sheet Link</div>
         <div class="sidebar-subitem" id="subResetPassword"><span class="sub-icon">🔑</span> Reset Password</div>
         <div class="sidebar-subitem" id="subAgentProfile" style="display:none;"><span class="sub-icon">🪪</span> Agent Profile</div>
+        <div class="sidebar-subitem" id="subSettings" style="display:none;"><span class="sub-icon">⚙️</span> Settings</div>
       </div>
     </aside>
     <main class="hub-main">
       <div class="inner">
         <div class="tool-cards">
-          <a href="/threads.html" class="tool-card" id="threadsCard" style="--tool-accent:#38bdf8;">
+          <a href="/threads.html" class="tool-card" id="threadsCard" data-feature-item="tg_reply_threads" style="--tool-accent:#38bdf8;">
             <div class="t-icon" style="background:#38bdf833;">💬<span class="t-badge" id="threadsUnreadBadge"></span></div>
             <div class="t-name">TG Reply Threads</div>
             <div class="t-desc">Track Telegram replies to your form submissions in real-time</div>
             <div class="t-sub-stat" id="threadsUnsolvedStat"></div>
           </a>
-          <a href="/promo.html" class="tool-card" style="--tool-accent:#f472b6;">
+          <a href="/promo.html" class="tool-card" data-feature-item="promo_code_search" style="--tool-accent:#f472b6;">
             <div class="t-icon" style="background:#f472b633;">🎟️</div>
             <div class="t-name">Promo Code Search</div>
             <div class="t-desc">Search multiple promo codes at once</div>
           </a>
-          <a href="/deposit-issue.html" class="tool-card" style="--tool-accent:#2f6fed;">
+          <a href="/deposit-issue.html" class="tool-card" data-feature-item="deposit_issue" style="--tool-accent:#2f6fed;">
             <div class="t-icon" style="background:#2f6fed33;">💳</div>
             <div class="t-name">Deposit Issue</div>
             <div class="t-desc">Search Deposit Support records and update CS fields</div>
           </a>
-          <a href="/deposit-backup.html" class="tool-card" style="--tool-accent:#2f6fed;">
+          <a href="/deposit-backup.html" class="tool-card" data-feature-item="deposit_backup" style="--tool-accent:#2f6fed;">
             <div class="t-icon" style="background:#2f6fed33;">💻</div>
             <div class="t-name">Deposit Backup</div>
             <div class="t-desc">Search This Month + Last Month backup sheets (read-only)</div>
@@ -158,6 +161,9 @@
   </div>
 
   <script src="/assets/schemas.js"></script>
+  <script src="/assets/apply-feature-status-to-ui.js"></script>
+  <script src="/assets/settings-dropdown.js"></script>
+  <script src="/assets/settings-admin-panel.js"></script>
   <script>
     window.initThemeToggle();
     window.initClock();
@@ -334,6 +340,7 @@
       const a = document.createElement("a");
       a.href = `/form.html?module=${m.id}`;
       a.className = "sidebar-item";
+      a.dataset.featureItem = m.id;
       a.style.setProperty("--item-accent", m.accent);
       a.innerHTML = `
         <div class="icon" style="background:${m.accent}33;">${m.icon}</div>
@@ -346,6 +353,16 @@
       list.appendChild(a);
     });
     window.wireFadeLinks(".sidebar-item");
+
+    // ---- Maintenance / Coming-soon toggle — gray out + block click for
+    // anything a SuperAdmin/Owner has switched off in Settings. UX only;
+    // the real enforcement is server-side (submit.js, threads.js,
+    // promo-search.js, deposit-issue/*, deposit-backup/*). See
+    // functions/api/feature-status.js + public/assets/apply-feature-
+    // status-to-ui.js.
+    applyFeatureStatuses({
+      fetchJson: (url) => window.AgentAuth.authFetch(url).then((r) => r.json()),
+    });
 
     // ---- Account Management (sidebar dropdown + 4 focused modals) ----
     // Rank matches functions/_shared/accounts.js ROLE_RANK exactly — keep
@@ -372,8 +389,9 @@
       { id: "tgRoutes", name: "TG Group / Channel", icon: "📡", floorRank: ROLE_RANK.admin },
       { id: "agentProfile", name: "Agent Profile", icon: "🪪", floorRank: ROLE_RANK.admin },
       { id: "depositSheets", name: "Deposit Sheet Link", icon: "🧾", floorRank: ROLE_RANK.superadmin },
+      { id: "settings", name: "Settings", icon: "⚙️", floorRank: ROLE_RANK.admin },
     ];
-    const EDITABLE_ADMIN_SECTIONS = ["whitelistIp", "tgRoutes", "agentProfile", "depositSheets"];
+    const EDITABLE_ADMIN_SECTIONS = ["whitelistIp", "tgRoutes", "agentProfile", "depositSheets", "settings"];
     // SECURITY FIX — 2026-07-28: role-based defaults for accounts the
     // Owner has never explicitly touched. Mirrors
     // ADMIN_SECTIONS_DEFAULT_SEEN / ADMIN_SECTIONS_DEFAULT_EDIT in
@@ -387,13 +405,13 @@
       agent: [],
       senior: ["createAccount"],
       admin: ["whitelistIp"],
-      superadmin: ["createAccount", "whitelistIp", "tgRoutes", "agentProfile", "depositSheets"],
+      superadmin: ["createAccount", "whitelistIp", "tgRoutes", "agentProfile", "depositSheets", "settings"],
     };
     const ADMIN_SECTIONS_DEFAULT_EDIT = {
       agent: [],
       senior: [],
       admin: [], // Whitelist IP visible by default, but view-only
-      superadmin: ["whitelistIp", "tgRoutes", "agentProfile", "depositSheets"],
+      superadmin: ["whitelistIp", "tgRoutes", "agentProfile", "depositSheets", "settings"],
     };
     function canSeeAdminSection(sectionId) {
       if (!authInfo) return false;
@@ -424,6 +442,7 @@
     document.getElementById("subTgRoutes").style.display = canSeeAdminSection("tgRoutes") ? "flex" : "none";
     document.getElementById("subAgentProfile").style.display = canSeeAdminSection("agentProfile") ? "flex" : "none";
     document.getElementById("subDepositSheets").style.display = canSeeAdminSection("depositSheets") ? "flex" : "none";
+    document.getElementById("subSettings").style.display = canSeeAdminSection("settings") ? "flex" : "none";
 
     const acctToggle = document.getElementById("acctMgmtToggle");
     const acctSubitems = document.getElementById("acctMgmtSubitems");
@@ -436,6 +455,7 @@
     document.getElementById("subWhitelistIp").addEventListener("click", () => openAcctModal("whitelist"));
     document.getElementById("subTgRoutes").addEventListener("click", () => openAcctModal("tgroutes"));
     document.getElementById("subDepositSheets").addEventListener("click", () => openAcctModal("depositsheets"));
+    document.getElementById("subSettings").addEventListener("click", () => openAcctModal("settings"));
     document.getElementById("subResetPassword").addEventListener("click", () => openAcctModal("reset"));
     document.getElementById("subAgentProfile").addEventListener("click", () => openAcctModal("profile"));
     document.getElementById("acctProfileRoleFilter").addEventListener("change", () => renderAgentProfileTable());
@@ -476,14 +496,15 @@
       acctBody.innerHTML = '<p class="edit-modal-note">Loading…</p>';
       acctBackdrop.classList.add("is-open");
       const modalEl = acctBackdrop.querySelector(".edit-modal");
-      modalEl.classList.toggle("wide", mode === "profile" || mode === "tgroutes" || mode === "depositsheets");
-      // "profile", "tgroutes", and "depositsheets" all use per-row inline
-      // save buttons instead of one global footer Save (too many
-      // independently-editable rows for a single "Save" to mean anything
-      // useful). With Cancel removed (closing is via the X button now),
-      // the whole actions row would otherwise just be dead space when
-      // Save is hidden — hide the row itself, not just the button inside it.
-      const showFooterSave = mode !== "profile" && mode !== "tgroutes" && mode !== "depositsheets";
+      modalEl.classList.toggle("wide", mode === "profile" || mode === "tgroutes" || mode === "depositsheets" || mode === "settings");
+      // "profile", "tgroutes", "depositsheets", and "settings" all use
+      // per-row inline save buttons instead of one global footer Save
+      // (too many independently-editable rows for a single "Save" to
+      // mean anything useful). With Cancel removed (closing is via the X
+      // button now), the whole actions row would otherwise just be dead
+      // space when Save is hidden — hide the row itself, not just the
+      // button inside it.
+      const showFooterSave = mode !== "profile" && mode !== "tgroutes" && mode !== "depositsheets" && mode !== "settings";
       document.getElementById("acctModalSave").style.display = showFooterSave ? "" : "none";
       document.getElementById("acctModalActions").style.display = showFooterSave ? "" : "none";
       const roleFilterEl = document.getElementById("acctProfileRoleFilter");
@@ -587,6 +608,47 @@
         acctTitle.textContent = "Deposit Sheet Link";
         await loadDepositSheets();
       }
+
+      if (mode === "settings") {
+        acctTitle.textContent = "Settings";
+        await loadFeatureSettings();
+      }
+    }
+
+    // ---- Settings (maintenance / coming-soon toggle) ----
+    // Reuses the exact same .tgroute-row/.tgroute-fields styling as TG
+    // Group / Channel above, plus the portable fs-dropdown component
+    // (public/assets/settings-dropdown.css/js) and renderer (public/
+    // assets/settings-admin-panel.js). Backed by
+    // /api/admin/feature-status; the live "what's blocked for me" read
+    // any agent gets is /api/feature-status (see apply-feature-status-
+    // to-ui.js, called once on page load above).
+    async function loadFeatureSettings() {
+      const res = await window.AgentAuth.authFetch("/api/admin/feature-status");
+      const data = await res.json();
+      if (!data.ok) {
+        acctBody.innerHTML = `<p class="edit-modal-note err">${acctEsc(data.error || "Failed to load.")}</p>`;
+        return;
+      }
+      const canEditSettings = canEditAdminSection("settings");
+      document.getElementById("acctModalSave").style.display = "none";
+      document.getElementById("acctModalActions").style.display = "none";
+      renderFeatureSettingsPanel(acctBody, data.items, {
+        authFetch: window.AgentAuth.authFetch,
+        escapeHtml: acctEsc,
+        canEdit: canEditSettings,
+        setNote: setAcctNote,
+        onSaved: (itemId, item) => {
+          // Use the value THIS save just returned, not a re-fetch — KV
+          // is only eventually consistent (see featureStatus.js's header
+          // comment). Compute `blocked` against the CURRENT viewer's own
+          // role, same contract as /api/feature-status.
+          applyFeatureStatusItem(itemId, {
+            status: item.status,
+            blocked: item.status !== "active" && !item.bypassRoles.includes(authInfo?.role),
+          });
+        },
+      });
     }
 
     // ---- TG Group / Channel (live-editable Telegram routing) ----
