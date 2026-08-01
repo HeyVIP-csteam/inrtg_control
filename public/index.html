@@ -110,22 +110,24 @@
       </a>
       <div id="sidebarList"></div>
 
-      <div class="sidebar-item expandable" id="acctMgmtToggle">
-        <div class="icon" style="background:#a78bfa33;">🛡️</div>
-        <div class="text">
-          <div class="name">Account Management</div>
-          <div class="desc">Accounts, offices & passwords</div>
+      <div class="am-group" id="acctMgmtGroup">
+        <div class="sidebar-item am-toggle expandable" id="acctMgmtToggle">
+          <div class="icon" style="background:#a78bfa33;">🛡️</div>
+          <div class="text">
+            <div class="name">Account Management</div>
+            <div class="desc">Accounts, offices & passwords</div>
+          </div>
+          <span class="arrow">&rarr;</span>
         </div>
-        <span class="arrow">&rarr;</span>
-      </div>
-      <div class="sidebar-subitems" id="acctMgmtSubitems">
-        <div class="sidebar-subitem" id="subCreateAccount" style="display:none;"><span class="sub-icon">➕</span> Create Account</div>
-        <div class="sidebar-subitem" id="subWhitelistIp" style="display:none;"><span class="sub-icon">🌐</span> Whitelist IP</div>
-        <div class="sidebar-subitem" id="subTgRoutes" style="display:none;"><span class="sub-icon">📡</span> TG Group / Channel</div>
-        <div class="sidebar-subitem" id="subDepositSheets" style="display:none;"><span class="sub-icon">🧾</span> Deposit Sheet Link</div>
-        <div class="sidebar-subitem" id="subSettings" style="display:none;"><span class="sub-icon">⚙️</span> Settings</div>
-        <div class="sidebar-subitem" id="subResetPassword"><span class="sub-icon">🔑</span> Reset Password</div>
-        <div class="sidebar-subitem" id="subAgentProfile" style="display:none;"><span class="sub-icon">🪪</span> Agent Profile</div>
+        <div class="sidebar-subitems" id="acctMgmtSubitems">
+          <div class="sidebar-subitem" id="subCreateAccount" style="display:none;--sub-accent:#a78bfa33;"><span class="sub-icon">➕</span> Create Account</div>
+          <div class="sidebar-subitem" id="subWhitelistIp" style="display:none;--sub-accent:#60a5fa33;"><span class="sub-icon">🌐</span> Whitelist IP</div>
+          <div class="sidebar-subitem" id="subTgRoutes" style="display:none;--sub-accent:#38bdf833;"><span class="sub-icon">📡</span> TG Group / Channel</div>
+          <div class="sidebar-subitem" id="subDepositSheets" style="display:none;--sub-accent:#2f6fed33;"><span class="sub-icon">🧾</span> Deposit Sheet Link</div>
+          <div class="sidebar-subitem" id="subSettings" style="display:none;--sub-accent:#f59e0b33;"><span class="sub-icon">⚙️</span> Settings</div>
+          <div class="sidebar-subitem" id="subResetPassword" style="--sub-accent:#f3c46333;"><span class="sub-icon">🔑</span> Reset Password</div>
+          <div class="sidebar-subitem" id="subAgentProfile" style="display:none;--sub-accent:#34d39933;"><span class="sub-icon">🪪</span> Agent Profile</div>
+        </div>
       </div>
     </aside>
     <main class="hub-main">
