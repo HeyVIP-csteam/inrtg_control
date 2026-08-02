@@ -88,6 +88,7 @@
       d.className = "ann-banner-dot";
       dots.appendChild(d);
     });
+    if (items.length > 1) body.appendChild(dots);
 
     const close = document.createElement("button");
     close.type = "button";
@@ -97,7 +98,6 @@
 
     wrap.appendChild(icon);
     wrap.appendChild(body);
-    if (items.length > 1) wrap.appendChild(dots);
     wrap.appendChild(close);
     root.appendChild(wrap);
 

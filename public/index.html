@@ -695,21 +695,23 @@
       box.className = "tgroute-divider";
       box.style.marginTop = "18px";
       box.innerHTML = `
-        <div style="padding-top:14px;">
-          <div style="font-size:12.5px;font-weight:700;color:var(--ink);margin-bottom:4px;">📢 Announcement rotation speed</div>
-          <div style="font-size:11.5px;color:var(--ink-soft);margin-bottom:10px;">
-            How long each announcement stays on screen before the banner auto-rotates to the next one. Only matters when 2+ are active at once.
+        <div style="padding-top:14px;display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;">
+          <div style="flex:1;min-width:220px;">
+            <div style="font-size:12.5px;font-weight:700;color:var(--ink);margin-bottom:4px;">Announcement rotation speed</div>
+            <div style="font-size:11.5px;color:var(--ink-soft);">
+              How long each announcement stays on screen before the reminder banner cycles to the next one — only matters when 2 or more are active at once.
+            </div>
           </div>
-          <div style="display:flex;align-items:center;gap:8px;">
-            <input type="number" id="annRotateValue" min="1" step="1" style="width:90px;padding:8px 10px;border:1px solid var(--border);border-radius:9px;background:var(--field-bg);color:var(--ink);font-size:13px;" ${canEditThis ? "" : "disabled"} />
+          <div style="display:flex;align-items:center;gap:8px;flex-shrink:0;">
+            <input type="number" id="annRotateValue" min="1" step="1" style="width:70px;padding:8px 10px;border:1px solid var(--border);border-radius:9px;background:var(--field-bg);color:var(--ink);font-size:13px;" ${canEditThis ? "" : "disabled"} />
             <select id="annRotateUnit" style="padding:8px 10px;border:1px solid var(--border);border-radius:9px;background:var(--field-bg);color:var(--ink);font-size:13px;" ${canEditThis ? "" : "disabled"}>
-              <option value="1000">seconds</option>
-              <option value="60000">minutes</option>
+              <option value="1000">Seconds</option>
+              <option value="60000">Minutes</option>
             </select>
             ${canEditThis ? '<button type="button" id="annRotateSaveBtn" style="padding:8px 14px;border:none;border-radius:9px;background:linear-gradient(90deg,#f59e0b,#f3c463);color:#3a2a06;font-weight:800;font-size:12px;cursor:pointer;">Save</button>' : ""}
           </div>
-          <span id="annRotateStatus" style="display:block;margin-top:8px;font-size:11.5px;color:var(--ink-soft);"></span>
         </div>
+        <span id="annRotateStatus" style="display:block;padding-top:8px;font-size:11.5px;color:var(--ink-soft);"></span>
       `;
       container.appendChild(box);
 

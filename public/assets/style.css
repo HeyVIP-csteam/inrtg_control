@@ -1517,37 +1517,49 @@ body.page-transition-out { animation: pageFadeOut 0.09s ease forwards; }
   position: relative;
   flex-shrink: 0;
   display: flex;
-  align-items: center;
-  gap: 14px;
-  padding: 9px 24px;
-  background: linear-gradient(90deg, rgba(245, 158, 11, 0.16), rgba(245, 158, 11, 0.08));
-  border-bottom: 1px solid rgba(245, 158, 11, 0.35);
+  align-items: flex-start;
+  gap: 12px;
+  padding: 10px 40px 10px 24px;
+  background: linear-gradient(90deg, rgba(245, 158, 11, 0.14), rgba(245, 158, 11, 0.05));
+  border-top: 1px solid rgba(245, 158, 11, 0.3);
+  border-bottom: 1px solid rgba(245, 158, 11, 0.3);
   color: var(--ink);
 }
-.ann-banner-icon { font-size: 15px; flex-shrink: 0; }
-.ann-banner-body { flex: 1; min-width: 0; }
+.ann-banner-icon {
+  font-size: 15px; flex-shrink: 0; margin-top: 1px;
+  animation: breathe 1.8s ease-in-out infinite;
+}
+.ann-banner-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
 .ann-banner-label {
   font-size: 10px; font-weight: 800; letter-spacing: 0.08em; text-transform: uppercase;
   color: #b45309;
+  animation: breathe 1.8s ease-in-out infinite;
 }
 [data-theme="dark"] .ann-banner-label { color: #f59e0b; }
-.ann-banner-text-wrap { position: relative; min-height: 18px; overflow: hidden; }
+/* Overlapping-crossfade trick via CSS Grid: both text nodes share the
+   same grid cell, so the wrap auto-sizes to whichever is tallest right
+   now — needed because the message text WRAPS across lines (responsive
+   to window width / browser zoom, per the reference screenshots) rather
+   than truncating to a single line, so its height isn't a fixed
+   constant we could hardcode. */
+.ann-banner-text-wrap { display: grid; }
 .ann-banner-text {
-  position: absolute; top: 0; left: 0; right: 0;
-  font-size: 13px; font-weight: 600; color: var(--ink);
-  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  grid-row: 1; grid-column: 1;
+  font-size: 13px; font-weight: 600; color: var(--ink); line-height: 1.45;
+  white-space: normal; overflow-wrap: break-word;
   opacity: 0; transform: translateX(0);
   transition: opacity 2.2s ease, transform 2.2s ease;
 }
 .ann-banner-text.ann-current { opacity: 1; transform: translateX(0); }
 .ann-banner-text.ann-entering { opacity: 0; transform: translateX(24px); }
 .ann-banner-text.ann-leaving { opacity: 0; transform: translateX(0); }
-.ann-banner-dots { display: flex; gap: 5px; flex-shrink: 0; }
+.ann-banner-dots { display: flex; gap: 5px; flex-shrink: 0; margin-top: 2px; }
 .ann-banner-dot { width: 5px; height: 5px; border-radius: 50%; background: rgba(180, 83, 9, 0.3); transition: background 0.2s ease; }
 [data-theme="dark"] .ann-banner-dot { background: rgba(245, 158, 11, 0.28); }
 .ann-banner-dot.active { background: #b45309; }
 [data-theme="dark"] .ann-banner-dot.active { background: #f59e0b; }
 .ann-banner-close {
+  position: absolute; top: 8px; right: 14px;
   flex-shrink: 0; border: none; background: none; cursor: pointer;
   color: var(--ink-soft); font-size: 13px; line-height: 1; padding: 4px;
   border-radius: 6px;
