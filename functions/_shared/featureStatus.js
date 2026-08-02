@@ -54,6 +54,11 @@ export const FEATURE_STATUS_ITEMS = [
   { id: "promo_code_search", emoji: "🎟️", name: "Promo Code Search" },
   { id: "deposit_issue", emoji: "💳", name: "Deposit Issue" },
   { id: "deposit_backup", emoji: "💻", name: "Deposit Backup" },
+  // Not a tool card — governs the REMINDER banner itself (see
+  // _shared/announcements.js + api/announcements.js). Switching this to
+  // Maintenance/Coming-soon just makes the banner endpoint return an
+  // empty list to non-bypass roles; it never 403s.
+  { id: "announcements", emoji: "📢", name: "Announcement Banner" },
 ];
 const VALID_ITEM_IDS = new Set(FEATURE_STATUS_ITEMS.map((i) => i.id));
 const VALID_STATUSES = new Set(["maintenance", "coming_soon"]);

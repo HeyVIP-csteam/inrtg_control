@@ -39,6 +39,7 @@
 <link rel="stylesheet" href="/assets/maintenance-breathing-light.css" />
 <link rel="stylesheet" href="/assets/settings-dropdown.css" />
 <script src="/assets/theme.js"></script>
+<script src="/assets/toast.js" defer></script>
 <script src="/assets/starfield.js" defer></script>
 <script src="/assets/authguard.js"></script>
 <script src="/assets/pageTransition.js"></script>
@@ -57,6 +58,8 @@
   </header>
 
   <nav class="brand-row" id="brandRow"><div class="brand-row-track" id="brandRowTrack"></div></nav>
+
+  <div id="announcementBanner"></div>
 
   <div class="edit-modal-backdrop" id="editModalBackdrop">
     <div class="edit-modal">
@@ -133,6 +136,11 @@
     <main class="hub-main">
       <div class="inner">
         <div class="tool-cards">
+          <a href="/announcements.html" class="tool-card" id="announcementCard" style="--tool-accent:#f59e0b;display:none;">
+            <div class="t-icon" style="background:#f59e0b33;" id="announcementCardIcon">📢</div>
+            <div class="t-name">Announcement</div>
+            <div class="t-desc">Create and schedule the site-wide REMINDER banner</div>
+          </a>
           <a href="/threads.html" class="tool-card" id="threadsCard" data-feature-item="tg_reply_threads" style="--tool-accent:#38bdf8;">
             <div class="t-icon" style="background:#38bdf833;">💬<span class="t-badge" id="threadsUnreadBadge"></span></div>
             <div class="t-name">TG Reply Threads</div>
@@ -164,6 +172,7 @@
 
   <script src="/assets/schemas.js"></script>
   <script src="/assets/apply-feature-status-to-ui.js"></script>
+  <script src="/assets/announcement-banner.js"></script>
   <script src="/assets/settings-dropdown.js"></script>
   <script src="/assets/settings-admin-panel.js"></script>
   <script>
@@ -392,8 +401,9 @@
       { id: "agentProfile", name: "Agent Profile", icon: "🪪", floorRank: ROLE_RANK.admin },
       { id: "depositSheets", name: "Deposit Sheet Link", icon: "🧾", floorRank: ROLE_RANK.superadmin },
       { id: "settings", name: "Settings", icon: "⚙️", floorRank: ROLE_RANK.admin },
+      { id: "announcements", name: "Announcements", icon: "📢", floorRank: ROLE_RANK.admin },
     ];
-    const EDITABLE_ADMIN_SECTIONS = ["whitelistIp", "tgRoutes", "agentProfile", "depositSheets", "settings"];
+    const EDITABLE_ADMIN_SECTIONS = ["whitelistIp", "tgRoutes", "agentProfile", "depositSheets", "settings", "announcements"];
     // SECURITY FIX — 2026-07-28: role-based defaults for accounts the
     // Owner has never explicitly touched. Mirrors
     // ADMIN_SECTIONS_DEFAULT_SEEN / ADMIN_SECTIONS_DEFAULT_EDIT in
@@ -406,14 +416,14 @@
     const ADMIN_SECTIONS_DEFAULT_SEEN = {
       agent: [],
       senior: ["createAccount"],
-      admin: ["whitelistIp"],
-      superadmin: ["createAccount", "whitelistIp", "tgRoutes", "agentProfile", "depositSheets", "settings"],
+      admin: ["whitelistIp", "announcements"],
+      superadmin: ["createAccount", "whitelistIp", "tgRoutes", "agentProfile", "depositSheets", "settings", "announcements"],
     };
     const ADMIN_SECTIONS_DEFAULT_EDIT = {
       agent: [],
       senior: [],
-      admin: [], // Whitelist IP visible by default, but view-only
-      superadmin: ["whitelistIp", "tgRoutes", "agentProfile", "depositSheets", "settings"],
+      admin: ["announcements"], // Whitelist IP visible by default, but view-only; Announcements is both by default
+      superadmin: ["whitelistIp", "tgRoutes", "agentProfile", "depositSheets", "settings", "announcements"],
     };
     function canSeeAdminSection(sectionId) {
       if (!authInfo) return false;
@@ -445,6 +455,26 @@
     document.getElementById("subAgentProfile").style.display = canSeeAdminSection("agentProfile") ? "flex" : "none";
     document.getElementById("subDepositSheets").style.display = canSeeAdminSection("depositSheets") ? "flex" : "none";
     document.getElementById("subSettings").style.display = canSeeAdminSection("settings") ? "flex" : "none";
+
+    // ---- Announcement tool card — same canSeeAdminSection gate as the
+    // Account Management subitems above, just applied to a Home-page
+    // tool card instead of a sidebar subitem. Icon "breathes" (reuses
+    // the app's existing pulse keyframe) while at least one announcement
+    // is currently active — a lightweight separate fetch on load + 30s
+    // poll drives this; doesn't share state with announcement-banner.js.
+    document.getElementById("announcementCard").style.display = canSeeAdminSection("announcements") ? "" : "none";
+    async function pollAnnouncementBreathing() {
+      try {
+        const res = await window.AgentAuth.authFetch("/api/announcements");
+        const data = await res.json();
+        const hasActive = data.ok && Array.isArray(data.announcements) && data.announcements.length > 0;
+        document.getElementById("announcementCardIcon").classList.toggle("breathing", hasActive);
+      } catch {}
+    }
+    if (canSeeAdminSection("announcements")) {
+      pollAnnouncementBreathing();
+      setInterval(pollAnnouncementBreathing, 30000);
+    }
 
     const acctToggle = document.getElementById("acctMgmtToggle");
     const acctSubitems = document.getElementById("acctMgmtSubitems");
@@ -652,6 +682,77 @@
         },
       });
       if (canEditSettings) renderMentionBackfillTool(acctBody);
+      renderAnnouncementRotationControl(acctBody, canEditSettings);
+    }
+
+    // ---- Announcement rotation-speed control ----
+    // Same visual pattern as the Maintenance/Coming-soon rows above, but
+    // gated by "settings" (not "announcements") — deliberately: "manage
+    // the announcements" and "manage how the banner behaves" are
+    // different concerns (see functions/api/admin/announcement-settings.js).
+    async function renderAnnouncementRotationControl(container, canEditThis) {
+      const box = document.createElement("div");
+      box.className = "tgroute-divider";
+      box.style.marginTop = "18px";
+      box.innerHTML = `
+        <div style="padding-top:14px;">
+          <div style="font-size:12.5px;font-weight:700;color:var(--ink);margin-bottom:4px;">📢 Announcement rotation speed</div>
+          <div style="font-size:11.5px;color:var(--ink-soft);margin-bottom:10px;">
+            How long each announcement stays on screen before the banner auto-rotates to the next one. Only matters when 2+ are active at once.
+          </div>
+          <div style="display:flex;align-items:center;gap:8px;">
+            <input type="number" id="annRotateValue" min="1" step="1" style="width:90px;padding:8px 10px;border:1px solid var(--border);border-radius:9px;background:var(--field-bg);color:var(--ink);font-size:13px;" ${canEditThis ? "" : "disabled"} />
+            <select id="annRotateUnit" style="padding:8px 10px;border:1px solid var(--border);border-radius:9px;background:var(--field-bg);color:var(--ink);font-size:13px;" ${canEditThis ? "" : "disabled"}>
+              <option value="1000">seconds</option>
+              <option value="60000">minutes</option>
+            </select>
+            ${canEditThis ? '<button type="button" id="annRotateSaveBtn" style="padding:8px 14px;border:none;border-radius:9px;background:linear-gradient(90deg,#f59e0b,#f3c463);color:#3a2a06;font-weight:800;font-size:12px;cursor:pointer;">Save</button>' : ""}
+          </div>
+          <span id="annRotateStatus" style="display:block;margin-top:8px;font-size:11.5px;color:var(--ink-soft);"></span>
+        </div>
+      `;
+      container.appendChild(box);
+
+      const valueEl = document.getElementById("annRotateValue");
+      const unitEl = document.getElementById("annRotateUnit");
+      const statusEl = document.getElementById("annRotateStatus");
+
+      try {
+        const res = await window.AgentAuth.authFetch("/api/admin/announcement-settings");
+        const data = await res.json();
+        if (data.ok) {
+          const ms = data.rotateIntervalMs || 5000;
+          if (ms % 60000 === 0) { unitEl.value = "60000"; valueEl.value = ms / 60000; }
+          else { unitEl.value = "1000"; valueEl.value = Math.round(ms / 1000); }
+        } else {
+          statusEl.textContent = data.error || "Failed to load.";
+        }
+      } catch {
+        statusEl.textContent = "Failed to load.";
+      }
+
+      const saveBtn = document.getElementById("annRotateSaveBtn");
+      if (saveBtn) {
+        saveBtn.addEventListener("click", async () => {
+          const n = Number(valueEl.value);
+          const unitMs = Number(unitEl.value);
+          if (!n || n <= 0) { statusEl.textContent = "Enter a value greater than 0."; return; }
+          const rotateIntervalMs = Math.max(1000, Math.round(n * unitMs));
+          statusEl.textContent = "Saving…";
+          try {
+            const res = await window.AgentAuth.authFetch("/api/admin/announcement-settings", {
+              method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ rotateIntervalMs }),
+            });
+            const data = await res.json();
+            if (!data.ok) { statusEl.textContent = data.error || "Save failed."; return; }
+            window.showToast("Rotation speed saved", "ok");
+            statusEl.textContent = "Saved.";
+            if (window.refreshAnnouncementBanner) window.refreshAnnouncementBanner();
+          } catch {
+            statusEl.textContent = "Save failed.";
+          }
+        });
+      }
     }
 
     // One-time (safe to re-run — additive) backfill for the TG Reply

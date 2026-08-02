@@ -179,6 +179,7 @@ html:has(body.threads-page), body.threads-page {
   flex-direction: column;
 }
 body.threads-page .topbar { flex-shrink: 0; }
+body.threads-page #announcementBanner { flex-shrink: 0; }
 body.threads-page .threads-topline { flex-shrink: 0; }
 body.threads-page .threads-shell { flex: 1; height: auto; min-height: 0; }
 
@@ -823,6 +824,11 @@ a { color: inherit; text-decoration: none; }
   animation: breathe 1.8s ease-in-out infinite;
 }
 @keyframes breathe { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
+/* Generic "needs attention" pulse — reused wherever a card/icon should
+   breathe (e.g. the Announcement tool card's icon while at least one
+   announcement is currently active). Same keyframe as .has-unsolved
+   above, just usable on any element directly. */
+.breathing { animation: breathe 1.8s ease-in-out infinite; }
 @media (max-width: 560px) {
   .tool-cards { grid-template-columns: 1fr; }
 }
@@ -1502,3 +1508,139 @@ body.page-transition-out { animation: pageFadeOut 0.09s ease forwards; }
   background: color-mix(in srgb, var(--field-bg) 85%, var(--required) 15%);
 }
 .field input.field-error:focus { border-color: var(--required); }
+
+/* ================================================================
+   Announcement banner (public/assets/announcement-banner.js)
+   ================================================================ */
+#announcementBanner:empty { display: none; }
+.ann-banner {
+  position: relative;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 9px 24px;
+  background: linear-gradient(90deg, rgba(245, 158, 11, 0.16), rgba(245, 158, 11, 0.08));
+  border-bottom: 1px solid rgba(245, 158, 11, 0.35);
+  color: var(--ink);
+}
+.ann-banner-icon { font-size: 15px; flex-shrink: 0; }
+.ann-banner-body { flex: 1; min-width: 0; }
+.ann-banner-label {
+  font-size: 10px; font-weight: 800; letter-spacing: 0.08em; text-transform: uppercase;
+  color: #b45309;
+}
+[data-theme="dark"] .ann-banner-label { color: #f59e0b; }
+.ann-banner-text-wrap { position: relative; min-height: 18px; overflow: hidden; }
+.ann-banner-text {
+  position: absolute; top: 0; left: 0; right: 0;
+  font-size: 13px; font-weight: 600; color: var(--ink);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  opacity: 0; transform: translateX(0);
+  transition: opacity 2.2s ease, transform 2.2s ease;
+}
+.ann-banner-text.ann-current { opacity: 1; transform: translateX(0); }
+.ann-banner-text.ann-entering { opacity: 0; transform: translateX(24px); }
+.ann-banner-text.ann-leaving { opacity: 0; transform: translateX(0); }
+.ann-banner-dots { display: flex; gap: 5px; flex-shrink: 0; }
+.ann-banner-dot { width: 5px; height: 5px; border-radius: 50%; background: rgba(180, 83, 9, 0.3); transition: background 0.2s ease; }
+[data-theme="dark"] .ann-banner-dot { background: rgba(245, 158, 11, 0.28); }
+.ann-banner-dot.active { background: #b45309; }
+[data-theme="dark"] .ann-banner-dot.active { background: #f59e0b; }
+.ann-banner-close {
+  flex-shrink: 0; border: none; background: none; cursor: pointer;
+  color: var(--ink-soft); font-size: 13px; line-height: 1; padding: 4px;
+  border-radius: 6px;
+}
+.ann-banner-close:hover { color: var(--ink); background: rgba(0, 0, 0, 0.08); }
+
+/* ================================================================
+   Centered popup toast (public/assets/toast.js)
+   ================================================================ */
+.toast-overlay {
+  position: fixed; inset: 0; z-index: 200;
+  display: flex; align-items: center; justify-content: center;
+  background: rgba(0, 0, 0, 0);
+  pointer-events: none;
+  transition: background 0.2s ease;
+}
+.toast-overlay.is-open { background: rgba(0, 0, 0, 0.12); }
+.toast-card {
+  pointer-events: none;
+  display: flex; align-items: center; gap: 10px;
+  padding: 14px 22px; border-radius: 14px;
+  background: var(--card-bg); color: var(--ink);
+  border: 1px solid var(--panel-border);
+  box-shadow: var(--shadow);
+  font-size: 13.5px; font-weight: 700;
+  opacity: 0; transform: translateY(8px) scale(0.97);
+  transition: opacity 0.2s ease, transform 0.2s ease;
+}
+.toast-overlay.is-open .toast-card { opacity: 1; transform: translateY(0) scale(1); }
+.toast-card .toast-icon { font-size: 16px; }
+.toast-card.toast-ok { border-color: rgba(52, 211, 153, 0.4); }
+.toast-card.toast-ok .toast-icon { color: #1a9c6e; }
+.toast-card.toast-err { border-color: rgba(239, 74, 114, 0.4); }
+.toast-card.toast-err .toast-icon { color: #e0577a; }
+
+/* ================================================================
+   Announcements management page (public/announcements.html)
+   ================================================================ */
+html:has(body.announcements-page), body.announcements-page {
+  height: 100%; overflow: hidden; display: flex; flex-direction: column;
+}
+body.announcements-page .topbar { flex-shrink: 0; }
+body.announcements-page #announcementBanner { flex-shrink: 0; }
+body.announcements-page .ann-page-backrow { flex-shrink: 0; }
+body.announcements-page .ann-shell { flex: 1; min-height: 0; }
+
+.ann-page-backrow { padding: 14px 24px 0; }
+.ann-shell { display: flex; height: 100%; overflow: hidden; }
+.ann-sidebar {
+  width: 300px; flex-shrink: 0; border-right: 1px solid var(--panel-border);
+  padding: 16px; overflow-y: auto;
+}
+.ann-sidebar .threads-search { margin-bottom: 12px; }
+.ann-list-item {
+  position: relative;
+  display: flex; flex-direction: column; gap: 3px;
+  padding: 10px 12px; border-radius: 12px; cursor: pointer;
+  border-left: 3px solid transparent;
+  margin-bottom: 4px;
+}
+.ann-list-item:hover { background: var(--sidebar-item-hover); }
+.ann-list-item.selected { background: var(--sidebar-item-hover); border-left-color: var(--accent-gold); }
+.ann-list-topic { font-size: 12.5px; font-weight: 700; color: var(--ink); }
+.ann-list-status { display: inline-flex; align-items: center; gap: 4px; font-size: 10.5px; font-weight: 700; }
+.ann-list-status .dot { width: 6px; height: 6px; border-radius: 50%; }
+.ann-list-status.active .dot { background: #34d399; }
+.ann-list-status.inactive .dot { background: var(--ink-soft); }
+.ann-list-status.scheduled .dot { background: #38bdf8; }
+.ann-list-status.expired .dot { background: #e0577a; }
+.ann-list-meta { font-size: 10.5px; color: var(--ink-soft); }
+.ann-new-btn {
+  width: 100%; margin-bottom: 10px; padding: 9px 12px; border-radius: 12px;
+  border: 1.5px dashed var(--border); background: none; color: var(--ink-soft);
+  font-weight: 700; font-size: 12.5px; cursor: pointer;
+}
+.ann-new-btn:hover { border-color: var(--accent-gold); color: var(--ink); }
+
+.ann-main { flex: 1; min-width: 0; display: flex; align-items: stretch; justify-content: center; padding: 20px; overflow: hidden; }
+.ann-form-card {
+  width: 640px; max-width: 100%; height: 100%;
+  display: flex; flex-direction: column;
+  background: var(--card-bg); border: 1px solid var(--panel-border);
+  border-radius: var(--radius); box-shadow: var(--shadow);
+  overflow: hidden;
+}
+.ann-form-scroll { flex: 1; min-height: 0; overflow-y: auto; padding: 24px; }
+.ann-form-footer {
+  flex-shrink: 0; display: flex; justify-content: flex-end; gap: 8px;
+  padding: 14px 24px; border-top: 1px solid var(--panel-border);
+}
+.ann-form-meta { font-size: 11px; color: var(--ink-soft); margin-top: 4px; }
+.ann-datetime-row { display: flex; gap: 10px; }
+.ann-datetime-row .field { flex: 1; }
+.ann-checkbox-row { display: flex; align-items: center; gap: 8px; margin-bottom: 18px; }
+.ann-checkbox-row label { font-size: 13px; font-weight: 600; color: var(--ink); cursor: pointer; }
+.ann-empty-state { display: flex; align-items: center; justify-content: center; height: 100%; color: var(--ink-soft); font-size: 13px; }
