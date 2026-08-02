@@ -655,6 +655,59 @@ export async function getMentionCandidates(env, brandId, moduleId) {
     .sort((a, b) => b.lastSeen - a.lastSeen);
 }
 
+// One-time backfill (POST /api/admin/backfill-mentions) — the registry
+// above only started filling in going forward from the moment this
+// feature shipped, so anyone who only ever replied BEFORE that has no
+// entry yet even though their messages are sitting right there in each
+// thread's own history. Walks every existing thread and folds their
+// handles in. Paginated (100 threads/call, driven by the KV list()
+// cursor) — a single huge KV scan+get loop risks running into the
+// Worker's execution time limit on an account with a lot of ticket
+// history, so the admin panel calls this repeatedly until `done`.
+export async function backfillMentionRegistryPage(env, cursor) {
+  const page = await env.THREADS_KV.list({ prefix: "thread:", cursor: cursor || undefined, limit: 100 });
+  const partial = {}; // regKey -> { handle: {from, lastSeen} }
+  for (const key of page.keys) {
+    const raw = await env.THREADS_KV.get(key.name);
+    if (!raw) continue;
+    let thread;
+    try {
+      thread = JSON.parse(raw);
+    } catch {
+      continue;
+    }
+    const regKey = mentionRegistryKey(thread.brandId, thread.module);
+    if (!partial[regKey]) partial[regKey] = {};
+    (thread.messages || []).forEach((m) => {
+      if (!m.handle || m.self) return;
+      const ts = m.ts || 0;
+      const existing = partial[regKey][m.handle];
+      if (!existing || ts > existing.lastSeen) {
+        partial[regKey][m.handle] = { from: m.from || existing?.from || "", lastSeen: ts };
+      }
+    });
+  }
+  // Merge into KV — only the handful of brand+module registries actually
+  // touched by this one page of threads, read-modify-write.
+  await Promise.all(
+    Object.entries(partial).map(async ([regKey, additions]) => {
+      const raw = await env.THREADS_KV.get(regKey);
+      let existing = {};
+      try {
+        existing = raw ? JSON.parse(raw) : {};
+      } catch {
+        existing = {};
+      }
+      for (const [handle, v] of Object.entries(additions)) {
+        const cur = existing[handle];
+        if (!cur || v.lastSeen > cur.lastSeen) existing[handle] = v;
+      }
+      await env.THREADS_KV.put(regKey, JSON.stringify(existing));
+    })
+  );
+  return { scanned: page.keys.length, done: page.list_complete, cursor: page.list_complete ? null : page.cursor };
+}
+
 export async function setSolved(env, threadId, solved) {
   const thread = await getThread(env, threadId);
   if (!thread) return null;

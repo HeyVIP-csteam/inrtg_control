@@ -651,7 +651,54 @@
           });
         },
       });
+      if (canEditSettings) renderMentionBackfillTool(acctBody);
     }
+
+    // One-time (safe to re-run — additive) backfill for the TG Reply
+    // Threads @-mention picker: fills the brand+module registry from
+    // EXISTING thread history, not just replies that arrive from now on.
+    // See _shared/threads.js's backfillMentionRegistryPage().
+    function renderMentionBackfillTool(container) {
+      const box = document.createElement("div");
+      box.className = "tgroute-divider";
+      box.style.marginTop = "18px";
+      box.innerHTML = `
+        <div style="padding-top:14px;">
+          <div style="font-size:12.5px;font-weight:700;color:var(--ink);margin-bottom:4px;">@ Mention history backfill</div>
+          <div style="font-size:11.5px;color:var(--ink-soft);margin-bottom:10px;">
+            TG Reply Threads' @ picker only remembers people going forward from when this feature shipped.
+            Run this once to also pull in everyone from existing ticket history.
+          </div>
+          <button type="button" id="mentionBackfillBtn" style="padding:8px 14px;border:1px solid var(--panel-border);border-radius:9px;background:rgba(255,255,255,0.05);color:var(--ink);font-weight:700;font-size:12px;cursor:pointer;">Run backfill</button>
+          <span id="mentionBackfillStatus" style="margin-left:10px;font-size:11.5px;color:var(--ink-soft);"></span>
+        </div>
+      `;
+      container.appendChild(box);
+      document.getElementById("mentionBackfillBtn").addEventListener("click", async () => {
+        const btn = document.getElementById("mentionBackfillBtn");
+        const status = document.getElementById("mentionBackfillStatus");
+        btn.disabled = true;
+        let cursor = null, totalScanned = 0;
+        try {
+          for (;;) {
+            status.textContent = `Scanning… ${totalScanned} threads so far`;
+            const res = await window.AgentAuth.authFetch("/api/admin/backfill-mentions", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ cursor }),
+            });
+            const data = await res.json();
+            if (!data.ok) { status.textContent = data.error || "Backfill failed."; break; }
+            totalScanned += data.scanned;
+            if (data.done) { status.textContent = `Done — scanned ${totalScanned} threads.`; break; }
+            cursor = data.cursor;
+          }
+        } catch {
+          status.textContent = "Backfill failed — network error.";
+        } finally {
+          btn.disabled = false;
+        }
+      });
 
     // ---- TG Group / Channel (live-editable Telegram routing) ----
     // Left column: the 5 brands. Right column: that brand's 6 modules,
