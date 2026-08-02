@@ -207,7 +207,15 @@
 
     function setNote(msg, type) {
       const el = document.getElementById("annNote");
-      if (el) { el.textContent = msg; el.className = "edit-modal-note" + (type ? " " + type : ""); }
+      // Final result (ok/err) shows via the unified toast popup only —
+      // no redundant inline copy of the same text. Transient messages
+      // ("Saving…") still show inline since there's no toast for those.
+      if (type === "ok" || type === "err") {
+        if (el) { el.textContent = ""; el.className = "edit-modal-note"; }
+        if (window.showToast) window.showToast(msg, type);
+        return;
+      }
+      if (el) { el.textContent = msg; el.className = "edit-modal-note"; }
     }
 
     function selectAnnouncement(id) {
@@ -241,7 +249,7 @@
       });
       const data = await res.json();
       if (!data.ok) { setNote(data.error || "Save failed.", "err"); return; }
-      window.showToast("Announcement saved", "ok");
+      setNote("Announcement saved", "ok");
       if (window.refreshAnnouncementBanner) window.refreshAnnouncementBanner();
       await loadAnnouncements();
       selectAnnouncement(data.announcement.id);
@@ -254,8 +262,8 @@
         method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "delete", id: selectedId }),
       });
       const data = await res.json();
-      if (!data.ok) { window.showToast(data.error || "Delete failed.", "err"); return; }
-      window.showToast("Announcement deleted", "ok");
+      if (!data.ok) { setNote(data.error || "Delete failed.", "err"); return; }
+      setNote("Announcement deleted", "ok");
       if (window.refreshAnnouncementBanner) window.refreshAnnouncementBanner();
       await loadAnnouncements();
       if (announcements.length) selectAnnouncement(announcements[0].id);
