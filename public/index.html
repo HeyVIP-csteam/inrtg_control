@@ -766,15 +766,16 @@
       box.className = "tgroute-divider";
       box.style.marginTop = "18px";
       box.innerHTML = `
-        <div style="padding-top:14px;">
-          <div style="font-size:12.5px;font-weight:700;color:var(--ink);margin-bottom:4px;">@ Mention history backfill</div>
-          <div style="font-size:11.5px;color:var(--ink-soft);margin-bottom:10px;">
-            TG Reply Threads' @ picker only remembers people going forward from when this feature shipped.
-            Run this once to also pull in everyone from existing ticket history.
+        <div style="padding-top:14px;display:flex;align-items:center;justify-content:space-between;gap:16px;">
+          <div style="flex:1;min-width:0;">
+            <div style="font-size:12.5px;font-weight:700;color:var(--ink);margin-bottom:4px;">@ Mention history backfill</div>
+            <div style="font-size:11.5px;color:var(--ink-soft);">
+              TG Reply Threads' @ picker only remembers people going forward from when this feature shipped. Run this once to also pull in everyone from existing ticket history.
+            </div>
           </div>
-          <button type="button" id="mentionBackfillBtn" style="padding:8px 14px;border:1px solid var(--panel-border);border-radius:9px;background:rgba(255,255,255,0.05);color:var(--ink);font-weight:700;font-size:12px;cursor:pointer;">Run backfill</button>
-          <span id="mentionBackfillStatus" style="margin-left:10px;font-size:11.5px;color:var(--ink-soft);"></span>
+          <button type="button" id="mentionBackfillBtn" style="flex-shrink:0;padding:8px 14px;border:1px solid var(--panel-border);border-radius:9px;background:rgba(255,255,255,0.05);color:var(--ink);font-weight:700;font-size:12px;cursor:pointer;white-space:nowrap;">Run backfill</button>
         </div>
+        <span id="mentionBackfillStatus" style="display:block;padding-top:8px;font-size:11.5px;color:var(--ink-soft);"></span>
       `;
       container.appendChild(box);
       document.getElementById("mentionBackfillBtn").addEventListener("click", async () => {
