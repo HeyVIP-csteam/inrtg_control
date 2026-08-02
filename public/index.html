@@ -508,6 +508,16 @@
     function setAcctNote(msg, cls) {
       acctNote.textContent = msg || "";
       acctNote.className = "edit-modal-note" + (cls ? " " + cls : "");
+      // Unified feedback — every Save/Reset action across Account
+      // Management (feature-status rows, whitelist IP, TG routes,
+      // deposit sheets, create account, reset password, agent profile)
+      // funnels through this one function, so hooking the toast in here
+      // once makes all of them show the same centered popup instead of
+      // some showing it and others only showing the easy-to-miss inline
+      // text at the bottom of the modal. Only real results (ok/err) pop
+      // a toast — transient "Saving…"/"Resetting…" messages (no cls)
+      // don't.
+      if ((cls === "ok" || cls === "err") && window.showToast) window.showToast(msg, cls);
     }
 
     function timeAgoLocal(iso) {
@@ -738,7 +748,11 @@
         saveBtn.addEventListener("click", async () => {
           const n = Number(valueEl.value);
           const unitMs = Number(unitEl.value);
-          if (!n || n <= 0) { statusEl.textContent = "Enter a value greater than 0."; return; }
+          if (!n || n <= 0) {
+            statusEl.textContent = "Enter a value greater than 0.";
+            window.showToast("Enter a value greater than 0", "err");
+            return;
+          }
           const rotateIntervalMs = Math.max(1000, Math.round(n * unitMs));
           statusEl.textContent = "Saving…";
           try {
@@ -746,12 +760,17 @@
               method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ rotateIntervalMs }),
             });
             const data = await res.json();
-            if (!data.ok) { statusEl.textContent = data.error || "Save failed."; return; }
+            if (!data.ok) {
+              statusEl.textContent = data.error || "Save failed.";
+              window.showToast(data.error || "Save failed", "err");
+              return;
+            }
             window.showToast("Rotation speed saved", "ok");
             statusEl.textContent = "Saved.";
             if (window.refreshAnnouncementBanner) window.refreshAnnouncementBanner();
           } catch {
             statusEl.textContent = "Save failed.";
+            window.showToast("Save failed — network error", "err");
           }
         });
       }
@@ -792,13 +811,22 @@
               body: JSON.stringify({ cursor }),
             });
             const data = await res.json();
-            if (!data.ok) { status.textContent = data.error || "Backfill failed."; break; }
+            if (!data.ok) {
+              status.textContent = data.error || "Backfill failed.";
+              window.showToast(data.error || "Backfill failed", "err");
+              break;
+            }
             totalScanned += data.scanned;
-            if (data.done) { status.textContent = `Done — scanned ${totalScanned} threads.`; break; }
+            if (data.done) {
+              status.textContent = `Done — scanned ${totalScanned} threads.`;
+              window.showToast(`Backfill complete — scanned ${totalScanned} threads`, "ok");
+              break;
+            }
             cursor = data.cursor;
           }
         } catch {
           status.textContent = "Backfill failed — network error.";
+          window.showToast("Backfill failed — network error", "err");
         } finally {
           btn.disabled = false;
         }

@@ -497,7 +497,9 @@
         : data.sheetLogged
         ? "Submitted — posted to Telegram and logged to sheet."
         : `Submitted to Telegram, but sheet logging failed: ${data.sheetError || "unknown error"}`;
-      status.className = data.sheetAttempted && !data.sheetLogged ? "status-msg err" : "status-msg ok";
+      const sheetFailed = data.sheetAttempted && !data.sheetLogged;
+      status.className = sheetFailed ? "status-msg err" : "status-msg ok";
+      if (window.showToast) window.showToast(sheetFailed ? "Submitted, but sheet logging failed" : "Ticket submitted", sheetFailed ? "err" : "ok");
       form.reset();
       brandSelect.selectedIndex = 0;
       files = [];
@@ -506,6 +508,7 @@
     } catch (err) {
       status.textContent = err.message || "Something went wrong. Try again.";
       status.className = "status-msg err";
+      if (window.showToast) window.showToast(err.message || "Submission failed", "err");
     } finally {
       // Only re-enable if the TID isn't still flagged as a duplicate —
       // otherwise this would clear the "disabled" state that

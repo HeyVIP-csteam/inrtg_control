@@ -1210,6 +1210,7 @@
         if (!res.ok) {
           statusEl.textContent = res.error || "Save failed.";
           statusEl.className = "edit-details-status err";
+          if (window.showToast) window.showToast(res.error || "Save failed", "err");
           saveBtn.disabled = false;
           saveBtn.textContent = "Save & Sync";
           return;
@@ -1218,6 +1219,7 @@
         updateThreadContent(selectedThread);
         patchLocalThread(selectedThread);
         loadList();
+        if (window.showToast) window.showToast("Ticket updated", "ok");
         if (res.sheetHasRef && !res.sheetSynced) {
           alert("Telegram message updated, but the Sheet row couldn't be updated:\n" + (res.sheetError || "unknown error") + "\n\nYou may need to fix that row manually.");
         }
