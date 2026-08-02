@@ -603,7 +603,56 @@ export async function appendMessage(env, threadId, message) {
   }
   await Promise.all(writes);
   await patchListCache(env, thread); // instant sidebar update — reply count / reopened status
+  // @-mention autocomplete (threads.html's reply box) — remember this
+  // person against the brand+module they replied in, NOT just this one
+  // thread, so the picker still finds them next time someone opens a
+  // different ticket in that same brand+module later. Same granularity
+  // as a routing.js chatId/topicId pair (a brand's Risk Issue group is a
+  // different pool of people than that brand's Withdraw Issue group).
+  // Fire-and-forget: this is a nice-to-have suggestion list, never worth
+  // failing (or slowing down) the actual reply-recording above for.
+  if (message.handle && !message.self) {
+    rememberMentionCandidate(env, thread.brandId, thread.module, message.handle, message.from).catch(() => {});
+  }
   return thread;
+}
+
+// ---- @-mention candidate registry (brand + module scoped) -------------
+function mentionRegistryKey(brandId, moduleId) {
+  return `mention-registry:${brandId || "none"}:${moduleId || "none"}`;
+}
+
+async function rememberMentionCandidate(env, brandId, moduleId, handle, from) {
+  const key = mentionRegistryKey(brandId, moduleId);
+  const raw = await env.THREADS_KV.get(key);
+  let registry;
+  try {
+    registry = raw ? JSON.parse(raw) : {};
+  } catch {
+    registry = {};
+  }
+  // Skip the write entirely if nothing actually changed — avoids hammering
+  // this one key with a put() on every single reply from a regular in a
+  // busy topic (KV caps writes to the same key at ~1/sec).
+  const existing = registry[handle];
+  if (existing && existing.from === from) return;
+  registry[handle] = { from: from || existing?.from || "", lastSeen: Date.now() };
+  await env.THREADS_KV.put(key, JSON.stringify(registry));
+}
+
+// Used by GET /api/mention-candidates.
+export async function getMentionCandidates(env, brandId, moduleId) {
+  const raw = await env.THREADS_KV.get(mentionRegistryKey(brandId, moduleId));
+  if (!raw) return [];
+  let registry;
+  try {
+    registry = JSON.parse(raw);
+  } catch {
+    return [];
+  }
+  return Object.entries(registry)
+    .map(([handle, v]) => ({ handle, from: v.from, lastSeen: v.lastSeen }))
+    .sort((a, b) => b.lastSeen - a.lastSeen);
 }
 
 export async function setSolved(env, threadId, solved) {

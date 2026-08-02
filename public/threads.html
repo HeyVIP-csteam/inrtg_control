@@ -803,6 +803,7 @@
       scrollConversation(true);
       polishEmoji();
       loadInlineAttachments();
+      loadMentionCandidatesForThread(t);
     }
 
     // Light refresh — used by polling and after in-place actions (solve,
@@ -918,13 +919,47 @@
     // THIS thread's own conversation, since that's who you're realistically
     // about to @-tag.
     let mentionActiveIndex = 0;
+    let mentionCandidatesCache = {}; // "<brandId>:<module>" -> array, avoids refetching on every keystroke
+    let currentMentionCandidates = [];
 
-    function getMentionCandidates() {
+    // In-thread messages are merged in on top of the registry response so
+    // a person who JUST replied for the first time (before the registry
+    // write above has caught up — KV is only eventually consistent) still
+    // shows up immediately, without waiting on a network round-trip.
+    function deriveInThreadCandidates(t) {
       const byHandle = new Map();
-      (selectedThread?.messages || []).forEach((m) => {
+      (t?.messages || []).forEach((m) => {
         if (m.handle) byHandle.set(m.handle, m.from);
       });
       return [...byHandle.entries()].map(([handle, from]) => ({ handle, from }));
+    }
+
+    async function loadMentionCandidatesForThread(t) {
+      const cacheKey = `${t.brandId || "none"}:${t.module || "none"}`;
+      const inThread = deriveInThreadCandidates(t);
+      if (mentionCandidatesCache[cacheKey]) {
+        currentMentionCandidates = mergeMentionCandidates(mentionCandidatesCache[cacheKey], inThread);
+        return;
+      }
+      currentMentionCandidates = inThread; // show something immediately while the fetch is in flight
+      try {
+        const res = await authFetch(`/api/mention-candidates?brandId=${encodeURIComponent(t.brandId || "")}&module=${encodeURIComponent(t.module || "")}`);
+        const data = await res.json();
+        if (data.ok) {
+          mentionCandidatesCache[cacheKey] = data.items;
+          // Only still relevant if the agent hasn't switched to a different
+          // thread while this fetch was in flight.
+          if (selectedThread === t) currentMentionCandidates = mergeMentionCandidates(data.items, inThread);
+        }
+      } catch {
+        // Non-fatal — the in-thread fallback above still works.
+      }
+    }
+
+    function mergeMentionCandidates(registryItems, inThreadItems) {
+      const byHandle = new Map(registryItems.map((c) => [c.handle, c]));
+      inThreadItems.forEach((c) => { if (!byHandle.has(c.handle)) byHandle.set(c.handle, c); });
+      return [...byHandle.values()];
     }
 
     // Only triggers on an "@fragment" run at the very end of the input
@@ -940,7 +975,7 @@
       const query = currentMentionQuery();
       const dd = document.getElementById("mentionDropdown");
       if (query === null) { closeMentionDropdown(); return; }
-      const candidates = getMentionCandidates().filter((c) =>
+      const candidates = currentMentionCandidates.filter((c) =>
         c.handle.slice(1).toLowerCase().startsWith(query.toLowerCase())
       );
       if (!candidates.length) { closeMentionDropdown(); return; }
