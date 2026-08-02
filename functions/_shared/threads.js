@@ -667,15 +667,23 @@ export async function getMentionCandidates(env, brandId, moduleId) {
 export async function backfillMentionRegistryPage(env, cursor) {
   const page = await env.THREADS_KV.list({ prefix: "thread:", cursor: cursor || undefined, limit: 100 });
   const partial = {}; // regKey -> { handle: {from, lastSeen} }
-  for (const key of page.keys) {
-    const raw = await env.THREADS_KV.get(key.name);
-    if (!raw) continue;
-    let thread;
-    try {
-      thread = JSON.parse(raw);
-    } catch {
-      continue;
-    }
+  // Read all 100 threads in this page concurrently instead of one at a
+  // time — this is a plain read-only fan-out (unlike the KV WRITES
+  // elsewhere in this file, which stay capped/sequential because KV
+  // limits writes to ~1/sec on the SAME key; reads have no such limit).
+  const threads = await Promise.all(
+    page.keys.map(async (key) => {
+      const raw = await env.THREADS_KV.get(key.name);
+      if (!raw) return null;
+      try {
+        return JSON.parse(raw);
+      } catch {
+        return null;
+      }
+    })
+  );
+  for (const thread of threads) {
+    if (!thread) continue;
     const regKey = mentionRegistryKey(thread.brandId, thread.module);
     if (!partial[regKey]) partial[regKey] = {};
     (thread.messages || []).forEach((m) => {
