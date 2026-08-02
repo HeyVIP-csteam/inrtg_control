@@ -677,7 +677,19 @@
       const canEditSettings = canEditAdminSection("settings");
       document.getElementById("acctModalSave").style.display = "none";
       document.getElementById("acctModalActions").style.display = "none";
-      renderFeatureSettingsPanel(acctBody, data.items, {
+      // renderFeatureSettingsPanel() re-renders by replacing its
+      // container's ENTIRE innerHTML every time any row's Save is
+      // clicked (see settings-admin-panel.js's render()). Passing
+      // acctBody itself as that container used to wipe out the Mention
+      // backfill / Announcement rotation speed blocks appended below it
+      // (they're siblings of whatever this panel renders) — clicking
+      // Save on ANY maintenance/coming-soon row made those two sections
+      // vanish. Giving it its own dedicated child div means its
+      // self-driven re-renders only ever touch that div, never the
+      // siblings appended after it.
+      acctBody.innerHTML = '<div id="featureStatusPanel"></div>';
+      const featureStatusPanel = document.getElementById("featureStatusPanel");
+      renderFeatureSettingsPanel(featureStatusPanel, data.items, {
         authFetch: window.AgentAuth.authFetch,
         escapeHtml: acctEsc,
         canEdit: canEditSettings,
