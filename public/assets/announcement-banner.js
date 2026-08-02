@@ -113,7 +113,17 @@
     items = items.filter((i) => i.id !== item.id);
     stopRotation();
     currentIndex = 0;
-    skeletonKey = "";
+    // NOTE: do NOT force skeletonKey = "" here. render() below compares
+    // the freshly-computed key (items.map(i => i.id).join(",")) against
+    // skeletonKey to decide whether to rebuild. If items just became
+    // empty, that fresh key IS "" — forcing skeletonKey to "" first made
+    // the two look identical, so render() thought nothing had changed
+    // and skipped the rebuild entirely. The banner then stayed showing
+    // the just-dismissed announcement forever, and its ✕ button looked
+    // like it had stopped responding (dismissing a 2nd/last item did
+    // nothing) even though the dismiss logic above ran correctly.
+    // Leaving skeletonKey holding its real previous value lets render()
+    // compare against the truth and rebuild (or empty out) correctly.
     render();
   }
 
