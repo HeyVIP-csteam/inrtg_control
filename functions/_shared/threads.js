@@ -703,13 +703,32 @@ export async function appendMessage(env, threadId, message, chatId) {
   const allIds = messageIdsOf(message);
 
   if (env.THREADS_DB) {
-    // Atomic, no read-modify-write: appends straight into the JSON via
-    // SQLite's own json_insert/json_set, in ONE statement (plus the
-    // conditional "reopen if solved" statement, batched into the same
-    // transaction below). This is the actual fix for replies getting
-    // lost/overwritten — two replies landing within the same millisecond
-    // now just serialize as two independent UPDATEs instead of racing to
-    // read-then-clobber each other's write. See file header.
+    // BEFORE the atomic append below: make sure this thread actually HAS
+    // a row in D1 yet. For any thread created after the D1 migration,
+    // it already does (createThread() put it there) — this is then just
+    // one cheap extra read that changes nothing. But for a thread that
+    // predates the migration and hasn't been opened/touched since (so
+    // never went through getThread()'s KV->D1 heal-on-read path), D1 has
+    // NO row for it at all — and the atomic `UPDATE ... WHERE id = ?`
+    // below would then silently match zero rows (UPDATE matching
+    // nothing is not an error) and the message would vanish: not in D1
+    // (nothing to update), and the follow-up getThread() call further
+    // down would fall back to the STALE pre-reply KV copy and heal
+    // THAT into D1 — permanently losing the very message this function
+    // was called to record. getThread() already contains exactly the
+    // heal-from-KV-into-D1 logic needed to prevent this, so just calling
+    // it (and discarding the result) here is enough to guarantee the row
+    // exists before the atomic UPDATE runs.
+    await getThread(env, threadId);
+
+    // Atomic, no read-modify-write from THIS point on: appends straight
+    // into the JSON via SQLite's own json_insert/json_set, in ONE
+    // statement (plus the conditional "reopen if solved" statement,
+    // batched into the same transaction below). This is the actual fix
+    // for replies getting lost/overwritten — two replies landing within
+    // the same millisecond now just serialize as two independent
+    // UPDATEs instead of racing to read-then-clobber each other's write.
+    // See file header.
     const stmts = [
       env.THREADS_DB.prepare(
         `UPDATE threads
@@ -745,6 +764,7 @@ export async function appendMessage(env, threadId, message, chatId) {
   // Read back the now-current thread (a single consistent D1 read, or —
   // for a not-yet-migrated thread — getThread()'s own KV fallback+heal
   // path, see above) for the sidebar patch and the return value. Also
+
   // covers the env.THREADS_DB-not-bound-yet case end to end via the old
   // KV read-modify-write path below.
   const thread = await getThread(env, threadId);

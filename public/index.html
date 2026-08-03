@@ -15,9 +15,19 @@
      paper over. Used to be a flat color here instead of the photo itself
      — technically gap-free, but visually a jarring flat-color-then-photo
      jump once starfield.js caught up. Using the same photo here removes
-     that jump: from the very first frame it's already the right image,
-     starfield.js just layers the zoom/parallax/stars/meteors on top of
-     what's already there instead of swapping it out from under you.
+     that jump — BUT a first version of this fix used the RAW photo with
+     no shading at all, which swung too far the other way: a bright,
+     full-detail, completely undimmed photo flashing full-bleed for a
+     moment reads as its own jarring "what just happened" flash, arguably
+     worse than the flat color it replaced. This version stacks the SAME
+     dark gradient math style.css's `.sf-shade` applies once fully
+     mounted (dark theme's specific numbers — see --sf-shade under
+     `:root`; dark is this project's common case, same reasoning the old
+     light-theme fallback below used to lean on) directly on top of the
+     photo here, so the very first frame already looks like the settled
+     end state — starfield.js then only ADDS motion (zoom/parallax/stars/
+     meteors) on top of something that already looks right, instead of
+     visibly swapping the look out from under you.
      ONLY <html> is set here, deliberately NOT <body> too (an earlier
      version of this rule set both, which was the actual bug behind the
      starfield background vanishing — style.css's `body { background:
@@ -30,7 +40,35 @@
      photo shows through underneath it exactly the same as if <body> had
      it directly — same fix, without fighting body's own more complex
      background setup. */
-  html { background: #090c1c url('/assets/img/bg-space.jpg') center/cover no-repeat fixed; }
+  html {
+    background-color: #090c1c;
+    background-image:
+      linear-gradient(180deg, rgba(3,4,13,0.35) 0%, rgba(3,4,13,0.55) 55%, rgba(3,4,13,0.75) 100%),
+      url('/assets/img/bg-space.jpg');
+    background-size: cover;
+    background-position: center;
+    background-repeat: no-repeat;
+    background-attachment: fixed;
+  }
+
+  /* Light-theme override — theme.js (loaded right after this block, and
+     synchronous/non-deferred) sets data-theme on <html> before first
+     paint, so this genuinely applies from frame one rather than flashing
+     in late. The photo is nearly invisible under the light theme's own
+     heavy overlay anyway (see --sf-shade's 0.55-0.72 alpha for
+     [data-theme="light"] in style.css), so rather than fight CSS filter
+     limitations (filter can't be scoped to just a background-image on
+     <html> without also filtering all real content once it loads), this
+     just reuses the light theme's plain --page-bg gradient values
+     directly (kept in sync manually — see :root in style.css if that
+     gradient ever changes) with no photo layer at all. Visually
+     indistinguishable from the real thing once starfield.js mounts. */
+  html[data-theme="light"] {
+    background-color: #dbe7fb;
+    background-image:
+      radial-gradient(900px 500px at 90% 0%, #eaf1ff 0%, transparent 55%),
+      linear-gradient(160deg, #dbe7fb 0%, #d9cef4 45%, #cdbdf2 75%, #c4b2ee 100%);
+  }
 </style>
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />

@@ -5,11 +5,39 @@
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>TG Reply Threads</title>
 <style>
-  /* Space photo as the very first paint, before style.css/starfield.js
-     load — same reasoning (and same photo, so no flat-color-then-photo
-     jump once starfield.js mounts) as index.html's copy of this rule;
-     see the comment there for the full write-up. */
-  html { background: #090c1c url('/assets/img/bg-space.jpg') center/cover no-repeat fixed; }
+  /* Space photo (dark-shaded, same overlay math as .sf-shade in
+     style.css) as the very first paint, before style.css/starfield.js
+     load — same reasoning as index.html's copy of this rule; see the
+     comment there for the full write-up. */
+  html {
+    background-color: #090c1c;
+    background-image:
+      linear-gradient(180deg, rgba(3,4,13,0.35) 0%, rgba(3,4,13,0.55) 55%, rgba(3,4,13,0.75) 100%),
+      url('/assets/img/bg-space.jpg');
+    background-size: cover;
+    background-position: center;
+    background-repeat: no-repeat;
+    background-attachment: fixed;
+  }
+
+  /* Light-theme override — theme.js (loaded right after this block, and
+     synchronous/non-deferred) sets data-theme on <html> before first
+     paint, so this genuinely applies from frame one rather than flashing
+     in late. The photo is nearly invisible under the light theme's own
+     heavy overlay anyway (see --sf-shade's 0.55-0.72 alpha for
+     [data-theme="light"] in style.css), so rather than fight CSS filter
+     limitations (filter can't be scoped to just a background-image on
+     <html> without also filtering all real content once it loads), this
+     just reuses the light theme's plain --page-bg gradient values
+     directly (kept in sync manually — see :root in style.css if that
+     gradient ever changes) with no photo layer at all. Visually
+     indistinguishable from the real thing once starfield.js mounts. */
+  html[data-theme="light"] {
+    background-color: #dbe7fb;
+    background-image:
+      radial-gradient(900px 500px at 90% 0%, #eaf1ff 0%, transparent 55%),
+      linear-gradient(160deg, #dbe7fb 0%, #d9cef4 45%, #cdbdf2 75%, #c4b2ee 100%);
+  }
 </style>
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
