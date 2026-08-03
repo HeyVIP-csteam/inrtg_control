@@ -598,22 +598,25 @@ a { color: inherit; text-decoration: none; }
 }
 .sidebar-header .dot { width: 6px; height: 6px; border-radius: 50%; background: #7c6cf0; }
 
-/* ---- Shared "cool factor" treatment for all three card types (Topic
-   sidebar items, TG Reply Threads list items, Announcement list items):
-   a twinkling corner star + a slow breathing edge glow + a soft shimmer
-   sweep across the surface. Three independent animation timings so they
-   never sync up and look mechanical. Applied via one shared selector
-   group so all three stay visually identical and only need updating in
-   one place. `position: relative` + `overflow: hidden` are required here
-   (not assumed already present on every one of the three) — the sweep's
-   ::before and the star's ::after are both absolutely positioned and
-   need to stay clipped to the card's own rounded corners. */
-.sidebar-item, .thread-item, .ann-list-item {
+/* ---- "Cool factor" treatment for the Home page's Topic sidebar items
+   only: a twinkling corner star + a slow breathing edge glow + a soft
+   shimmer sweep across the surface. Three independent animation timings
+   so they never sync up and look mechanical. `position: relative` +
+   `overflow: hidden` are required here — the sweep's ::before and the
+   star's ::after are both absolutely positioned and need to stay
+   clipped to the card's own rounded corners.
+   NOTE: this used to also run on .thread-item (TG Reply Threads list)
+   and .ann-list-item (Announcement list) — removed from both. Those two
+   lists can grow unbounded (dozens/hundreds of rows), and a permanently-
+   running decorative animation on every row adds a real paint-cost tier
+   that scales with row count (see sidebar-diffed-rendering.md §2.4). The
+   Home page sidebar stays small and fixed, so it's fine to keep there. */
+.sidebar-item {
   position: relative;
   overflow: hidden;
   animation: card-glow 2.6s ease-in-out infinite;
 }
-.sidebar-item::before, .thread-item::before, .ann-list-item::before {
+.sidebar-item::before {
   content: "";
   position: absolute; inset: 0;
   background: linear-gradient(115deg, transparent 40%, rgba(255,255,255,0.09) 50%, transparent 60%);
@@ -621,7 +624,7 @@ a { color: inherit; text-decoration: none; }
   animation: card-sweep 3.4s ease-in-out infinite;
   pointer-events: none;
 }
-.sidebar-item::after, .thread-item::after, .ann-list-item::after {
+.sidebar-item::after {
   content: "";
   position: absolute; top: 10px; right: 12px;
   width: 5px; height: 5px; border-radius: 50%; background: #fff;

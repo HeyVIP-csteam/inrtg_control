@@ -381,6 +381,55 @@
       localStorage.setItem(`lastseen:${id}`, String(count));
     }
 
+    // ---- Diffed sidebar rendering (see sidebar-diffed-rendering.md) ----
+    // id -> { el, key } — which real DOM node each thread currently maps
+    // to, and the "fingerprint" that node's content was last built from.
+    // Deliberately ONE shared table, not split per-section (active/solved):
+    // a thread can move between sections (e.g. Solved -> reopened by a new
+    // customer message in threads.js), and a shared table turns that into
+    // a plain "fingerprint changed -> reuse+reposition the same node" case
+    // instead of needing special cross-table migration logic.
+    const renderedItemEls = new Map();
+
+    // Every field that can change how renderItem() below looks/behaves
+    // needs to be in here — a missed field means "data changed but the
+    // row silently doesn't update" (fingerprint stays the same).
+    function itemRenderKey(t) {
+      const unread = Math.max(0, (t.replyCount || 0) - getSeenCount(t.id));
+      return [
+        t.title, t.submitter, t.lastActivity, t.replyCount, t.solved,
+        t.accent, t.icon, unread,
+        t.id === selectedId,            // selected/open row
+        selectMode,                     // bulk-select mode toggles the row's whole markup
+        checkedThreadIds.has(t.id),     // checked in bulk-select mode
+      ].join("|");
+    }
+
+    // Syncs one section container (activeList/solvedList) to match `items`.
+    // touchedEls collects nodes that were actually (re)built this pass, so
+    // callers can scope follow-up work (e.g. emoji parsing) to just those.
+    function reconcileSection(container, items, touchedEls) {
+      let prevEl = null;
+      items.forEach((item) => {
+        const key = itemRenderKey(item);
+        let entry = renderedItemEls.get(item.id);
+        if (!entry || entry.key !== key) {
+          entry = { el: renderItem(item), key };
+          renderedItemEls.set(item.id, entry);
+          touchedEls.push(entry.el);
+        }
+        // Wanted position: right after the previously-placed node. If it's
+        // already there, insertBefore is a no-op; if not (new row, or the
+        // row moved sections/order), it actually relocates the existing
+        // node — no destroy+recreate, event listeners stay intact.
+        const wantPos = prevEl ? prevEl.nextSibling : container.firstChild;
+        if (entry.el.parentNode !== container || entry.el !== wantPos) {
+          container.insertBefore(entry.el, wantPos); // auto-detaches from old parent if it was in the other section
+        }
+        prevEl = entry.el;
+      });
+    }
+
     function renderItem(t) {
       const el = document.createElement("div");
       const isChecked = checkedThreadIds.has(t.id);
@@ -554,8 +603,8 @@
       });
     });
 
-    function polishEmoji() {
-      if (window.twemoji) window.twemoji.parse(document.body, { folder: "svg", ext: ".svg" });
+    function polishEmoji(root) {
+      if (window.twemoji) window.twemoji.parse(root || document.body, { folder: "svg", ext: ".svg" });
     }
 
     function renderLists() {
@@ -567,15 +616,30 @@
       solvedSelectAll.style.display = selectMode ? "inline-block" : "none";
       activeSelectAll.checked = selectMode && activeThreads.length > 0 && activeThreads.every((t) => checkedThreadIds.has(t.id));
       solvedSelectAll.checked = selectMode && solvedThreads.length > 0 && solvedThreads.every((t) => checkedThreadIds.has(t.id));
-      activeList.innerHTML = "";
+      const touchedEls = [];
+
+      // Empty state is placeholder DOM, not a data item — handled outside
+      // renderedItemEls (see sidebar-diffed-rendering.md §3.4).
+      let activeEmptyEl = activeList.querySelector(".threads-empty");
       if (!activeThreads.length) {
-        activeList.innerHTML = '<div class="threads-empty">No active threads.<br/>Submit a form to start one.</div>';
+        if (!activeEmptyEl) activeList.innerHTML = '<div class="threads-empty">No active threads.<br/>Submit a form to start one.</div>';
       } else {
-        activeThreads.forEach((t) => activeList.appendChild(renderItem(t)));
+        if (activeEmptyEl) activeEmptyEl.remove();
+        reconcileSection(activeList, activeThreads, touchedEls);
       }
-      solvedList.innerHTML = "";
-      solvedThreads.forEach((t) => solvedList.appendChild(renderItem(t)));
-      polishEmoji();
+      reconcileSection(solvedList, solvedThreads, touchedEls);
+
+      // Sweep any node whose thread no longer exists in either list
+      // (deleted, or filtered out by the current search term).
+      const currentIds = new Set([...activeThreads, ...solvedThreads].map((t) => t.id));
+      for (const [id, entry] of renderedItemEls) {
+        if (!currentIds.has(id)) {
+          entry.el.remove();
+          renderedItemEls.delete(id);
+        }
+      }
+
+      touchedEls.forEach((el) => polishEmoji(el));
     }
 
     async function loadList(q) {
