@@ -134,7 +134,7 @@ async function handleUpdate(env, update) {
     self: false,
     messageId: msg.message_id,
     replyToMessageId: replyTarget.message_id,
-  });
+  }, msg.chat.id);
 }
 
 // Someone edited a message directly inside Telegram — message_id stays

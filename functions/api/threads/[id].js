@@ -197,7 +197,7 @@ async function handleThreadAction({ request, env, params }) {
       messageId,
       messageIds,
       replyToMessageId: replyToMessageId || null,
-    });
+    }, thread.chatId);
     return json({ ok: true, thread: updated });
   }
 

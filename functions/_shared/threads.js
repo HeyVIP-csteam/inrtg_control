@@ -5,12 +5,40 @@
  * that was sent to Telegram, plus every reply that lands in that Telegram
  * thread (via webhook) or is sent back out from the dashboard.
  *
- * Backed by Cloudflare KV (binding: THREADS_KV — see wrangler.toml).
- * Two kinds of keys:
- *   thread:<id>          → full thread record (JSON), with a lightweight
- *                           summary attached as this key's KV *metadata*
- *   msgid:<chatId>:<mid>  → thread id (string) — lets the Telegram webhook
- *                           find which thread a reply belongs to in O(1)
+ * STORAGE, as of the D1 migration (binding: THREADS_DB — see
+ * wrangler.toml): the single JSON record for an individual thread — the
+ * thing an agent is actually staring at while a reply is expected to show
+ * up — now lives in D1 (`threads` table, one row per thread, `data` column
+ * holds the same JSON shape this file always used), not KV. D1 is a single
+ * strongly-consistent primary, so a write from the webhook is immediately
+ * visible to the very next read from the dashboard, with no waiting on
+ * Cloudflare's per-edge KV cache to catch up (that KV propagation delay —
+ * up to ~60s, and NOT configurable lower — is what used to make replies
+ * show up late/inconsistently, or occasionally get silently overwritten
+ * when two replies landed within the same window). `appendMessage()`
+ * below appends via SQLite's own JSON functions in a single UPDATE
+ * statement instead of the old KV read→push-in-JS→write-the-whole-thing-
+ * back pattern, so two near-simultaneous replies can never clobber one
+ * another. A second table, `message_index` (chat_id, message_id) →
+ * thread_id, replaces the old `msgid:<chatId>:<mid>` KV keys — same job
+ * (letting the webhook resolve which thread a reply belongs to), same
+ * O(1) lookup, just consistent.
+ *
+ * KV (binding: THREADS_KV) is STILL used, deliberately, for the ONE thing
+ * it was always fine for: the sidebar list. See the LIST_CACHE_KEY /
+ * scanThreadsFromKV section below — that path already tolerates being a
+ * little stale by design, so there was no reason to move it. Each thread's
+ * KV key (`thread:<id>`) now holds only a placeholder value with the real
+ * data as its *metadata* (see saveThread) — the sidebar reads metadata via
+ * `list()` and never touches the value, so there's no reason to duplicate
+ * the full JSON there anymore.
+ *
+ * BACKWARD COMPAT: any thread saved before this migration only exists in
+ * KV, as a full JSON value (no D1 row yet). `getThread()`/
+ * `findThreadIdByMessage()` below transparently fall back to the old KV
+ * shape and write the record through to D1 the first time it's touched —
+ * same one-time "heal on read" idea this file already used for the
+ * metadata migration, just one layer lower.
  *
  * NO SHARED "index" KEY ANYMORE. Every write used to also rewrite one
  * single `"index"` JSON blob (the sidebar's data source) — but Cloudflare
@@ -134,13 +162,30 @@ function summarize(thread) {
   };
 }
 
-// Every write to a thread's own record goes through this — saves the full
-// JSON as the value, and the lightweight summary as this key's metadata,
-// in one KV write. No second key touched, so no shared hot key.
+// Every write to a thread's own record goes through this. Two writes, in
+// parallel, to two different stores that now do two different jobs:
+//   - D1 gets the actual full JSON (source of truth for getThread() and
+//     anything that needs an up-to-the-second read of THIS thread).
+//   - KV gets only a placeholder value (there's nothing left that reads
+//     it) with the lightweight summary riding along as this key's
+//     *metadata* — that's still what the sidebar's list() scan reads, and
+//     that path is fine with being a little stale (see file header).
+// No shared hot key on either side, so two agents touching two different
+// tickets still never contend with each other.
 async function saveThread(env, thread) {
-  await env.THREADS_KV.put(`thread:${thread.id}`, JSON.stringify(thread), {
-    metadata: summarize(thread),
-  });
+  const json = JSON.stringify(thread);
+  const writes = [
+    env.THREADS_KV.put(`thread:${thread.id}`, "1", { metadata: summarize(thread) }),
+  ];
+  if (env.THREADS_DB) {
+    writes.push(
+      env.THREADS_DB.prepare(
+        `INSERT INTO threads (id, data) VALUES (?1, ?2)
+         ON CONFLICT(id) DO UPDATE SET data = excluded.data`
+      ).bind(thread.id, json).run()
+    );
+  }
+  await Promise.all(writes);
 }
 
 // Deletes a thread's KV record plus every msgid: pointer that leads to it
@@ -151,10 +196,20 @@ async function saveThread(env, thread) {
 // could otherwise mean a long chain of sequential round-trips.
 async function purgeThread(env, thread) {
   const ids = thread.msgIds || [];
-  await Promise.all([
+  const deletes = [
     env.THREADS_KV.delete(`thread:${thread.id}`),
+    // Best-effort cleanup of any pre-D1-migration pointers this thread
+    // might still have (see file header) — harmless no-ops for threads
+    // that only ever lived in D1.
     ...ids.map((mid) => env.THREADS_KV.delete(`msgid:${thread.chatId}:${mid}`)),
-  ]);
+  ];
+  if (env.THREADS_DB) {
+    deletes.push(
+      env.THREADS_DB.prepare(`DELETE FROM threads WHERE id = ?1`).bind(thread.id).run(),
+      env.THREADS_DB.prepare(`DELETE FROM message_index WHERE thread_id = ?1`).bind(thread.id).run()
+    );
+  }
+  await Promise.all(deletes);
 }
 
 function isExpired(t, now) {
@@ -279,14 +334,22 @@ export async function createThread(env, { module: moduleId, moduleName, icon, ac
     // than one other Topic, hence an array, not a single value.
     forwardedTo: [],
   };
-  await Promise.all([
-    saveThread(env, thread),
-    // One msgid: pointer per message in the album, not just the first —
-    // needed so the webhook (functions/api/telegram-webhook.js) can
-    // correctly resolve a reply to ANY photo in a multi-photo ticket back
-    // to this thread, not just replies to the first/captioned one.
-    ...allRootIds.map((mid) => env.THREADS_KV.put(`msgid:${thread.chatId}:${mid}`, thread.id)),
-  ]);
+  const writes = [saveThread(env, thread)];
+  // One message_index row per message in the album, not just the first —
+  // needed so the webhook (functions/api/telegram-webhook.js) can
+  // correctly resolve a reply to ANY photo in a multi-photo ticket back
+  // to this thread, not just replies to the first/captioned one. Lives in
+  // D1 now (see file header) — no more KV msgid: writes for new threads.
+  if (env.THREADS_DB) {
+    for (const mid of allRootIds) {
+      writes.push(
+        env.THREADS_DB.prepare(
+          `INSERT OR IGNORE INTO message_index (chat_id, message_id, thread_id) VALUES (?1, ?2, ?3)`
+        ).bind(thread.chatId, mid, thread.id).run()
+      );
+    }
+  }
+  await Promise.all(writes);
   await patchListCache(env, thread); // instant sidebar visibility — see that function's comment for why
   return thread;
 }
@@ -308,11 +371,62 @@ export async function addForwardedToLink(env, threadId, link) {
 }
 
 export async function getThread(env, id) {
+  if (env.THREADS_DB) {
+    const row = await env.THREADS_DB.prepare(`SELECT data FROM threads WHERE id = ?1`).bind(id).first();
+    if (row) return JSON.parse(row.data);
+  }
+  // Fall back to the pre-D1 KV shape (a full JSON value, not the "1"
+  // placeholder new saveThread() calls write) — only ever hit for a
+  // thread that hasn't been read/written since the D1 migration shipped.
+  // See file header. Heals itself: once found here, write it through to
+  // D1 (plus its message_index rows) so every read after this one takes
+  // the fast D1 path above instead.
   const raw = await env.THREADS_KV.get(`thread:${id}`);
-  return raw ? JSON.parse(raw) : null;
+  if (!raw) return null;
+  let thread;
+  try {
+    thread = JSON.parse(raw);
+  } catch {
+    return null; // corrupt — nothing to heal
+  }
+  // The "1" placeholder new saveThread() calls write parses fine as the
+  // number 1 (valid JSON) but obviously isn't a thread — this thread was
+  // already migrated and the earlier D1 lookup above should have caught
+  // it; landing here means D1 genuinely has no row for it (e.g. that
+  // write failed) rather than "just needs healing", so there's nothing
+  // to reconstruct from KV.
+  if (!thread || typeof thread !== "object" || Array.isArray(thread)) return null;
+  if (env.THREADS_DB && thread.id) {
+    try {
+      const ids = (thread.msgIds && thread.msgIds.length ? thread.msgIds : [thread.rootMessageId]).filter(Boolean);
+      await Promise.all([
+        env.THREADS_DB.prepare(
+          `INSERT INTO threads (id, data) VALUES (?1, ?2) ON CONFLICT(id) DO UPDATE SET data = excluded.data`
+        ).bind(thread.id, raw).run(),
+        ...ids.map((mid) =>
+          env.THREADS_DB.prepare(
+            `INSERT OR IGNORE INTO message_index (chat_id, message_id, thread_id) VALUES (?1, ?2, ?3)`
+          ).bind(thread.chatId, mid, thread.id).run()
+        ),
+      ]);
+    } catch {
+      // Non-fatal — it'll just get healed again on a future read.
+    }
+  }
+  return thread;
 }
 
 export async function findThreadIdByMessage(env, chatId, messageId) {
+  if (env.THREADS_DB) {
+    const row = await env.THREADS_DB.prepare(
+      `SELECT thread_id FROM message_index WHERE chat_id = ?1 AND message_id = ?2`
+    ).bind(String(chatId), messageId).first();
+    if (row) return row.thread_id;
+  }
+  // Fall back to the pre-D1 KV pointer (see file header). Not healed here
+  // (unlike getThread above) — the thread this points to will get its
+  // message_index rows backfilled the next time IT is read via
+  // getThread(), which covers this same pointer.
   return env.THREADS_KV.get(`msgid:${chatId}:${messageId}`);
 }
 
@@ -569,39 +683,89 @@ export async function listThreads(env, { q } = {}) {
   });
 }
 
-export async function appendMessage(env, threadId, message) {
+// Multi-attachment reply lands in Telegram as an ALBUM — one message_id
+// PER attachment, not just one for the whole reply — so
+// message.messageIds (plural, see sendTelegramReplyAttachments in
+// threads/[id].js) carries all of them when present. Without this, a
+// reply to any photo in the album OTHER than the first would silently
+// fail to resolve back to this thread. Falls back to the single
+// messageId for plain text/single-attachment replies, which only ever
+// have the one id anyway.
+function messageIdsOf(message) {
+  return message.messageIds && message.messageIds.length ? message.messageIds : (message.messageId ? [message.messageId] : []);
+}
+
+// `chatId` is a separate parameter (not read off `message`, which never
+// carried it) so this can insert the new message_index rows without
+// needing to read the thread first — see the D1 append below for why
+// avoiding a read here matters.
+export async function appendMessage(env, threadId, message, chatId) {
+  const allIds = messageIdsOf(message);
+
+  if (env.THREADS_DB) {
+    // Atomic, no read-modify-write: appends straight into the JSON via
+    // SQLite's own json_insert/json_set, in ONE statement (plus the
+    // conditional "reopen if solved" statement, batched into the same
+    // transaction below). This is the actual fix for replies getting
+    // lost/overwritten — two replies landing within the same millisecond
+    // now just serialize as two independent UPDATEs instead of racing to
+    // read-then-clobber each other's write. See file header.
+    const stmts = [
+      env.THREADS_DB.prepare(
+        `UPDATE threads
+         SET data = json_set(json_insert(data, '$.messages[#]', json(?1)), '$.lastActivity', ?2)
+         WHERE id = ?3`
+      ).bind(JSON.stringify(message), message.ts, threadId),
+    ];
+    // Only genuine, explicit replies ever reach here for non-self
+    // messages (see telegram-webhook.js) — so if one lands on an
+    // already-solved ticket, that's a deliberate "actually, still need to
+    // talk about this" signal, and it's safe to reopen. Expressed as a
+    // conditional UPDATE (checked via json_extract) instead of an
+    // in-memory if-check, since there's no in-memory copy anymore.
+    if (!message.self) {
+      stmts.push(
+        env.THREADS_DB.prepare(
+          `UPDATE threads
+           SET data = json_set(data, '$.solved', json('false'), '$.solvedAt', NULL)
+           WHERE id = ?1 AND json_extract(data, '$.solved') = 1`
+        ).bind(threadId)
+      );
+    }
+    for (const mid of allIds) {
+      stmts.push(
+        env.THREADS_DB.prepare(
+          `INSERT OR IGNORE INTO message_index (chat_id, message_id, thread_id) VALUES (?1, ?2, ?3)`
+        ).bind(String(chatId ?? ""), mid, threadId)
+      );
+    }
+    await env.THREADS_DB.batch(stmts);
+  }
+
+  // Read back the now-current thread (a single consistent D1 read, or —
+  // for a not-yet-migrated thread — getThread()'s own KV fallback+heal
+  // path, see above) for the sidebar patch and the return value. Also
+  // covers the env.THREADS_DB-not-bound-yet case end to end via the old
+  // KV read-modify-write path below.
   const thread = await getThread(env, threadId);
   if (!thread) return null;
-  thread.messages.push(message);
-  thread.lastActivity = message.ts;
-  // Only genuine, explicit replies ever reach here for non-self messages
-  // (see telegram-webhook.js) — so if one lands on an already-solved
-  // ticket, that's a deliberate "actually, still need to talk about this"
-  // signal, and it's safe to reopen.
-  if (thread.solved && !message.self) {
-    thread.solved = false;
-    thread.solvedAt = null;
+
+  if (!env.THREADS_DB) {
+    // No D1 binding — fall back to the original KV read-modify-write so
+    // the feature still works (with the old consistency caveats) rather
+    // than silently doing nothing.
+    thread.messages.push(message);
+    thread.lastActivity = message.ts;
+    if (thread.solved && !message.self) {
+      thread.solved = false;
+      thread.solvedAt = null;
+    }
+    if (allIds.length) thread.msgIds = [...(thread.msgIds || [thread.rootMessageId]), ...allIds];
+    const writes = [saveThread(env, thread)];
+    for (const mid of allIds) writes.push(env.THREADS_KV.put(`msgid:${thread.chatId}:${mid}`, thread.id));
+    await Promise.all(writes);
   }
-  // Track this outbound message's id(s) (if Telegram returned any) so
-  // replies-to-replies still resolve back to the same thread, and so
-  // cleanup can find and delete every msgid: pointer for this thread.
-  // A multi-attachment reply lands in Telegram as an ALBUM — one
-  // message_id PER attachment, not just one for the whole reply — so
-  // message.messageIds (plural, see sendTelegramReplyAttachments in
-  // threads/[id].js) carries all of them when present. Without this, a
-  // reply to any photo in the album OTHER than the first would silently
-  // fail to resolve back to this thread. Falls back to the single
-  // messageId for plain text/single-attachment replies, which only ever
-  // have the one id anyway.
-  const allIds = message.messageIds && message.messageIds.length ? message.messageIds : (message.messageId ? [message.messageId] : []);
-  if (allIds.length) {
-    thread.msgIds = [...(thread.msgIds || [thread.rootMessageId]), ...allIds];
-  }
-  const writes = [saveThread(env, thread)];
-  for (const mid of allIds) {
-    writes.push(env.THREADS_KV.put(`msgid:${thread.chatId}:${mid}`, thread.id));
-  }
-  await Promise.all(writes);
+
   await patchListCache(env, thread); // instant sidebar update — reply count / reopened status
   // @-mention autocomplete (threads.html's reply box) — remember this
   // person against the brand+module they replied in, NOT just this one
@@ -671,16 +835,15 @@ export async function backfillMentionRegistryPage(env, cursor) {
   // time — this is a plain read-only fan-out (unlike the KV WRITES
   // elsewhere in this file, which stay capped/sequential because KV
   // limits writes to ~1/sec on the SAME key; reads have no such limit).
+  // Goes through getThread() rather than reading `key.name` off KV
+  // directly — since the D1 migration, a thread's KV value is just the
+  // "1" placeholder (the real data lives in D1); getThread() is what
+  // knows to check D1 first and only fall back to a raw KV value for a
+  // thread that hasn't migrated yet. Reading the KV value directly here
+  // (the old approach) would silently see only "1" for every already-
+  // migrated thread and produce nothing useful.
   const threads = await Promise.all(
-    page.keys.map(async (key) => {
-      const raw = await env.THREADS_KV.get(key.name);
-      if (!raw) return null;
-      try {
-        return JSON.parse(raw);
-      } catch {
-        return null;
-      }
-    })
+    page.keys.map((key) => getThread(env, key.name.slice("thread:".length)))
   );
   for (const thread of threads) {
     if (!thread) continue;
