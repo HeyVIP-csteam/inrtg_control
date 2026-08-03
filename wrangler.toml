@@ -10,6 +10,13 @@ bucket_name = "inr-issuescreenshot"
 binding = "THREADS_KV"
 id = "4821238464004b8289e4ded5a467d582"
 
+# TG Reply Threads feature — D1 database for per-thread message storage
+# (replaces KV for the hot read/write path; KV stays for the sidebar list cache).
+[[d1_databases]]
+binding = "THREADS_DB"
+database_name = "inr-ticket-threads"
+database_id = "1327b88e-ceda-405d-94ff-8a7ea7da269d"
+
 [vars]
 # Non-secret local defaults for `wrangler pages dev`. Real deployments set
 # TELEGRAM_BOT_TOKEN as an encrypted secret in the Cloudflare dashboard —
