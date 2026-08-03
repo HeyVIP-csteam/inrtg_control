@@ -4,9 +4,17 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Promo Code Search</title>
+<style>
+  /* Space photo as the very first paint, before style.css/starfield.js
+     load — same reasoning (and same photo, so no flat-color-then-photo
+     jump once starfield.js mounts) as index.html's copy of this rule;
+     see the comment there for the full write-up. */
+  html { background: #090c1c url('/assets/img/bg-space.jpg') center/cover no-repeat fixed; }
+</style>
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;600&display=swap" />
+<link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;600&display=swap" onload="this.onload=null;this.rel='stylesheet'" />
+<noscript><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;600&display=swap" /></noscript>
 <link rel="stylesheet" href="/assets/style.css" />
 <script src="/assets/theme.js"></script>
 <script src="/assets/starfield.js" defer></script>

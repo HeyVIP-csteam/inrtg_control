@@ -6,35 +6,36 @@
 <title>INR CS Team - TBC</title>
 <style>
   /* Critical, inline, zero-network-cost — the very first paint of every
-     navigation must already be dark, before style.css even finishes
-     downloading. Without this, the plain white browser-default canvas
-     shows through for a beat between "old page faded out" and "new
-     page's real CSS painted" — a real gap in a genuine full-page
+     navigation must already show the space photo, before style.css OR
+     starfield.js even finishes downloading. Without this, a flat color
+     (or worse, the plain white browser-default canvas) shows through for
+     a beat between "old page faded out" and "starfield.js has mounted
+     the real, animated version" — a real gap in a genuine full-page
      navigation, not something any particular transition animation can
-     paper over.
+     paper over. Used to be a flat color here instead of the photo itself
+     — technically gap-free, but visually a jarring flat-color-then-photo
+     jump once starfield.js caught up. Using the same photo here removes
+     that jump: from the very first frame it's already the right image,
+     starfield.js just layers the zoom/parallax/stars/meteors on top of
+     what's already there instead of swapping it out from under you.
      ONLY <html> is set here, deliberately NOT <body> too (an earlier
      version of this rule set both, which was the actual bug behind the
      starfield background vanishing — style.css's `body { background:
      var(--page-bg); transition: background 0.2s ease; }` then had to
-     TRANSITION from this rule's solid color to the real gradient, and a
-     solid color -> gradient transition can't be interpolated, so it
-     would get stuck instead of ever completing). Leaving <body> alone
-     here is fine: before style.css loads, <body> has no background
-     rule of its own yet (transparent), so <html>'s dark background
-     shows through underneath it exactly the same as if <body> had it
-     directly — same fix, without fighting body's own more complex
-     background setup. Falls back to a light-theme-ish tint only for
-     browsers/OSes reporting prefers-color-scheme: light — this can't
-     read the saved theme.js/localStorage choice (that needs JS to run
-     first), but this project's usage skews dark, so this covers the
-     common case with zero flash and is still strictly better than
-     white for the rest. */
-  html { background: #090c1c; }
-  @media (prefers-color-scheme: light) { html { background: #dbe7fb; } }
+     TRANSITION from this rule's background to the real gradient, and
+     that transition can't be interpolated between a photo and a
+     gradient, so it would get stuck instead of ever completing).
+     Leaving <body> alone here is fine: before style.css loads, <body>
+     has no background rule of its own yet (transparent), so <html>'s
+     photo shows through underneath it exactly the same as if <body> had
+     it directly — same fix, without fighting body's own more complex
+     background setup. */
+  html { background: #090c1c url('/assets/img/bg-space.jpg') center/cover no-repeat fixed; }
 </style>
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;600&display=swap" />
+<link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;600&display=swap" onload="this.onload=null;this.rel='stylesheet'" />
+<noscript><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;600&display=swap" /></noscript>
 <link rel="stylesheet" href="/assets/style.css" />
 <link rel="stylesheet" href="/assets/maintenance-breathing-light.css" />
 <link rel="stylesheet" href="/assets/settings-dropdown.css" />
