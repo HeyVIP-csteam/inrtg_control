@@ -176,8 +176,10 @@
         const when = a.updatedAt ? new Date(a.updatedAt).toLocaleString() : "";
         return `
           <div class="ann-list-item${a.id === selectedId ? " selected" : ""}" data-id="${esc(a.id)}">
-            <div class="ann-list-topic">${esc(a.topic || "REMINDER")}</div>
-            <div class="ann-list-status ${st}"><span class="dot"></span>${STATUS_LABEL[st]}</div>
+            <div class="ann-list-row">
+              <div class="ann-list-topic">${esc(a.topic || "REMINDER")}</div>
+              <div class="ann-list-status ${st}"><span class="dot"></span>${STATUS_LABEL[st]}</div>
+            </div>
             <div class="ann-list-meta">${esc(a.updatedBy || a.createdBy || "")} · ${esc(when)}</div>
           </div>`;
       }).join("");
@@ -197,9 +199,14 @@
 
       const topicOptions = topics.map((t) => `<option value="${esc(t)}"${a && a.topic === t ? " selected" : ""}>${esc(t)}</option>`).join("");
       const ro = canEdit ? "" : "disabled";
-      const metaLine = a
-        ? `Created by ${esc(a.createdBy || "?")} · ${a.createdAt ? new Date(a.createdAt).toLocaleString() : ""}<br/>Last updated by ${esc(a.updatedBy || "?")} · ${a.updatedAt ? new Date(a.updatedAt).toLocaleString() : ""}`
-        : "Not saved yet.";
+      // Replaces the old Active checkbox — the save button itself doubles
+      // as the status toggle, labeled with the state clicking it WILL
+      // produce (not the current one), so "Active" means "save + turn
+      // this on" and "Inactive" means "save + turn this off". New drafts
+      // default to becoming Active on first save, matching the checkbox's
+      // old default of checked=true for a brand-new announcement.
+      const currentEnabled = a ? !!a.enabled : true;
+      const toggleLabel = currentEnabled ? "Inactive" : "Active";
 
       card.innerHTML = `
         <div class="ann-form-scroll">
@@ -210,7 +217,7 @@
           </div>
           <div class="field">
             <label>Message <span class="required">*</span></label>
-            <textarea id="annText" rows="4" placeholder="Message shown in the banner" ${ro}>${esc(a ? a.text : "")}</textarea>
+            <textarea id="annText" rows="8" placeholder="Message shown in the banner" ${ro}>${esc(a ? a.text : "")}</textarea>
           </div>
           <div class="ann-datetime-row">
             <div class="field">
@@ -222,17 +229,12 @@
               <input type="datetime-local" id="annEnd" value="${a ? toLocalInputValue(a.endAt) : ""}" ${ro} />
             </div>
           </div>
-          <div class="ann-checkbox-row">
-            <input type="checkbox" id="annEnabled" ${a ? (a.enabled ? "checked" : "") : "checked"} ${ro} />
-            <label for="annEnabled">Active</label>
-          </div>
-          <p class="ann-form-meta">${metaLine}</p>
           <p class="edit-modal-note" id="annNote"></p>
           ${canEdit ? "" : '<p class="edit-modal-note">View only.</p>'}
         </div>
         <div class="ann-form-footer">
-          ${canEdit && a ? '<button type="button" class="btn-secondary" id="annDeleteBtn">Delete</button>' : ""}
-          ${canEdit ? '<button type="button" class="btn-submit" id="annSaveBtn" style="width:auto;padding:9px 18px;">Save</button>' : ""}
+          ${canEdit && a ? '<button type="button" class="btn-danger" id="annDeleteBtn">Delete</button>' : ""}
+          ${canEdit ? `<button type="button" class="btn-submit" id="annSaveBtn" data-target-enabled="${currentEnabled ? "false" : "true"}" style="width:auto;padding:9px 18px;">${toggleLabel}</button>` : ""}
         </div>`;
 
       const saveBtn = document.getElementById("annSaveBtn");
@@ -275,7 +277,7 @@
         id: isNewDraft ? undefined : selectedId,
         topic: document.getElementById("annTopic").value,
         text,
-        enabled: document.getElementById("annEnabled").checked,
+        enabled: document.getElementById("annSaveBtn").dataset.targetEnabled === "true",
         startAt: fromLocalInputValue(document.getElementById("annStart").value),
         endAt: fromLocalInputValue(document.getElementById("annEnd").value),
       };

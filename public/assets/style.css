@@ -581,12 +581,9 @@ a { color: inherit; text-decoration: none; }
 .sidebar {
   width: 290px;
   flex-shrink: 0;
-  background: var(--sidebar-bg);
   border-right: 1px solid var(--panel-border);
   padding: 24px 16px 40px;
   overflow-y: auto;
-  backdrop-filter: blur(16px) saturate(160%);
-  -webkit-backdrop-filter: blur(16px) saturate(160%);
 }
 .sidebar-header {
   display: flex;
@@ -842,14 +839,11 @@ a { color: inherit; text-decoration: none; }
 .threads-sidebar {
   width: 300px;
   flex-shrink: 0;
-  background: var(--sidebar-bg);
   border-right: 1px solid var(--panel-border);
   padding: 18px 14px 0;
   overflow-y: auto;
   display: flex;
   flex-direction: column;
-  backdrop-filter: blur(16px) saturate(160%);
-  -webkit-backdrop-filter: blur(16px) saturate(160%);
 }
 .threads-search {
   display: flex; align-items: center; gap: 8px;
@@ -875,10 +869,8 @@ a { color: inherit; text-decoration: none; }
 .threads-empty { font-size: 12px; color: var(--ink-soft); text-align: center; padding: 24px 10px; }
 .thread-list {
   display: flex; flex-direction: column; gap: 6px; margin-bottom: 18px;
-  padding: 6px; border-radius: 12px;
-  background: rgba(255, 255, 255, 0.025); border: 1px solid var(--panel-border);
+  padding: 6px;
 }
-[data-theme="light"] .thread-list { background: rgba(0, 0, 0, 0.02); }
 
 /* Recall Chat History — same template as Active/Solved, red-tinted count +
    box border so it reads as "sensitive" without being hidden from admins. */
@@ -897,6 +889,7 @@ a { color: inherit; text-decoration: none; }
   padding: 9px 10px; border-radius: 12px;
   border-left: 3px solid transparent;
   cursor: pointer;
+  background: var(--sidebar-item-bg);
   transition: background 0.15s ease;
 }
 .thread-item:hover { background: var(--sidebar-item-hover); }
@@ -1324,7 +1317,7 @@ h1 {
   outline: none;
   border-color: #38bdf8;
 }
-.field textarea { resize: vertical; min-height: 90px; }
+.field textarea { resize: vertical; min-height: 170px; }
 
 /* Highlighted "what kind of issue" box */
 .field-emphasize {
@@ -1605,7 +1598,13 @@ body.announcements-page #announcementBanner { flex-shrink: 0; }
 body.announcements-page .ann-page-backrow { flex-shrink: 0; }
 body.announcements-page .ann-shell { flex: 1; min-height: 0; }
 
-.ann-page-backrow { padding: 14px 24px 0; }
+.ann-page-backrow { padding: 8px 24px 0; }
+/* When the announcement banner is actually showing above this row (it's
+   empty — no padding/border of its own — when there's nothing active to
+   show), the banner's own bottom border already anchors the top of the
+   page visually, so the row below it needs less breathing room than
+   when it's the very first thing on the page. */
+#announcementBanner:has(.ann-banner) + .ann-page-backrow { padding-top: 2px; }
 .ann-shell { display: flex; height: 100%; overflow: hidden; }
 .ann-sidebar {
   width: 300px; flex-shrink: 0; border-right: 1px solid var(--panel-border);
@@ -1618,13 +1617,19 @@ body.announcements-page .ann-shell { flex: 1; min-height: 0; }
   padding: 10px 12px; border-radius: 12px; cursor: pointer;
   border-left: 3px solid transparent;
   margin-bottom: 4px;
+  background: var(--sidebar-item-bg);
 }
 .ann-list-item:hover { background: var(--sidebar-item-hover); }
 .ann-list-item.selected { background: var(--sidebar-item-hover); border-left-color: var(--accent-gold); }
-.ann-list-topic { font-size: 12.5px; font-weight: 700; color: var(--ink); }
-.ann-list-status { display: inline-flex; align-items: center; gap: 4px; font-size: 10.5px; font-weight: 700; }
+.ann-list-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.ann-list-topic { font-size: 12.5px; font-weight: 700; color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ann-list-status { display: inline-flex; align-items: center; gap: 4px; font-size: 10.5px; font-weight: 700; flex-shrink: 0; }
 .ann-list-status .dot { width: 6px; height: 6px; border-radius: 50%; }
-.ann-list-status.active .dot { background: #34d399; }
+.ann-list-status.active .dot { background: #34d399; animation: ann-pulse 1.8s ease-in-out infinite; }
+@keyframes ann-pulse {
+  0%, 100% { opacity: 1; box-shadow: 0 0 0 0 rgba(52, 211, 153, 0.55); }
+  50% { opacity: 0.75; box-shadow: 0 0 0 4px rgba(52, 211, 153, 0); }
+}
 .ann-list-status.inactive .dot { background: var(--ink-soft); }
 .ann-list-status.scheduled .dot { background: #38bdf8; }
 .ann-list-status.expired .dot { background: #e0577a; }
@@ -1652,6 +1657,9 @@ body.announcements-page .ann-shell { flex: 1; min-height: 0; }
 .ann-form-meta { font-size: 11px; color: var(--ink-soft); margin-top: 4px; }
 .ann-datetime-row { display: flex; gap: 10px; }
 .ann-datetime-row .field { flex: 1; }
-.ann-checkbox-row { display: flex; align-items: center; gap: 8px; margin-bottom: 18px; }
-.ann-checkbox-row label { font-size: 13px; font-weight: 600; color: var(--ink); cursor: pointer; }
+.btn-danger {
+  border: 1.5px solid #e0577a; background: none; color: #e0577a;
+  border-radius: 10px; padding: 9px 16px; font-size: 13px; font-weight: 700; cursor: pointer;
+}
+.btn-danger:hover { background: rgba(224, 87, 122, 0.1); }
 .ann-empty-state { display: flex; align-items: center; justify-content: center; height: 100%; color: var(--ink-soft); font-size: 13px; }
