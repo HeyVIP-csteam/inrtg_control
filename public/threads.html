@@ -414,6 +414,18 @@
         const key = itemRenderKey(item);
         let entry = renderedItemEls.get(item.id);
         if (!entry || entry.key !== key) {
+          // Detach the stale node BEFORE swapping the Map pointer to the
+          // new one. Without this, the old element (still physically in
+          // the DOM wherever it was last positioned) loses its only
+          // reference the moment the Map entry is overwritten — it's no
+          // longer reachable by the cleanup sweep below (which only walks
+          // *current* Map entries), so it never gets removed. It just sits
+          // there as a permanent duplicate row. This bites hardest on
+          // threads that update often (new replies bump replyCount /
+          // lastActivity, which are in the fingerprint), so busy tickets
+          // pile up ghost copies the fastest — exactly what a growing
+          // "same TID shows up N times" list looks like.
+          if (entry) entry.el.remove();
           entry = { el: renderItem(item), key };
           renderedItemEls.set(item.id, entry);
           touchedEls.push(entry.el);
