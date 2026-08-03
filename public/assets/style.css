@@ -31,7 +31,7 @@
   --sf-filter: brightness(1.4) saturate(0.85) contrast(0.95);
   --sf-shade: linear-gradient(180deg, rgba(234,241,255,0.55) 0%, rgba(217,206,244,0.62) 45%, rgba(196,178,238,0.72) 100%);
   --sidebar-bg: rgba(255, 255, 255, 0.28);
-  --sidebar-item-bg: rgba(255, 255, 255, 0.55);
+  --sidebar-item-bg: rgba(255, 255, 255, 0.68);
   --sidebar-item-hover: rgba(255, 255, 255, 0.82);
   --pill-bg: rgba(255, 255, 255, 0.6);
   --pill-border: rgba(255, 255, 255, 0.75);
@@ -74,7 +74,7 @@
   --sf-filter: none;
   --sf-shade: linear-gradient(180deg, rgba(3,4,13,0.35) 0%, rgba(3,4,13,0.55) 55%, rgba(3,4,13,0.75) 100%);
   --sidebar-bg: rgba(15, 19, 40, 0.75);
-  --sidebar-item-bg: rgba(255, 255, 255, 0.03);
+  --sidebar-item-bg: rgba(20, 26, 51, 0.85);
   --sidebar-item-hover: rgba(255, 255, 255, 0.07);
   --pill-bg: rgba(255, 255, 255, 0.04);
   --pill-border: rgba(255, 255, 255, 0.1);
@@ -598,6 +598,54 @@ a { color: inherit; text-decoration: none; }
 }
 .sidebar-header .dot { width: 6px; height: 6px; border-radius: 50%; background: #7c6cf0; }
 
+/* ---- Shared "cool factor" treatment for all three card types (Topic
+   sidebar items, TG Reply Threads list items, Announcement list items):
+   a twinkling corner star + a slow breathing edge glow + a soft shimmer
+   sweep across the surface. Three independent animation timings so they
+   never sync up and look mechanical. Applied via one shared selector
+   group so all three stay visually identical and only need updating in
+   one place. `position: relative` + `overflow: hidden` are required here
+   (not assumed already present on every one of the three) — the sweep's
+   ::before and the star's ::after are both absolutely positioned and
+   need to stay clipped to the card's own rounded corners. */
+.sidebar-item, .thread-item, .ann-list-item {
+  position: relative;
+  overflow: hidden;
+  animation: card-glow 2.6s ease-in-out infinite;
+}
+.sidebar-item::before, .thread-item::before, .ann-list-item::before {
+  content: "";
+  position: absolute; inset: 0;
+  background: linear-gradient(115deg, transparent 40%, rgba(255,255,255,0.09) 50%, transparent 60%);
+  background-size: 250% 100%;
+  animation: card-sweep 3.4s ease-in-out infinite;
+  pointer-events: none;
+}
+.sidebar-item::after, .thread-item::after, .ann-list-item::after {
+  content: "";
+  position: absolute; top: 10px; right: 12px;
+  width: 5px; height: 5px; border-radius: 50%; background: #fff;
+  box-shadow: 0 0 4px 1px rgba(255, 255, 255, 0.8);
+  animation: card-twinkle 2.2s ease-in-out infinite;
+  pointer-events: none;
+}
+@keyframes card-glow {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(124, 108, 240, 0); }
+  50% { box-shadow: 0 0 14px 1px rgba(124, 108, 240, 0.45); }
+}
+@keyframes card-sweep {
+  0% { background-position: 200% 0; }
+  60%, 100% { background-position: -50% 0; }
+}
+@keyframes card-twinkle {
+  0%, 100% { opacity: 0.3; transform: scale(0.8); }
+  50% { opacity: 1; transform: scale(1.3); }
+}
+/* Recall History cards keep their existing red tint undisturbed — the
+   glow above is a general blue/purple accent that would clash with
+   "this is sensitive" red styling, so it's turned off there specifically. */
+.recall-item { animation: none; }
+.recall-item::before, .recall-item::after { display: none; }
 .sidebar-item {
   display: flex;
   align-items: center;
