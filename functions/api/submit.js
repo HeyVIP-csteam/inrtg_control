@@ -9,6 +9,7 @@ import { createThread } from "../_shared/threads.js";
 import { verifyRequest, canSeeBrand, canSeeModule } from "../_shared/accounts.js";
 import { getRouteOverride } from "../_shared/routes.js";
 import { getFeatureStatus, accountCanBypass } from "../_shared/featureStatus.js";
+import { compressImageForTelegram } from "../_shared/telegramImageCompress.js";
 
 const VALID_MODULES = Object.keys(MODULE_META);
 
@@ -22,6 +23,7 @@ export async function onRequestPost(context) {
   try {
     return await handleSubmit(context);
   } catch (e) {
+    console.error("submit.js: unexpected error", e && e.stack || e);
     return json({ ok: false, error: `Unexpected server error: ${String(e && e.message || e)}` }, 500);
   }
 }
@@ -417,10 +419,21 @@ async function sendTelegramWithAttachments({ botToken, route, text, attachments 
 
 async function sendSingleWithCaption({ botToken, route, text, attachment }) {
   const { name, type, dataUrl } = attachment;
-  const bytes = base64ToBytes(dataUrlToBase64(dataUrl));
-  const blob = new Blob([bytes], { type: type || "application/octet-stream" });
+  let bytes = base64ToBytes(dataUrlToBase64(dataUrl));
+  let sendType = type;
 
   const isImage = looksLikeImage(type, name);
+  // Only photos can hit Telegram's 10MB sendPhoto limit in the first
+  // place — sendDocument has a much higher cap, so documents are never
+  // routed through this (see compressImageForTelegram's own threshold
+  // check too, which is a no-op for anything already under it).
+  if (isImage) {
+    const result = await compressImageForTelegram(bytes, type);
+    bytes = result.bytes;
+    sendType = result.type;
+  }
+  const blob = new Blob([bytes], { type: sendType || "application/octet-stream" });
+
   const method = isImage ? "sendPhoto" : "sendDocument";
   const field = isImage ? "photo" : "document";
 
@@ -457,11 +470,17 @@ async function sendMediaGroup({ botToken, route, text, attachments }) {
   });
   form.append("media", JSON.stringify(media));
 
-  attachments.forEach((att, i) => {
-    const bytes = base64ToBytes(dataUrlToBase64(att.dataUrl));
-    const blob = new Blob([bytes], { type: att.type || "image/jpeg" });
+  // This path is only ever reached when every attachment already
+  // "looksLikeImage" (see the allImages check at the call site), so every
+  // item here is a candidate for compression — no per-item isImage check
+  // needed, unlike sendSingleWithCaption above.
+  for (let i = 0; i < attachments.length; i++) {
+    const att = attachments[i];
+    const raw = base64ToBytes(dataUrlToBase64(att.dataUrl));
+    const { bytes, type } = await compressImageForTelegram(raw, att.type);
+    const blob = new Blob([bytes], { type: type || "image/jpeg" });
     form.append(`file${i}`, blob, att.name || `photo${i}`);
-  });
+  }
 
   const res = await fetch(`https://api.telegram.org/bot${botToken}/sendMediaGroup`, { method: "POST", body: form });
   const data = await res.json();

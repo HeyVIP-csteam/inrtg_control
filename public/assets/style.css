@@ -1610,33 +1610,70 @@ body.page-transition-out { animation: pageFadeOut 0.09s ease forwards; }
 .ann-banner-close:hover { color: var(--ink); background: rgba(0, 0, 0, 0.08); }
 
 /* ================================================================
-   Centered popup toast (public/assets/toast.js)
+   Site-wide toast (feedback popup) styles.
+
+   One rule set shared by every page via window.showToast(message, type) —
+   see /assets/toast.js. Success and failure are deliberately styled very
+   differently (see toast.js for why they also *behave* differently):
+   success is a quick, quiet confirmation; failure is visually heavier
+   (thicker border, tinted background, darker overlay) because it usually
+   needs to be read carefully, not just glanced at.
    ================================================================ */
-.toast-overlay {
-  position: fixed; inset: 0; z-index: 200;
-  display: flex; align-items: center; justify-content: center;
-  background: rgba(0, 0, 0, 0);
+#globalToastOverlay {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  /* Not a modal — never intercept clicks. This also lets "click anywhere
+     to dismiss" (for error toasts) reuse a plain document-level click
+     listener instead of needing its own hit target. */
   pointer-events: none;
-  transition: background 0.2s ease;
+  background: rgba(5, 7, 20, 0);
+  transition: background 0.25s ease;
 }
-.toast-overlay.is-open { background: rgba(0, 0, 0, 0.12); }
-.toast-card {
-  pointer-events: none;
-  display: flex; align-items: center; gap: 10px;
-  padding: 14px 22px; border-radius: 14px;
-  background: var(--card-bg); color: var(--ink);
+#globalToastOverlay.toast-show { background: rgba(5, 7, 20, 0.45); }
+#globalToastOverlay.toast-overlay-err.toast-show { background: rgba(5, 7, 20, 0.6); }
+#globalToastOverlay .toast-card {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: var(--card-bg);
   border: 1px solid var(--panel-border);
-  box-shadow: var(--shadow);
-  font-size: 13.5px; font-weight: 700;
-  opacity: 0; transform: translateY(8px) scale(0.97);
+  border-radius: 14px;
+  padding: 16px 26px;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--ink);
+  text-align: center;
+  max-width: min(440px, 82vw);
+  box-shadow: 0 20px 40px -12px rgba(0, 0, 0, 0.45);
+  opacity: 0;
+  transform: translateY(-8px) scale(0.94);
   transition: opacity 0.2s ease, transform 0.2s ease;
 }
-.toast-overlay.is-open .toast-card { opacity: 1; transform: translateY(0) scale(1); }
-.toast-card .toast-icon { font-size: 16px; }
-.toast-card.toast-ok { border-color: rgba(52, 211, 153, 0.4); }
-.toast-card.toast-ok .toast-icon { color: #1a9c6e; }
-.toast-card.toast-err { border-color: rgba(239, 74, 114, 0.4); }
-.toast-card.toast-err .toast-icon { color: #e0577a; }
+#globalToastOverlay.toast-show .toast-card {
+  opacity: 1;
+  transform: translateY(0) scale(1);
+}
+#globalToastOverlay .toast-icon { font-size: 17px; line-height: 1; flex: none; }
+#globalToastOverlay .toast-card.toast-ok {
+  border-color: rgba(26, 156, 110, 0.4);
+}
+#globalToastOverlay .toast-card.toast-ok .toast-icon { color: #1a9c6e; }
+#globalToastOverlay .toast-card.toast-err {
+  border: 2px solid #e0577a;
+  background: rgba(224, 87, 122, 0.1);
+  text-align: left;
+}
+#globalToastOverlay .toast-card.toast-err .toast-icon { color: #e0577a; }
+#globalToastOverlay .toast-body { display: flex; flex-direction: column; gap: 4px; }
+#globalToastOverlay .toast-hint {
+  font-size: 11px;
+  font-weight: 500;
+  opacity: 0.75;
+}
 
 /* ================================================================
    Announcements management page (public/announcements.html)

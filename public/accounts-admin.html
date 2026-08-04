@@ -47,6 +47,7 @@
 <script src="/assets/theme.js"></script>
 <script src="/assets/starfield.js" defer></script>
 <script src="/assets/schemas.js"></script>
+<script src="/assets/toast.js"></script>
 <style>
   .admin-shell { max-width: 1360px; margin: 0 auto; padding: 24px 20px 80px; }
   .admin-tabs { display: flex; gap: 8px; margin-bottom: 18px; }
@@ -246,6 +247,18 @@
       return String(str == null ? "" : str).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
     }
 
+    // Single funnel for every save/delete/lock result on this page — the
+    // "ok"/"err" branch always goes out via the one shared toast, never
+    // duplicated as a second inline copy of the same text. Mirrors
+    // setAcctNote() in index.html; kept as its own copy here rather than
+    // shared because this page has no module loader for it. `msgEl` may
+    // be omitted for actions with no dedicated inline slot (delete/lock).
+    function setAdminMsg(msgEl, text, cls) {
+      if (msgEl) { msgEl.innerHTML = ""; }
+      if (window.showToast) window.showToast(text, cls);
+      else if (cls === "err") alert(text);
+    }
+
     // ---- login ----
     document.getElementById("toBootstrap").addEventListener("click", () => {
       document.getElementById("normalLoginFields").style.display = "none";
@@ -391,7 +404,7 @@
     document.getElementById("officeSaveBtn").addEventListener("click", async () => {
       const msg = document.getElementById("officeMsg");
       const name = document.getElementById("officeName").value.trim();
-      if (!name) { msg.innerHTML = '<div class="admin-msg err">Office name is required.</div>'; return; }
+      if (!name) { setAdminMsg(msg, "Office name is required.", "err"); return; }
       const allowedIPs = document.getElementById("officeIPs").value.split("\n").map((s) => s.trim()).filter(Boolean);
       const id = document.getElementById("officeId").value || undefined;
       const res = await adminFetch("/api/admin/offices", {
@@ -399,18 +412,21 @@
         body: JSON.stringify({ action: "save", id, name, allowedIPs }),
       });
       const data = await res.json();
-      if (!data.ok) { msg.innerHTML = `<div class="admin-msg err">${escapeHtml(data.error || "Save failed.")}</div>`; return; }
-      msg.innerHTML = '<div class="admin-msg ok">Saved.</div>';
+      if (!data.ok) { setAdminMsg(msg, data.error || "Save failed.", "err"); return; }
+      setAdminMsg(msg, "Saved.", "ok");
       resetOfficeForm();
       loadOffices();
     });
 
     async function deleteOffice(id) {
       if (!confirm("Delete this office? Accounts assigned to it will need a new office.")) return;
-      await adminFetch("/api/admin/offices", {
+      const res = await adminFetch("/api/admin/offices", {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action: "delete", id }),
       });
+      const data = await res.json();
+      if (!data.ok) { setAdminMsg(null, data.error || "Delete failed.", "err"); return; }
+      setAdminMsg(null, "Deleted.", "ok");
       loadOffices();
     }
 
@@ -527,8 +543,8 @@
       const username = document.getElementById("accountUsername").value.trim();
       const password = document.getElementById("accountPassword").value;
       const isNew = !document.getElementById("accountOriginalUsername").value;
-      if (!username) { msg.innerHTML = '<div class="admin-msg err">Username is required.</div>'; return; }
-      if (isNew && !password) { msg.innerHTML = '<div class="admin-msg err">Password is required for a new account.</div>'; return; }
+      if (!username) { setAdminMsg(msg, "Username is required.", "err"); return; }
+      if (isNew && !password) { setAdminMsg(msg, "Password is required for a new account.", "err"); return; }
 
       const allBrands = document.getElementById("accountAllBrands").checked;
       const allowedBrands = allBrands ? "all" : Array.from(document.querySelectorAll("#accountBrandChecks input:checked")).map((el) => el.value);
@@ -545,18 +561,21 @@
         }),
       });
       const data = await res.json();
-      if (!data.ok) { msg.innerHTML = `<div class="admin-msg err">${escapeHtml(data.error || "Save failed.")}</div>`; return; }
-      msg.innerHTML = '<div class="admin-msg ok">Saved.</div>';
+      if (!data.ok) { setAdminMsg(msg, data.error || "Save failed.", "err"); return; }
+      setAdminMsg(msg, "Saved.", "ok");
       resetAccountForm();
       loadAccounts();
     });
 
     async function deleteAccount(username) {
       if (!confirm(`Delete account "${username}"?`)) return;
-      await adminFetch("/api/admin/accounts", {
+      const res = await adminFetch("/api/admin/accounts", {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action: "delete", username }),
       });
+      const data = await res.json();
+      if (!data.ok) { setAdminMsg(null, data.error || "Delete failed.", "err"); return; }
+      setAdminMsg(null, "Deleted.", "ok");
       loadAccounts();
     }
 
@@ -568,7 +587,11 @@
         body: JSON.stringify({ action: locked ? "lock" : "unlock", username }),
       });
       const data = await res.json();
-      if (!data.ok) { alert(data.error || `${verb} failed.`); return; }
+      if (!data.ok) { setAdminMsg(null, data.error || `${verb} failed.`, "err"); return; }
+      // Wording follows the actual `locked` this call just saved, never
+      // hardcoded — see toast design doc §5 (dynamic wording for
+      // two-way/multi-state actions).
+      setAdminMsg(null, `${verb}ed.`, "ok");
       loadAccounts();
     }
   </script>

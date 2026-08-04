@@ -1315,8 +1315,16 @@
         body: JSON.stringify({ action: locked ? "lock" : "unlock", username }),
       });
       const data = await res.json();
-      if (!data.ok) { alert(data.error || `${verb} failed.`); return; }
+      if (!data.ok) {
+        if (window.showToast) window.showToast(data.error || `${verb} failed.`, "err");
+        else alert(data.error || `${verb} failed.`);
+        return;
+      }
       await loadAgentProfileTable();
+      // Wording is derived from `verb` (computed from the actual `locked`
+      // this call just saved), never hardcoded — a fixed string here would
+      // say "Locked." on an unlock and vice versa. See toast design doc §5.
+      if (window.showToast) window.showToast(`${verb}ed.`, "ok");
     }
 
     // ---- Agent Personal Profile popup ----

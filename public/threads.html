@@ -1015,7 +1015,8 @@
       });
       const data = await res.json();
       if (!data.ok) {
-        alert(data.error || "Delete failed.");
+        if (window.showToast) window.showToast(data.error || "Delete failed.", "err");
+        else alert(data.error || "Delete failed.");
         return;
       }
       selectedId = null;
@@ -1023,6 +1024,7 @@
       main.innerHTML = `<div class="threads-placeholder">Pick a thread on the left, or submit a form to start one.</div>`;
       removeLocalThread(deletedId);
       loadList();
+      if (window.showToast) window.showToast("Deleted.", "ok");
     }
 
     // ---- @mention autocomplete ------------------------------------------
@@ -1179,6 +1181,10 @@
         });
         const data = await res.json();
         if (!data.ok) {
+          // Deliberately stays a plain alert(), not the unified toast:
+          // this is high-frequency chat-style sending (see toast design
+          // doc §7 exception 1) — a click-to-dismiss toast would be a
+          // constant tax on every retry in a busy thread.
           alert("❌ Send failed: " + (data.error || "unknown error") + "\n\nYour message wasn't sent — try again.");
           return; // keep input + attachments so the agent can retry without retyping
         }
@@ -1202,11 +1208,18 @@
     async function editRoot() {
       const newText = prompt("Edit the original Telegram message text:\n(This edits the exact message, including any formatting tags.)", selectedThread.rootText || "");
       if (newText === null) return; // cancelled
+      // Input validation, not an action result — stays a plain alert()
+      // rather than the unified toast (see toast design doc §7 exception 1).
       if (!newText.trim()) return alert("Text can't be empty.");
       const res = await postAction({ action: "editRoot", text: newText });
-      if (!res.ok) return alert(res.error || "Edit failed.");
+      if (!res.ok) {
+        if (window.showToast) window.showToast(res.error || "Edit failed.", "err");
+        else alert(res.error || "Edit failed.");
+        return;
+      }
       selectedThread = res.thread;
       updateThreadContent(selectedThread);
+      if (window.showToast) window.showToast("Edited.", "ok");
     }
 
     // "🔄 Sync to Sheet" flow — a real per-field form (built straight off
@@ -1320,9 +1333,16 @@
 
         const res = await postAction({ action: "editDetails", fields, fieldMap: newFieldMap });
         if (!res.ok) {
-          statusEl.textContent = res.error || "Save failed.";
-          statusEl.className = "edit-details-status err";
-          if (window.showToast) window.showToast(res.error || "Save failed", "err");
+          // Result routes through the unified toast only, same as
+          // everywhere else — this used to also write the identical
+          // error text into statusEl at the same moment, which is the
+          // "two things say the same thing at once" duplicate the toast
+          // unification pass targeted (see feedback-toast-system-design.md
+          // §1, §4). statusEl stays reserved for the missingRequired
+          // check above, which fires before any request and has no toast.
+          statusEl.textContent = "";
+          statusEl.className = "edit-details-status";
+          if (window.showToast) window.showToast(res.error || "Save failed.", "err");
           saveBtn.disabled = false;
           saveBtn.textContent = "Save & Sync";
           return;
@@ -1555,8 +1575,15 @@
         }).then((r) => r.json());
 
         if (!res.ok) {
-          statusEl.textContent = res.error || "Forward failed.";
-          statusEl.className = "edit-details-status err";
+          // Routed through the unified toast, not just the inline
+          // statusEl — this action (Forward) was the one save/action
+          // flow on this page still missing the shared toast entirely.
+          // See feedback-toast-system-design.md §6 (Forward is one of
+          // the standard action types) and §4 (funnel ok/err through
+          // one place rather than leaving it inline-only).
+          statusEl.textContent = "";
+          statusEl.className = "edit-details-status";
+          if (window.showToast) window.showToast(res.error || "Forward failed.", "err");
           submitBtn.disabled = false;
           submitBtn.textContent = "Generate & Send";
           return;
@@ -1574,35 +1601,53 @@
         loadList();
         close();
         openThread(res.thread.id); // jump straight to the new ticket
+        if (window.showToast) window.showToast("Forwarded.", "ok");
       });
     }
 
     async function recallRoot() {
       if (!confirm("Recall the original ticket message from Telegram? This removes it from the group. Your tracking record, the Sheet row, and this conversation stay.")) return;
       const res = await postAction({ action: "recallRoot" });
-      if (!res.ok) return alert(res.error || "Recall failed.");
+      if (!res.ok) {
+        if (window.showToast) window.showToast(res.error || "Recall failed.", "err");
+        else alert(res.error || "Recall failed.");
+        return;
+      }
       selectedThread = res.thread;
       updateThreadContent(selectedThread);
       patchLocalThread(selectedThread);
       loadList();
+      if (window.showToast) window.showToast("Recalled.", "ok");
     }
 
     async function editReply(messageId, currentText) {
       const newText = prompt("Edit this reply:", currentText || "");
       if (newText === null) return;
+      // Input validation, not an action result — stays a plain alert()
+      // rather than the unified toast (see toast design doc §7 exception 1).
       if (!newText.trim()) return alert("Text can't be empty.");
       const res = await postAction({ action: "editReply", messageId: Number(messageId), text: newText });
-      if (!res.ok) return alert(res.error || "Edit failed.");
+      if (!res.ok) {
+        if (window.showToast) window.showToast(res.error || "Edit failed.", "err");
+        else alert(res.error || "Edit failed.");
+        return;
+      }
       selectedThread = res.thread;
       updateThreadContent(selectedThread);
+      if (window.showToast) window.showToast("Edited.", "ok");
     }
 
     async function recallReply(messageId) {
       if (!confirm("Recall this reply from Telegram?")) return;
       const res = await postAction({ action: "recallReply", messageId: Number(messageId) });
-      if (!res.ok) return alert(res.error || "Recall failed.");
+      if (!res.ok) {
+        if (window.showToast) window.showToast(res.error || "Recall failed.", "err");
+        else alert(res.error || "Recall failed.");
+        return;
+      }
       selectedThread = res.thread;
       updateThreadContent(selectedThread);
+      if (window.showToast) window.showToast("Recalled.", "ok");
     }
 
     async function postAction(payload) {

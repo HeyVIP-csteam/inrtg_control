@@ -58,6 +58,7 @@ import { verifyRequest, canSeeBrand } from "../../_shared/accounts.js";
 import { BRANDS, MODULE_META, MESSAGE_TEMPLATE, PROMOTION_MESSAGE_TEMPLATE } from "../../_shared/routing.js";
 import { updateRowByColumns } from "../../_shared/googleSheets.js";
 import { buildTicketMessage, buildTitleAndSummary, resolveColumnValues } from "../../_shared/messageBuilders.js";
+import { compressImageForTelegram } from "../../_shared/telegramImageCompress.js";
 
 export async function onRequestGet({ request, env, params }) {
   if (!env.THREADS_KV) return json({ ok: false, error: "THREADS_KV is not bound yet." }, 500);
@@ -80,6 +81,7 @@ export async function onRequestPost(context) {
   try {
     return await handleThreadAction(context);
   } catch (e) {
+    console.error("threads/[id].js: unexpected error", e && e.stack || e);
     return json({ ok: false, error: `Unexpected server error: ${String(e && e.message || e)}` }, 500);
   }
 }
@@ -477,9 +479,19 @@ async function sendTelegramReplyAttachments(env, thread, text, attachments, repl
 
 async function sendReplySingleWithCaption(env, thread, text, attachment, replyId) {
   const { name, type, dataUrl } = attachment;
-  const blob = new Blob([dataUrlToBytes(dataUrl)], { type: type || "application/octet-stream" });
-
   const kind = attachmentKind(type, name);
+  let bytes = dataUrlToBytes(dataUrl);
+  let sendType = type;
+  // Only "photo"-kind attachments can hit sendPhoto's 10MB cap — videos
+  // go through sendVideo (much higher limit) and documents through
+  // sendDocument (2GB via the Bot API), neither of which needs this.
+  if (kind === "photo") {
+    const result = await compressImageForTelegram(bytes, type);
+    bytes = result.bytes;
+    sendType = result.type;
+  }
+  const blob = new Blob([bytes], { type: sendType || "application/octet-stream" });
+
   const method = kind === "photo" ? "sendPhoto" : kind === "video" ? "sendVideo" : "sendDocument";
   const field = kind; // "photo" | "video" | "document" — same names as the FormData field Telegram expects
 
@@ -527,10 +539,22 @@ async function sendReplyMediaGroup(env, thread, text, attachments, replyId) {
   });
   form.append("media", JSON.stringify(media));
 
-  attachments.forEach((att, i) => {
-    const blob = new Blob([dataUrlToBytes(att.dataUrl)], { type: att.type || "application/octet-stream" });
+  // Photos and videos can share one album, but only photos are
+  // candidates for compression (sendPhoto's limit, not sendVideo's) — so
+  // each item is only routed through compressImageForTelegram when its
+  // own kind is "photo", videos pass through untouched either way.
+  for (let i = 0; i < attachments.length; i++) {
+    const att = attachments[i];
+    let bytes = dataUrlToBytes(att.dataUrl);
+    let sendType = att.type;
+    if (attachmentKind(att.type, att.name) === "photo") {
+      const result = await compressImageForTelegram(bytes, att.type);
+      bytes = result.bytes;
+      sendType = result.type;
+    }
+    const blob = new Blob([bytes], { type: sendType || "application/octet-stream" });
     form.append(`file${i}`, blob, att.name || `file${i}`);
-  });
+  }
 
   const res = await fetch(`https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/sendMediaGroup`, { method: "POST", body: form });
   const data = await res.json();

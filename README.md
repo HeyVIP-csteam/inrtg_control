@@ -1,5 +1,17 @@
 # Issue Submission Hub → Telegram
 
+> **Deployment note (Cloudflare Pages dashboard, one-time):** `functions/`
+> now depends on `@cf-wasm/photon` (photo compression before sending to
+> Telegram — see `functions/_shared/telegramImageCompress.js`). This
+> project has no frontend build step (`public/` is served as-is), so its
+> Build command has always been empty — that was fine when Functions had
+> zero dependencies, but now it means Cloudflare skips `npm install`
+> entirely and the build fails with "Cannot find module '@cf-wasm/photon'".
+> Fix: **Workers & Pages → this project → Settings → Builds & deployments
+> → Build command → set it to `npm install`** (Build output directory
+> stays `public`). This has to be done in the dashboard — a `[build]` key
+> in `wrangler.toml` is a Workers-only concept and Pages ignores it.
+
 A small static site + Cloudflare Pages Function that takes form submissions
 (QA, Account Issue, Promotion Request, Daily Report, Genie Issue) and posts
 a formatted message to the right Telegram group/topic for the brand.

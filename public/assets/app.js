@@ -492,22 +492,35 @@
       const data = await res.json();
       if (!res.ok || !data.ok) throw new Error(data.error || "Submission failed");
 
-      status.textContent = !data.sheetAttempted
-        ? "Submitted — posted to Telegram."
-        : data.sheetLogged
-        ? "Submitted — posted to Telegram and logged to sheet."
-        : `Submitted to Telegram, but sheet logging failed: ${data.sheetError || "unknown error"}`;
+      // Final result (ok / partial-fail / fail) now shows via the unified
+      // toast only — this used to also write near-duplicate text into
+      // the inline #statusMsg at the same time, which is exactly the
+      // "two things say the same thing at once" bug the toast unification
+      // pass targeted (see feedback-toast-system-design.md §1, §4). The
+      // inline element is still used elsewhere on this page for the
+      // attachment-size warning (addFiles()) — that's an input-validation
+      // message, not an action result, so it deliberately stays inline-only.
+      status.textContent = "";
+      status.className = "status-msg";
       const sheetFailed = data.sheetAttempted && !data.sheetLogged;
-      status.className = sheetFailed ? "status-msg err" : "status-msg ok";
-      if (window.showToast) window.showToast(sheetFailed ? "Submitted, but sheet logging failed" : "Ticket submitted", sheetFailed ? "err" : "ok");
+      if (window.showToast) {
+        // Partial failure (Telegram post succeeded, sheet logging didn't)
+        // needs its specific reason readable, not just "something failed"
+        // — and since the err toast no longer auto-dismisses, that detail
+        // can live in the toast text itself instead of a second element.
+        window.showToast(
+          sheetFailed ? `Submitted to Telegram, but sheet logging failed: ${data.sheetError || "unknown error"}` : "Ticket submitted",
+          sheetFailed ? "err" : "ok"
+        );
+      }
       form.reset();
       brandSelect.selectedIndex = 0;
       files = [];
       renderFileList();
       refreshConditionals();
     } catch (err) {
-      status.textContent = err.message || "Something went wrong. Try again.";
-      status.className = "status-msg err";
+      status.textContent = "";
+      status.className = "status-msg";
       if (window.showToast) window.showToast(err.message || "Submission failed", "err");
     } finally {
       // Only re-enable if the TID isn't still flagged as a duplicate —

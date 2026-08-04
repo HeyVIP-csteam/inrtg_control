@@ -85,6 +85,7 @@ function applyFeatureStatusItem(itemId, item, { onBlocked } = {}) {
           ? "🔜 Not available yet, please check back later."
           : "⚠️ Under maintenance, please try again later.";
         if (onBlocked) onBlocked(msg);
+        else if (window.showToast) window.showToast(msg, "err");
         else alert(msg);
       };
       el.addEventListener("click", el._featureStatusBlockHandler, { capture: true });

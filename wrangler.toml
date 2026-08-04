@@ -1,6 +1,16 @@
 name = "telegram-issue-hub"
 pages_build_output_dir = "public"
 
+# IMPORTANT — Build command: functions/ now depends on @cf-wasm/photon
+# (see functions/_shared/telegramImageCompress.js), so Cloudflare Pages
+# MUST run `npm install` before esbuild bundles the Functions, or the
+# build fails with "Cannot find module '@cf-wasm/photon'". There is no
+# valid `[build]` key in a Pages project's wrangler.toml (that's a
+# Workers-only concept — Pages ignores it if you add one) — this has to
+# be set in the dashboard instead: Workers & Pages → this project →
+# Settings → Builds & deployments → Build command → `npm install`
+# (Build output directory stays `public`, unchanged). See README.md.
+
 [[r2_buckets]]
 binding = "SCREENSHOTS_BUCKET"
 bucket_name = "inr-issuescreenshot"

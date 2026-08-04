@@ -207,9 +207,6 @@
   }
   .dep-btn-clear:hover { background: #e5304a; color: #fff; }
   .dep-btn-clear:disabled { opacity: 0.5; cursor: not-allowed; background: transparent; color: #e5304a; }
-  .dep-toast { display: none; text-align: center; padding: 8px; font-size: 13px; font-weight: 700; border-radius: 10px; margin-top: 8px; }
-  .dep-tok { background: rgba(34,197,94,0.14); color: #16a34a; }
-  .dep-ter { background: rgba(224,87,122,0.14); color: #e0577a; }
   .dep-empty-h { text-align: center; padding: 22px 8px; color: var(--ink-soft); font-size: 13px; line-height: 1.8; }
 
   .dep-tab-warning {
@@ -307,7 +304,6 @@
             <div class="dep-fg2"><label class="dep-fl2">CS Remarks (col P)</label><textarea class="dep-fi" id="ef-csremarks" rows="4" placeholder="CS Remarks..." style="resize:vertical;font-family:inherit;"></textarea></div>
             <button class="dep-btn-sub" id="depSub">Submit — Update Sheet</button>
             <button class="dep-btn-clear" id="depClear">Clear — Update Sheet</button>
-            <div class="dep-toast" id="depT"></div>
           </div>
         </div>
       </div>
@@ -422,10 +418,13 @@
   }
   function f(l, v) { return '<div class="dep-fr"><span class="dep-fl">'+l+'</span><span class="dep-fv">'+cell(v)+'</span></div>'; }
 
+  // Routes through the single shared toast (public/assets/toast.js) —
+  // this used to render its own separate inline banner (#depT / .dep-toast),
+  // which is exactly the "each page invents its own feedback" problem the
+  // toast unification pass was meant to fix. Signature kept as-is so the
+  // call sites below didn't need touching.
   function showT(id, ok, msg) {
-    var t = gi(id); t.className = 'dep-toast ' + (ok ? 'dep-tok' : 'dep-ter');
-    t.textContent = ok ? 'Google Sheet updated successfully!' : 'Error: ' + (msg || 'Update failed');
-    t.style.display = 'block';
+    if (window.showToast) window.showToast(ok ? 'Sheet updated.' : (msg || 'Update failed.'), ok ? 'ok' : 'err');
   }
 
   // Keeps the Edit Record panel's height visually matched to the FIRST
