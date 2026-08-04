@@ -133,6 +133,12 @@ function renderFeatureSettingsPanel(container, items, { authFetch, escapeHtml, c
     });
   }
 
+  // Plain labels for the toast result text — deliberately not reusing
+  // STATUS_OPTIONS' labels above, since those carry emoji for the
+  // dropdown UI ("🚧 Maintenance") that would look odd repeated in a
+  // one-line toast message.
+  const STATUS_TOAST_LABEL = { active: "Active", maintenance: "Maintenance", coming_soon: "Coming soon" };
+
   async function save(row) {
     const itemId = row.dataset.item;
     const status = row.querySelector('.fs-dropdown[data-field="status"]').dataset.value;
@@ -151,7 +157,11 @@ function renderFeatureSettingsPanel(container, items, { authFetch, escapeHtml, c
     if (!data.ok) return setNote(data.error || "Save failed.", "err");
     const idx = items.findIndex((i) => i.id === itemId);
     if (idx >= 0) items[idx] = { ...items[idx], ...data.item };
-    setNote("Saved.", "ok");
+    // Result names the status that was actually just saved (Active /
+    // Maintenance / Coming soon), not a generic "Saved." — this is a
+    // multi-state control, so a fixed string would be right for one
+    // status and silently wrong-sounding for the other two.
+    setNote(`Save ${STATUS_TOAST_LABEL[status] || status} success.`, "ok");
     // Pass the value this SAME response just returned — not a re-fetch.
     // See this file's header comment and applyFeatureStatusItem()'s doc
     // comment in apply-feature-status-to-ui.js for why.

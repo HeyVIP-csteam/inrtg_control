@@ -815,14 +815,14 @@
             const data = await res.json();
             statusEl.textContent = "";
             if (!data.ok) {
-              window.showToast(data.error || "Save failed", "err");
+              window.showToast(data.error || "Save failed.", "err");
               return;
             }
-            window.showToast("Rotation speed saved", "ok");
+            window.showToast("Save success.", "ok");
             if (window.refreshAnnouncementBanner) window.refreshAnnouncementBanner();
           } catch {
             statusEl.textContent = "";
-            window.showToast("Save failed — network error", "err");
+            window.showToast("Save failed — network error.", "err");
           }
         });
       }
@@ -865,20 +865,20 @@
             const data = await res.json();
             if (!data.ok) {
               status.textContent = "";
-              window.showToast(data.error || "Backfill failed", "err");
+              window.showToast(data.error || "Backfill failed.", "err");
               break;
             }
             totalScanned += data.scanned;
             if (data.done) {
               status.textContent = "";
-              window.showToast(`Backfill complete — scanned ${totalScanned} threads`, "ok");
+              window.showToast(`Backfill success — scanned ${totalScanned} threads.`, "ok");
               break;
             }
             cursor = data.cursor;
           }
         } catch {
           status.textContent = "";
-          window.showToast("Backfill failed — network error", "err");
+          window.showToast("Backfill failed — network error.", "err");
         } finally {
           btn.disabled = false;
         }
@@ -1029,7 +1029,7 @@
       } else {
         acctRoutesData.routes[`${acctRoutesSelectedBrand}|${moduleId}`] = data.route;
       }
-      setAcctNote("Saved.", "ok");
+      setAcctNote("Save success.", "ok");
       renderTgRoutes();
     }
 
@@ -1047,7 +1047,7 @@
       } else {
         acctRoutesData.routes[`${acctRoutesSelectedBrand}|${moduleId}`] = data.route;
       }
-      setAcctNote("Reset to default.", "ok");
+      setAcctNote("Reset success.", "ok");
       renderTgRoutes();
     }
 
@@ -1181,20 +1181,21 @@
       const data = await res.json();
       if (!data.ok) return setAcctNote(data.error || "Save failed.", "err");
       applyDepositSheetResult(action, data);
-      setAcctNote("Saved.", "ok");
+      setAcctNote("Save success.", "ok");
       renderDepositSheets();
     }
 
     async function resetDepositSheetRow(action) {
+      const verb = action === "rollBackup" ? "Roll over" : "Reset";
       setAcctNote(action === "rollBackup" ? "Rolling over…" : "Resetting…");
       const res = await window.AgentAuth.authFetch("/api/admin/deposit-sheets", {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action, brandId: acctDepositSelectedBrand }),
       });
       const data = await res.json();
-      if (!data.ok) return setAcctNote(data.error || "Failed.", "err");
+      if (!data.ok) return setAcctNote(data.error || `${verb} failed.`, "err");
       applyDepositSheetResult(action, data);
-      setAcctNote(action === "rollBackup" ? "Rolled over." : "Reset.", "ok");
+      setAcctNote(`${verb} success.`, "ok");
       renderDepositSheets();
     }
 
@@ -1324,7 +1325,7 @@
       // Wording is derived from `verb` (computed from the actual `locked`
       // this call just saved), never hardcoded — a fixed string here would
       // say "Locked." on an unlock and vice versa. See toast design doc §5.
-      if (window.showToast) window.showToast(`${verb}ed.`, "ok");
+      if (window.showToast) window.showToast(`${verb} success.`, "ok");
     }
 
     // ---- Agent Personal Profile popup ----
@@ -1679,8 +1680,8 @@
         }),
       });
       const data = await res.json();
-      if (!data.ok) return setAcctNote(data.error || "Save failed.", "err");
-      setAcctNote("Account created.", "ok");
+      if (!data.ok) return setAcctNote(data.error || "Create failed.", "err");
+      setAcctNote("Create success.", "ok");
       setTimeout(closeAcctModal, 700);
     }
 
@@ -1696,7 +1697,7 @@
       });
       const data = await res.json();
       if (!data.ok) return setAcctNote(data.error || "Save failed.", "err");
-      setAcctNote("Office saved.", "ok");
+      setAcctNote("Save success.", "ok");
       setTimeout(closeAcctModal, 700);
     }
 
@@ -1717,7 +1718,7 @@
       });
       const data = await res.json();
       if (!data.ok) return setAcctNote(data.error || "Reset failed.", "err");
-      setAcctNote("Password reset.", "ok");
+      setAcctNote("Reset success.", "ok");
       setTimeout(closeAcctModal, 700);
     }
 
@@ -1733,9 +1734,9 @@
         body: JSON.stringify({ currentPassword, newPassword: newPass }),
       });
       const data = await res.json();
-      if (!data.ok) return setAcctNote(data.error || "Password change failed.", "err");
+      if (!data.ok) return setAcctNote(data.error || "Change failed.", "err");
       window.AgentAuth.updateStoredToken(data.token);
-      setAcctNote("Password changed.", "ok");
+      setAcctNote("Change success.", "ok");
       setTimeout(closeAcctModal, 700);
     }
   </script>

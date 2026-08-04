@@ -424,7 +424,7 @@
   // toast unification pass was meant to fix. Signature kept as-is so the
   // call sites below didn't need touching.
   function showT(id, ok, msg) {
-    if (window.showToast) window.showToast(ok ? 'Sheet updated.' : (msg || 'Update failed.'), ok ? 'ok' : 'err');
+    if (window.showToast) window.showToast(ok ? 'Update success.' : (msg || 'Update failed.'), ok ? 'ok' : 'err');
   }
 
   // Keeps the Edit Record panel's height visually matched to the FIRST

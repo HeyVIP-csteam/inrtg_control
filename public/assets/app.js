@@ -509,7 +509,7 @@
         // — and since the err toast no longer auto-dismisses, that detail
         // can live in the toast text itself instead of a second element.
         window.showToast(
-          sheetFailed ? `Submitted to Telegram, but sheet logging failed: ${data.sheetError || "unknown error"}` : "Ticket submitted",
+          sheetFailed ? `Submit failed — posted to Telegram, but sheet logging failed: ${data.sheetError || "unknown error"}` : "Submit success.",
           sheetFailed ? "err" : "ok"
         );
       }
@@ -521,7 +521,7 @@
     } catch (err) {
       status.textContent = "";
       status.className = "status-msg";
-      if (window.showToast) window.showToast(err.message || "Submission failed", "err");
+      if (window.showToast) window.showToast(err.message || "Submit failed.", "err");
     } finally {
       // Only re-enable if the TID isn't still flagged as a duplicate —
       // otherwise this would clear the "disabled" state that

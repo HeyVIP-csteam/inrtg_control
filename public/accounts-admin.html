@@ -413,7 +413,7 @@
       });
       const data = await res.json();
       if (!data.ok) { setAdminMsg(msg, data.error || "Save failed.", "err"); return; }
-      setAdminMsg(msg, "Saved.", "ok");
+      setAdminMsg(msg, "Save success.", "ok");
       resetOfficeForm();
       loadOffices();
     });
@@ -426,7 +426,7 @@
       });
       const data = await res.json();
       if (!data.ok) { setAdminMsg(null, data.error || "Delete failed.", "err"); return; }
-      setAdminMsg(null, "Deleted.", "ok");
+      setAdminMsg(null, "Delete success.", "ok");
       loadOffices();
     }
 
@@ -562,7 +562,7 @@
       });
       const data = await res.json();
       if (!data.ok) { setAdminMsg(msg, data.error || "Save failed.", "err"); return; }
-      setAdminMsg(msg, "Saved.", "ok");
+      setAdminMsg(msg, "Save success.", "ok");
       resetAccountForm();
       loadAccounts();
     });
@@ -575,7 +575,7 @@
       });
       const data = await res.json();
       if (!data.ok) { setAdminMsg(null, data.error || "Delete failed.", "err"); return; }
-      setAdminMsg(null, "Deleted.", "ok");
+      setAdminMsg(null, "Delete success.", "ok");
       loadAccounts();
     }
 
@@ -591,7 +591,7 @@
       // Wording follows the actual `locked` this call just saved, never
       // hardcoded — see toast design doc §5 (dynamic wording for
       // two-way/multi-state actions).
-      setAdminMsg(null, `${verb}ed.`, "ok");
+      setAdminMsg(null, `${verb} success.`, "ok");
       loadAccounts();
     }
   </script>

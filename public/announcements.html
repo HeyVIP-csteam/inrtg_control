@@ -286,8 +286,13 @@
         method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
       });
       const data = await res.json();
-      if (!data.ok) { setNote(data.error || "Save failed.", "err"); return; }
-      setNote("Announcement saved", "ok");
+      // The Save button IS the Active/Inactive toggle (see toggleLabel in
+      // renderForm) — its real effect each click is "set enabled to
+      // true/false", so the result wording follows that, not a generic
+      // "Save", matching the Active/Inactive convention used everywhere
+      // else a control's whole job is flipping an enabled state.
+      if (!data.ok) { setNote(data.error || (body.enabled ? "Active failed." : "Inactive failed."), "err"); return; }
+      setNote(body.enabled ? "Active success." : "Inactive success.", "ok");
       if (window.refreshAnnouncementBanner) window.refreshAnnouncementBanner();
       await loadAnnouncements();
       selectAnnouncement(data.announcement.id);
@@ -301,7 +306,7 @@
       });
       const data = await res.json();
       if (!data.ok) { setNote(data.error || "Delete failed.", "err"); return; }
-      setNote("Announcement deleted", "ok");
+      setNote("Delete success.", "ok");
       if (window.refreshAnnouncementBanner) window.refreshAnnouncementBanner();
       await loadAnnouncements();
       if (announcements.length) selectAnnouncement(announcements[0].id);

@@ -1024,7 +1024,7 @@
       main.innerHTML = `<div class="threads-placeholder">Pick a thread on the left, or submit a form to start one.</div>`;
       removeLocalThread(deletedId);
       loadList();
-      if (window.showToast) window.showToast("Deleted.", "ok");
+      if (window.showToast) window.showToast("Delete success.", "ok");
     }
 
     // ---- @mention autocomplete ------------------------------------------
@@ -1219,7 +1219,7 @@
       }
       selectedThread = res.thread;
       updateThreadContent(selectedThread);
-      if (window.showToast) window.showToast("Edited.", "ok");
+      if (window.showToast) window.showToast("Edit success.", "ok");
     }
 
     // "🔄 Sync to Sheet" flow — a real per-field form (built straight off
@@ -1351,7 +1351,7 @@
         updateThreadContent(selectedThread);
         patchLocalThread(selectedThread);
         loadList();
-        if (window.showToast) window.showToast("Ticket updated", "ok");
+        if (window.showToast) window.showToast("Save success.", "ok");
         if (res.sheetHasRef && !res.sheetSynced) {
           alert("Telegram message updated, but the Sheet row couldn't be updated:\n" + (res.sheetError || "unknown error") + "\n\nYou may need to fix that row manually.");
         }
@@ -1601,7 +1601,7 @@
         loadList();
         close();
         openThread(res.thread.id); // jump straight to the new ticket
-        if (window.showToast) window.showToast("Forwarded.", "ok");
+        if (window.showToast) window.showToast("Forward success.", "ok");
       });
     }
 
@@ -1617,7 +1617,7 @@
       updateThreadContent(selectedThread);
       patchLocalThread(selectedThread);
       loadList();
-      if (window.showToast) window.showToast("Recalled.", "ok");
+      if (window.showToast) window.showToast("Recall success.", "ok");
     }
 
     async function editReply(messageId, currentText) {
@@ -1634,7 +1634,7 @@
       }
       selectedThread = res.thread;
       updateThreadContent(selectedThread);
-      if (window.showToast) window.showToast("Edited.", "ok");
+      if (window.showToast) window.showToast("Edit success.", "ok");
     }
 
     async function recallReply(messageId) {
@@ -1647,7 +1647,7 @@
       }
       selectedThread = res.thread;
       updateThreadContent(selectedThread);
-      if (window.showToast) window.showToast("Recalled.", "ok");
+      if (window.showToast) window.showToast("Recall success.", "ok");
     }
 
     async function postAction(payload) {
