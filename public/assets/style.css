@@ -623,6 +623,18 @@ body.hub-page .topbar { flex-shrink: 0; }
 .hub-right-col > #announcementBanner {
   flex-shrink: 0;
 }
+/* Hamburger toggle + drawer backdrop — both start hidden/inert; only
+   turned on inside the @media (max-width: 720px) block further below,
+   where .sidebar itself switches to an off-canvas drawer. */
+.sidebar-toggle-btn { display: none; }
+.sidebar-backdrop {
+  display: none;
+  position: fixed; inset: 0; z-index: 44;
+  background: rgba(10, 12, 25, 0.55);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.2s ease;
+}
 .sidebar-header {
   display: flex;
   align-items: center;
@@ -869,12 +881,31 @@ body.hub-page .topbar { flex-shrink: 0; }
    ONE scroll mechanism: the mounted shell's own internal panes — same
    as how threads.html/announcements.html scroll when visited standalone. */
 .hub-main:has(> #spaMount.spa-fullbleed) { padding: 0; overflow: hidden; }
+/* Plain BLOCK by default — promo.html/deposit-issue.html/deposit-
+   backup.html/form.html's own root elements (.promo-shell, .dep-shell,
+   .form-page) all use `margin: 0 auto` to center themselves, same as
+   they do in their standalone pages where they're a normal block-flow
+   child of <body>. If #spaMount were `display:flex` here instead, those
+   auto side-margins would trigger flexbox's "auto margins absorb the
+   free space" behavior INSTEAD of stretch — the child would shrink-to-
+   fit its own content width rather than filling the row, which is
+   exactly the "narrow before search results, wide after a wide results
+   table appears" bug this replaced. Plain block layout has no such
+   interaction — margin:auto centering just works normally. */
 #spaMount.spa-mounted {
+  display: block;
   width: 100%;
-  align-self: stretch;
   text-align: left;
 }
-#spaMount.spa-fullbleed { height: 100%; }
+/* Only the genuine sidebar+panel app-shells (threads/announcements) get
+   flex — THEIR content (.threads-shell/.ann-shell) is `display:flex`
+   itself and relies on `flex:1` from a flex PARENT to fill available
+   height; a plain block #spaMount can't give that. */
+#spaMount.spa-mounted.spa-fullbleed {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
 #spaMount.spa-fullbleed .threads-shell,
 #spaMount.spa-fullbleed .ann-shell {
   height: 100%;
@@ -977,9 +1008,28 @@ body.hub-page .topbar { flex-shrink: 0; }
 }
 
 @media (max-width: 720px) {
-  body.hub-page { overflow: auto; height: auto; } /* same fix as threads.html/announcements.html use at their own mobile breakpoint — the fixed-viewport trick only works with .hub-main doing the scrolling; once .hub-layout drops to a stacked column below, body itself has to be the thing that scrolls instead, or content taller than one screen gets silently clipped. */
-  .hub-layout { flex-direction: column; min-height: auto; }
-  .sidebar { width: 100%; border-right: none; border-bottom: 1px solid var(--panel-border); max-height: 60vh; }
+  .sidebar-toggle-btn {
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px;
+    width: 34px; height: 34px; border: none; background: none; cursor: pointer; margin-right: 4px; padding: 0;
+  }
+  .sidebar-toggle-btn span { display: block; width: 19px; height: 2px; border-radius: 2px; background: var(--ink); }
+
+  /* Sidebar becomes an off-canvas drawer instead of a stacked-above-
+     content block — it's out of normal flow now (position:fixed), so
+     .hub-layout/.hub-main keep the SAME fixed-viewport/internal-scroll
+     behavior mobile used to have to opt out of (see the now-removed
+     body.hub-page overflow override this replaced) — nothing left in
+     flow to make that layout break at this width anymore. */
+  .sidebar {
+    position: fixed; top: 61px; left: 0; bottom: 0; z-index: 45;
+    width: 290px; max-width: 82vw; max-height: none;
+    border-right: 1px solid var(--panel-border); border-bottom: none;
+    background: var(--card-bg); box-shadow: var(--shadow);
+    transform: translateX(-100%);
+    transition: transform 0.22s ease;
+  }
+  .sidebar.open { transform: translateX(0); }
+  .sidebar-backdrop.open { display: block; opacity: 1; pointer-events: auto; }
 }
 
 /* ---- TG Reply Threads ---- */
@@ -1885,6 +1935,22 @@ body.announcements-page .ann-shell { flex: 1; min-height: 0; }
 }
 .ipa-chev { display: inline-block; transition: transform 0.15s ease; color: var(--ink-soft); }
 .ipa-collapsible-body { padding: 14px 16px 16px; }
+.ipa-form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; align-items: end; }
+.ipa-form-row .field { margin: 0; }
+.ipa-input-with-btn { display: flex; gap: 8px; }
+.ipa-input-with-btn input { flex: 1; }
+.ipa-inline-btn {
+  flex-shrink: 0; border: 1px solid var(--border); background: var(--field-bg); color: var(--ink);
+  border-radius: 10px; padding: 0 16px; font-size: 13px; font-weight: 700; cursor: pointer;
+}
+.ipa-inline-btn:hover { background: var(--panel-border); }
+.ipa-inline-btn-amber { background: linear-gradient(135deg, #f3c463, #e0a531); color: #1b2559; border-color: transparent; }
+.ipa-inline-btn-amber:hover { filter: brightness(1.05); }
+.ipa-form-hint { font-size: 11.5px; color: var(--ink-soft); margin: 8px 0 0; }
+.ipa-settled-hint { margin: 4px 0 16px; }
+@media (max-width: 640px) {
+  .ipa-form-row { grid-template-columns: 1fr; }
+}
 
 .ipa-hint { font-size: 12px; color: var(--ink-soft); margin: 4px 0 16px; }
 
@@ -1906,13 +1972,14 @@ body.announcements-page .ann-shell { flex: 1; min-height: 0; }
   font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.03em;
   color: var(--ink-soft); font-weight: 700; background: var(--field-bg);
 }
-.ipa-row-actions { display: flex; gap: 8px; }
+.ipa-row > div:last-child, .ipa-row-head > div:last-child { text-align: right; }
+.ipa-row-actions { display: flex; gap: 8px; justify-content: flex-end; }
 .ipa-row-actions .row-btn, .ipa-table .row-btn {
-  background: none; border: 1px solid var(--border); border-radius: 8px;
-  color: var(--label-blue); cursor: pointer; font-size: 12px; font-weight: 600;
-  padding: 4px 10px;
+  background: none; border: none;
+  color: var(--label-blue); cursor: pointer; font-size: 12.5px; font-weight: 700;
+  padding: 0; text-decoration: underline; text-underline-offset: 2px;
 }
-.ipa-row-actions .row-btn:hover, .ipa-table .row-btn:hover { background: var(--field-bg); }
+.ipa-row-actions .row-btn:hover, .ipa-table .row-btn:hover { opacity: 0.75; }
 .ipa-empty-row { padding: 20px; text-align: center; color: var(--ink-soft); font-size: 12.5px; }
 
 .ipa-pagination { display: flex; align-items: center; justify-content: center; gap: 14px; margin-top: 10px; }

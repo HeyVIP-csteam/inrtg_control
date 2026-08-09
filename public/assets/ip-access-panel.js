@@ -78,22 +78,36 @@
         <div class="ipa-collapsible" id="ipaAddWrap">
           <div class="ipa-collapsible-header" id="ipaAddHeader"><span class="ipa-chev">▸</span> Add IP manually</div>
           <div class="ipa-collapsible-body" id="ipaAddBody" style="display:none;">
-            <div class="field"><label>Office</label><select id="ipaAddOffice">${officeOptions()}</select></div>
-            <div class="field"><label>IP address(es) — comma separated for multiple</label><input type="text" id="ipaAddIps" placeholder="203.0.113.10, 203.0.113.11" autocomplete="off" /></div>
+            <div class="ipa-form-row">
+              <div class="field"><label>Office</label><select id="ipaAddOffice">${officeOptions()}</select></div>
+              <div class="field"><label>IP address(es)</label>
+                <div class="ipa-input-with-btn">
+                  <input type="text" id="ipaAddIps" placeholder="203.0.113.10, 203.0.113.11" autocomplete="off" />
+                  <button type="button" class="ipa-inline-btn ipa-inline-btn-amber" id="ipaAddSubmit">Add</button>
+                </div>
+              </div>
+            </div>
+            <p class="ipa-form-hint">Adding more than one? Separate them with commas — 203.0.113.10, 203.0.113.11</p>
             <p class="edit-modal-note" id="ipaAddNote"></p>
-            <div class="edit-modal-actions"><button type="button" class="btn-submit" id="ipaAddSubmit">Add</button></div>
           </div>
         </div>
         <div class="ipa-collapsible" id="ipaBlockWrap">
           <div class="ipa-collapsible-header" id="ipaBlockHeader"><span class="ipa-chev">▸</span> Block an IP</div>
           <div class="ipa-collapsible-body" id="ipaBlockBody" style="display:none;">
-            <div class="field"><label>IP address(es) — comma separated for multiple</label><input type="text" id="ipaBlockIps" placeholder="203.0.113.10" autocomplete="off" /></div>
-            <div class="field"><label>Reason (optional)</label><input type="text" id="ipaBlockReason" autocomplete="off" /></div>
+            <div class="ipa-form-row">
+              <div class="field"><label>IP address(es)</label><input type="text" id="ipaBlockIps" placeholder="203.0.113.10, 203.0.113.11" autocomplete="off" /></div>
+              <div class="field"><label>Reason (optional)</label>
+                <div class="ipa-input-with-btn">
+                  <input type="text" id="ipaBlockReason" placeholder="e.g. repeated brute-force attempts" autocomplete="off" />
+                  <button type="button" class="ipa-inline-btn" id="ipaBlockSubmit">Block</button>
+                </div>
+              </div>
+            </div>
+            <p class="ipa-form-hint">Separate multiple IPs with commas. Blocking is global — independent of office or account, each one is rejected outright at login, even with a correct password.</p>
             <p class="edit-modal-note" id="ipaBlockNote"></p>
-            <div class="edit-modal-actions"><button type="button" class="btn-submit" id="ipaBlockSubmit">Block</button></div>
           </div>
-        </div>` : ""}
-        <p class="ipa-hint">Click a card above to view its IPs and record.</p>
+        </div>
+        <p class="ipa-form-hint ipa-settled-hint">Approved and blocked IPs — the settled ones. Pending has its own card.</p>` : ""}
         ${renderTableSection("pending", "Pending", data.pending)}
         ${renderTableSection("approved", "Approved", data.approved)}
         ${renderTableSection("blocked", "Blocked", data.blocked)}

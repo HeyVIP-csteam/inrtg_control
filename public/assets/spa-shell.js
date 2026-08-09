@@ -174,8 +174,7 @@
     }
 
     homeEl.style.display = "none";
-    mountEl.style.display = "flex";
-    mountEl.style.flexDirection = "column";
+    mountEl.style.display = "";
     mountEl.classList.add("spa-mounted");
     const cfg = ROUTES[view];
     mountEl.classList.toggle("spa-fullbleed", !!cfg.fullBleed);

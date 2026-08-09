@@ -74,7 +74,7 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
 <link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;600&display=swap" onload="this.onload=null;this.rel='stylesheet'" />
 <noscript><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;600&display=swap" /></noscript>
-<link rel="stylesheet" href="/assets/style.css?v=9b49ea95" />
+<link rel="stylesheet" href="/assets/style.css?v=54bcd004" />
 <link rel="stylesheet" href="/assets/maintenance-breathing-light.css?v=b3446084" />
 <link rel="stylesheet" href="/assets/settings-dropdown.css?v=ff5b816c" />
 <script src="/assets/theme.js?v=5b27e630"></script>
@@ -86,6 +86,9 @@
 <body class="page-transition-in hub-page">
   <header class="topbar">
     <div class="topbar-left">
+      <button type="button" class="sidebar-toggle-btn" id="sidebarToggleBtn" aria-label="Open menu" title="Menu">
+        <span></span><span></span><span></span>
+      </button>
       <img src="/assets/img/logo.webp" alt="HeyVIP" class="logo-img" />
       <span class="wordmark">INR CS TEAM - TBC</span>
     </div>
@@ -95,6 +98,12 @@
       <span class="agent-whoami" id="agentWhoami"></span>
     </div>
   </header>
+
+  <!-- Narrow-viewport only (see style.css's @media (max-width: 720px)) —
+       dims the page behind the sidebar once it's slid open as a drawer,
+       and closing it is one tap anywhere on the dimmed area. Hidden/
+       inert at normal widths, same as the toggle button above. -->
+  <div class="sidebar-backdrop" id="sidebarBackdrop"></div>
 
   <div class="edit-modal-backdrop" id="editModalBackdrop">
     <div class="edit-modal">
@@ -167,7 +176,7 @@
   </div>
 
   <div class="hub-layout">
-    <aside class="sidebar">
+    <aside class="sidebar" id="hubSidebar">
       <div class="sidebar-header"><span class="dot"></span> ISSUE SUBMISSION</div>
       <a href="/" class="sidebar-item active" style="--item-accent:#7c6cf0;">
         <div class="icon" style="background:#7c6cf033;">🏠</div>
@@ -259,7 +268,7 @@
   <script src="/assets/announcement-banner.js?v=4881665d"></script>
   <script src="/assets/settings-dropdown.js?v=437d2f61"></script>
   <script src="/assets/settings-admin-panel.js?v=53569c6b"></script>
-  <script src="/assets/ip-access-panel.js?v=c847d20b"></script>
+  <script src="/assets/ip-access-panel.js?v=aa8c1fea"></script>
   <script>
     window.initThemeToggle();
     window.initClock();
@@ -267,6 +276,32 @@
     // authguard.js (loaded in <head>) already confirmed we're logged in
     // before this page rendered at all — just fill in the pill.
     window.AgentAuth.renderWhoami("agentWhoami");
+
+    // Narrow-viewport hamburger drawer — only actually visible/usable at
+    // ≤720px (see style.css's @media block), but wired unconditionally
+    // since it's harmless at any width and one-time setup is simpler
+    // than re-wiring on resize.
+    (function initSidebarDrawer() {
+      const sidebar = document.getElementById("hubSidebar");
+      const backdrop = document.getElementById("sidebarBackdrop");
+      const toggleBtn = document.getElementById("sidebarToggleBtn");
+      function closeDrawer() {
+        sidebar.classList.remove("open");
+        backdrop.classList.remove("open");
+      }
+      toggleBtn.addEventListener("click", () => {
+        sidebar.classList.toggle("open");
+        backdrop.classList.toggle("open");
+      });
+      backdrop.addEventListener("click", closeDrawer);
+      // Picking anything in the sidebar should close the drawer right
+      // away — otherwise it's still covering half the screen after the
+      // person already made their choice (whether that's a data-route
+      // SPA view or a real navigation like Create Account).
+      sidebar.addEventListener("click", (e) => {
+        if (e.target.closest("a, .sidebar-item, .sidebar-subitem")) closeDrawer();
+      });
+    })();
 
     const BRAND_COLORS = ["#4fc3f7", "#f6ad55", "#f4718a", "#8b5cf6", "#34d399"];
     const brandRowTrack = document.getElementById("brandRowTrack");
@@ -1841,6 +1876,6 @@
       setTimeout(closeAcctModal, 700);
     }
   </script>
-  <script src="/assets/spa-shell.js?v=8bb4dc00"></script>
+  <script src="/assets/spa-shell.js?v=fbace9cf"></script>
 </body>
 </html>
