@@ -962,7 +962,6 @@ routing admin page ("TG Group / Channel"). Deployed on Cloudflare Pages.
 | `public/promo.html` | Promo Code Search page |
 | `public/login.html` | Site-wide login page — the entry gate for the whole hub |
 | `public/assets/authguard.js` | Shared client-side auth guard on every gated page; redirects to login, exposes `window.AgentAuth` |
-| `public/accounts-admin.html` | Hidden admin page (not linked from nav) — create/edit/delete Offices and Accounts, has its own separate bootstrap login |
 | `functions/api/submit.js` | Submission handler — sends Telegram message, writes Sheets, creates a TG Reply Threads record, requires login. Checks a live KV routing override before falling back to the hardcoded default. Wrapped in a top-level try/catch safety net. |
 | `functions/_shared/routing.js` | Per-brand/module Telegram + Sheet config — the hardcoded DEFAULTS (brand key order: betvisa, betjili, crickex, jeetway, mostplay — see "Known issues") |
 | `functions/_shared/routes.js` | KV-backed override layer for Telegram routing (chatId/topicId) — lets TG Group/Channel change routing live without a redeploy |
@@ -1126,7 +1125,8 @@ writeup above).
 **Three ways an account gets locked:**
 1. **Manual** — SuperAdmin only (no delegation to Admin/Senior, unlike
    most account actions), via a 🔒/🔓 button: Home sidebar → Account
-   Management → Agent Profile, or the hidden `/accounts-admin.html`.
+   Management → Agent Profile. (Used to also be reachable via the now-
+   retired `/accounts-admin.html`.)
    `POST /api/admin/accounts { action: "lock"|"unlock", username }`.
 2. **Auto — 5 consecutive wrong passwords.** Counter in KV
    (`pwfail:<username>`), reset to 0 the instant a correct password comes
@@ -1398,9 +1398,10 @@ below my rank" comparison:
 `{ senior: ["agent"], admin: ["agent", "senior"] }` (superadmin bypasses
 the map entirely). SuperAdmin self-promotion bootstrap: while zero
 SuperAdmin accounts exist anywhere, any Admin-or-above account can
-promote ONLY its own account to `superadmin` (via `accounts-admin.html`'s
-Edit Account) — the instant one SuperAdmin exists, this path closes for
-good.
+promote ONLY its own account to `superadmin` (via Agent Profile's Edit
+Account in `index.html`, formerly `accounts-admin.html`'s Edit Account
+before that page was retired) — the instant one SuperAdmin exists, this
+path closes for good.
 
 ### ✅ Office/IP rule — CHANGED this session: SuperAdmin is now the ONLY
 role exempt from needing an office
@@ -1425,16 +1426,24 @@ SuperAdmin self-promotion path — no in-app recovery, only a direct
 Cloudflare KV edit. **Always assign an office to every non-SuperAdmin
 account — login will fail without one, not just be unrestricted.**
 
-### Bootstrap (first-time setup after a fresh deploy)
-`accounts-admin.html` accepts the existing `BRAND_EDIT_PASSWORD` secret
-as a one-time key (while zero admin-or-above accounts exist) to create
-the first admin account. Steps: deploy → go to `/accounts-admin.html`
-(bookmark it, not linked in nav) → "first-time setup" → enter
-`BRAND_EDIT_PASSWORD` → create an Office with real IPs → create the first
-admin account assigned to that office → promote it to SuperAdmin via Edit
-Account (while zero SuperAdmins exist) → create real accounts for every
-CS agent who uses ANY part of the hub (submitting tickets, promo search,
-or TG Reply Threads — all of it requires login now).
+### Bootstrap (first-time setup after a fresh deploy) — ⚠️ REMOVED, see below
+`accounts-admin.html` used to accept the existing `BRAND_EDIT_PASSWORD`
+secret as a one-time key (while zero admin-or-above accounts exist) to
+create the first admin account through the browser. **That file was
+retired** — its Offices/Accounts management was folded into `index.html`'s
+Account Management modal (now labeled "IP Access" instead of "Whitelist
+IP"), but the web-based `BRAND_EDIT_PASSWORD` bootstrap login flow itself
+was NOT ported over, since `index.html`'s entire UI sits behind
+`authguard.js` (nothing renders pre-login) and there was no need for it
+at the time of removal (an `owner`-role account already existed).
+**If a genuinely fresh deploy ever needs a first admin account again**,
+the only path now is the CLI script — `node create-owner-account.js
+<username> "<password>"` (see its header comment / `OWNER_ROLE_SETUP.md`)
+— which writes an `owner`-rank account directly into KV via `wrangler kv
+key put`, no web UI involved. There is currently no in-browser bootstrap
+path; re-adding one (or reviving a stripped-down version of the old
+`accounts-admin.html` login-only flow) would need to be a deliberate,
+separate piece of work if this ever becomes a real requirement again.
 
 ### Account Management (Home sidebar)
 Expandable sidebar entry with role-gated sub-items:

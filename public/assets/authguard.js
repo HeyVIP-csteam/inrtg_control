@@ -28,9 +28,11 @@
  * functions/_shared/accounts.js) — only the token is ever stored here,
  * never the password.
  *
- * Deliberately NOT included on /login.html itself (redirect loop) or
- * /accounts-admin.html (that page has its own separate admin+bootstrap
- * login flow — see accounts.js).
+ * Deliberately NOT included on /login.html itself (redirect loop).
+ * (Formerly also excluded from /accounts-admin.html, which had its own
+ * separate admin+bootstrap login flow — that page was retired and its
+ * Offices/Accounts management folded into index.html's Account
+ * Management modal; see accounts.js.)
  */
 (function () {
   const AUTH_KEY = "agentAuth";

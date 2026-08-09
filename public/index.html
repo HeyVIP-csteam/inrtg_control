@@ -80,7 +80,7 @@
 <script src="/assets/theme.js?v=5b27e630"></script>
 <script src="/assets/toast.js?v=67c1e195" defer></script>
 <script src="/assets/starfield.js?v=b6e92821" defer></script>
-<script src="/assets/authguard.js?v=5285058d"></script>
+<script src="/assets/authguard.js?v=9dba9c0c"></script>
 <script src="/assets/pageTransition.js?v=1966b947"></script>
 </head>
 <body class="page-transition-in">
@@ -135,11 +135,12 @@
       <p class="edit-modal-note" id="acctModalNote"></p>
       <div class="edit-modal-actions" id="acctModalActions">
         <button type="button" class="btn-submit" id="acctModalSave">Save</button>
+        <button type="button" class="btn-submit" id="acctModalDeleteOffice" style="display:none; background:var(--field-bg); color:#e0577a; box-shadow:none;">Delete Office</button>
       </div>
     </div>
   </div>
 
-  <div class="hub-layout">
+  <div class="hub-layout" id="viewHome">
     <aside class="sidebar">
       <div class="sidebar-header"><span class="dot"></span> ISSUE SUBMISSION</div>
       <a href="/" class="sidebar-item active" style="--item-accent:#7c6cf0;">
@@ -163,7 +164,7 @@
         </div>
         <div class="sidebar-subitems" id="acctMgmtSubitems">
           <div class="sidebar-subitem" id="subCreateAccount" style="display:none;--sub-accent:#a78bfa33;"><span class="sub-icon">➕</span> Create Account</div>
-          <div class="sidebar-subitem" id="subWhitelistIp" style="display:none;--sub-accent:#60a5fa33;"><span class="sub-icon">🌐</span> Whitelist IP</div>
+          <div class="sidebar-subitem" id="subWhitelistIp" style="display:none;--sub-accent:#60a5fa33;"><span class="sub-icon">🌐</span> IP Access</div>
           <div class="sidebar-subitem" id="subTgRoutes" style="display:none;--sub-accent:#38bdf833;"><span class="sub-icon">📡</span> TG Group / Channel</div>
           <div class="sidebar-subitem" id="subDepositSheets" style="display:none;--sub-accent:#2f6fed33;"><span class="sub-icon">🧾</span> Deposit Sheet Link</div>
           <div class="sidebar-subitem" id="subSettings" style="display:none;--sub-accent:#f59e0b33;"><span class="sub-icon">⚙️</span> Settings</div>
@@ -175,28 +176,28 @@
     <main class="hub-main">
       <div class="inner">
         <div class="tool-cards">
-          <a href="/threads.html" class="tool-card" id="threadsCard" data-feature-item="tg_reply_threads" style="--tool-accent:#38bdf8;">
+          <a href="/threads.html" data-route="threads" class="tool-card" id="threadsCard" data-feature-item="tg_reply_threads" style="--tool-accent:#38bdf8;">
             <div class="t-icon" style="background:#38bdf833;">💬<span class="t-badge" id="threadsUnreadBadge"></span></div>
             <div class="t-name">TG Reply Threads</div>
             <div class="t-desc">Track Telegram replies to your form submissions in real-time</div>
             <div class="t-sub-stat" id="threadsUnsolvedStat"></div>
           </a>
-          <a href="/promo.html" class="tool-card" data-feature-item="promo_code_search" style="--tool-accent:#f472b6;">
+          <a href="/promo.html" data-route="promo" class="tool-card" data-feature-item="promo_code_search" style="--tool-accent:#f472b6;">
             <div class="t-icon" style="background:#f472b633;">🎟️</div>
             <div class="t-name">Promo Code Search</div>
             <div class="t-desc">Search multiple promo codes at once</div>
           </a>
-          <a href="/deposit-issue.html" class="tool-card" data-feature-item="deposit_issue" style="--tool-accent:#2f6fed;">
+          <a href="/deposit-issue.html" data-route="depositIssue" class="tool-card" data-feature-item="deposit_issue" style="--tool-accent:#2f6fed;">
             <div class="t-icon" style="background:#2f6fed33;">💳</div>
             <div class="t-name">Deposit Issue</div>
             <div class="t-desc">Search Deposit Support records and update CS fields</div>
           </a>
-          <a href="/deposit-backup.html" class="tool-card" data-feature-item="deposit_backup" style="--tool-accent:#2f6fed;">
+          <a href="/deposit-backup.html" data-route="depositBackup" class="tool-card" data-feature-item="deposit_backup" style="--tool-accent:#2f6fed;">
             <div class="t-icon" style="background:#2f6fed33;">💻</div>
             <div class="t-name">Deposit Backup</div>
             <div class="t-desc">Search This Month + Last Month backup sheets (read-only)</div>
           </a>
-          <a href="/announcements.html" class="tool-card" id="announcementCard" style="--tool-accent:#f59e0b;display:none;">
+          <a href="/announcements.html" data-route="announcements" class="tool-card" id="announcementCard" style="--tool-accent:#f59e0b;display:none;">
             <div class="t-icon" style="background:#f59e0b33;" id="announcementCardIcon">📢</div>
             <div class="t-name">Announcement</div>
             <div class="t-desc">Create and schedule the site-wide REMINDER banner</div>
@@ -208,6 +209,15 @@
       </div>
     </main>
   </div>
+
+  <!-- SPA shell mount point — filled in-place by spa-shell.js when a
+       tool-card with [data-route] is clicked, instead of a real page
+       navigation. Starts empty/hidden; #viewHome (the .hub-layout above)
+       is what's visible on first load. See spa-shell.js for the routing
+       logic and public/assets/style.css's "#spaMount" rules for the
+       layout fix these mounted pages need (they were built assuming
+       they're the whole page, not a child of .hub-main). -->
+  <div id="spaMount" style="display:none;"></div>
 
   <script src="/assets/schemas.js?v=b5c55f4a"></script>
   <script src="/assets/apply-feature-status-to-ui.js?v=1ee14c16"></script>
@@ -435,7 +445,7 @@
     // further role there once canSeeAdminSection() already passed.
     const ADMIN_SECTIONS_LIST = [
       { id: "createAccount", name: "Create Account", icon: "➕", floorRank: ROLE_RANK.senior },
-      { id: "whitelistIp", name: "Whitelist IP", icon: "🌐", floorRank: ROLE_RANK.admin },
+      { id: "whitelistIp", name: "IP Access", icon: "🌐", floorRank: ROLE_RANK.admin },
       { id: "tgRoutes", name: "TG Group / Channel", icon: "📡", floorRank: ROLE_RANK.admin },
       { id: "agentProfile", name: "Agent Profile", icon: "🪪", floorRank: ROLE_RANK.admin },
       { id: "depositSheets", name: "Deposit Sheet Link", icon: "🧾", floorRank: ROLE_RANK.superadmin },
@@ -628,7 +638,7 @@
       }
 
       if (mode === "whitelist") {
-        acctTitle.textContent = "Whitelist IP";
+        acctTitle.textContent = "IP Access";
         const res = await window.AgentAuth.authFetch("/api/admin/offices");
         const data = await res.json();
         acctOffices = data.ok ? data.offices : [];
@@ -640,14 +650,20 @@
           <div class="field"><label>Office name</label><input type="text" id="am_office_name" ${ro} autocomplete="off" /></div>
           <div class="field"><label>Allowed IPs (one per line)</label><textarea id="am_office_ips" rows="4" placeholder="203.0.113.10" ${ro} autocomplete="off"></textarea></div>
           ${canEditWhitelist ? "" : '<p class="edit-modal-note">View only.</p>'}`;
+        const deleteOfficeBtn = document.getElementById("acctModalDeleteOffice");
         document.getElementById("am_office_picker").addEventListener("change", (e) => {
           const office = acctOffices.find((o) => o.id === e.target.value);
           document.getElementById("am_office_name").value = office ? office.name : "";
           document.getElementById("am_office_ips").value = office ? (office.allowedIPs || []).join("\n") : "";
+          // Only an EXISTING office can be deleted — "+ New Office" (empty
+          // value) has nothing to delete yet.
+          deleteOfficeBtn.style.display = canEditWhitelist && e.target.value ? "" : "none";
         });
         document.getElementById("acctModalSave").style.display = canEditWhitelist ? "" : "none";
         document.getElementById("acctModalActions").style.display = canEditWhitelist ? "" : "none";
+        deleteOfficeBtn.style.display = "none"; // starts on "+ New Office"
       }
+      if (mode !== "whitelist") document.getElementById("acctModalDeleteOffice").style.display = "none";
 
       if (mode === "reset" && isSenior) {
         acctTitle.textContent = "Reset Password";
@@ -1627,6 +1643,7 @@
       if (acctMode === "whitelist") return acctSaveWhitelist();
       if (acctMode === "reset") return isSenior ? acctSaveResetAdmin() : acctSaveResetSelf();
     });
+    document.getElementById("acctModalDeleteOffice").addEventListener("click", acctDeleteWhitelistOffice);
 
     function wireBrandTogglePicker() {
       const grid = document.getElementById("am_brandGrid");
@@ -1701,6 +1718,27 @@
       setTimeout(closeAcctModal, 700);
     }
 
+    // Ported from the now-retired accounts-admin.html's Offices tab —
+    // the picker-based "IP Access" modal above can create/edit an office
+    // but had no way to remove one; this closes that gap so nothing was
+    // lost in the consolidation. Same confirm-then-call-then-refresh
+    // shape as setAgentLock()/deleteOffice() used to have.
+    async function acctDeleteWhitelistOffice() {
+      const id = document.getElementById("am_office_picker").value;
+      const name = document.getElementById("am_office_name").value || "this office";
+      if (!id) return;
+      if (!confirm(`Delete office "${name}"? Accounts assigned to it will need a new office.`)) return;
+      setAcctNote("Deleting…");
+      const res = await window.AgentAuth.authFetch("/api/admin/offices", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "delete", id }),
+      });
+      const data = await res.json();
+      if (!data.ok) return setAcctNote(data.error || "Delete failed.", "err");
+      setAcctNote("Delete success.", "ok");
+      setTimeout(closeAcctModal, 700);
+    }
+
     async function acctSaveResetAdmin() {
       const username = document.getElementById("am_reset_account").value;
       const newPass = document.getElementById("am_reset_newpass").value;
@@ -1740,5 +1778,6 @@
       setTimeout(closeAcctModal, 700);
     }
   </script>
+  <script src="/assets/spa-shell.js?v=dae92e9c"></script>
 </body>
 </html>

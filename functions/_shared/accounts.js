@@ -96,7 +96,7 @@ export function rankOf(role) { return ROLE_RANK[role] ?? ROLE_RANK.agent; }
 // value always wins over the role default below.
 export const ADMIN_SECTIONS_LIST = [
   { id: "createAccount", name: "Create Account", icon: "➕", floorRank: ROLE_RANK.senior },
-  { id: "whitelistIp", name: "Whitelist IP", icon: "🌐", floorRank: ROLE_RANK.admin },
+  { id: "whitelistIp", name: "IP Access", icon: "🌐", floorRank: ROLE_RANK.admin },
   { id: "tgRoutes", name: "TG Group / Channel", icon: "📡", floorRank: ROLE_RANK.admin },
   { id: "agentProfile", name: "Agent Profile", icon: "🪪", floorRank: ROLE_RANK.admin },
   // Maintenance/Coming-soon toggle for the hub's modules + TG Reply

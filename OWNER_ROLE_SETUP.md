@@ -39,7 +39,6 @@ Agent (0)
 | `functions/api/admin/accounts.js` | 权限判断主逻辑：`canManage()`、`isHiddenTarget()`、save/delete/lock/unlock 全部改用等级比较 |
 | `functions/api/auth/login.js` | 登录流程里**独立的**一份 office 检查，同步改 |
 | `public/index.html` | 客户端 `ROLE_RANK`、建号/重置密码/Agent Profile 弹窗/锁定按钮/office 显示 |
-| `public/accounts-admin.html` | 同样一份客户端 `ROLE_RANK`（这是独立的备用管理页面） |
 | `public/threads.html` | 同样一份客户端 `ROLE_RANK`（用于 Recall Chat History 区块的可见性判断） |
 | `PROJECT_STATUS.md` | 权限矩阵文档（如果该项目有维护这份文档） |
 | （新建）`create-owner-account.js` | 本地跑的脚本，生成写入 Owner 账号的 KV 命令 |
@@ -230,9 +229,11 @@ if (!account.officeId && account.role !== "owner") { ... }
 
 ---
 
-### 4.4 客户端文件（`index.html` / `accounts-admin.html` / `threads.html`）
+### 4.4 客户端文件（`index.html` / `threads.html`）
+（曾经还有 `accounts-admin.html` 一份，该页面已下线并整合进
+`index.html` 的 Account Management 弹窗，不用再单独改它了。）
 
-这三个文件**各自独立**写死了一份 `ROLE_RANK`，全部要加 `owner: 4`：
+这两个文件**各自独立**写死了一份 `ROLE_RANK`，全部要加 `owner: 4`：
 
 ```js
 const ROLE_RANK = { agent: 0, senior: 1, admin: 2, superadmin: 3, owner: 4 };
