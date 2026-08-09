@@ -2,48 +2,45 @@
  * /api/admin/deposit-sheets  ("Deposit Sheet Link" admin page)
  *
  * Same brand-sidebar shape as /api/admin/routes (TG Group/Channel) — one
- * row per PKR brand, each independently overridable.
+ * row per brand for Deposit Issue, plus a This Month / Last Month pair
+ * for Deposit Backup, each independently overridable.
  *
  *   GET
  *     -> { ok: true, brands: [{id,name}],
  *          sheets: { [brandId]: { sheetId, tabNames, isOverride } },
  *          backup: { [brandId]: { thisMonth: {sheetId,tabNames}|null,
  *                                  lastMonth: {sheetId,tabNames}|null } } }
- *        `isOverride: true` means it's a live KV override (edited through
- *        this page); `false` means it's still showing the hardcoded
- *        default (only "crickex" has one baked into search.js right now —
- *        every other brand shows sheetId:"" until someone saves a link).
+ *        `isOverride: true` means it's a live KV override; `false` means
+ *        the brand has no Deposit Issue sheet linked yet (sheetId: "").
+ *        No hardcoded default exists for any brand — see depositSheets.js.
  *     Requires canSeeAdminSection(..., "depositSheets").
  *
- *   POST { action:"save", brandId, sheetUrlOrId, tabNames } -> store an
- *     override in THREADS_KV. `tabNames` is a comma-separated string.
- *     Takes effect on the very next search/update for that brand — no
- *     redeploy needed. Requires canEditAdminSection(..., "depositSheets").
+ *   POST { action:"save", brandId, sheetUrlOrId, tabNames } -> store a
+ *     Deposit Issue override in THREADS_KV. `tabNames` is a comma-
+ *     separated string. Takes effect on the very next search/update for
+ *     that brand — no redeploy needed. Requires
+ *     canEditAdminSection(..., "depositSheets").
  *
- *   POST { action:"reset", brandId } -> delete the override, reverting
- *     that brand back to its hardcoded default (empty, for every brand
- *     except crickex). Requires canEditAdminSection(..., "depositSheets").
+ *   POST { action:"reset", brandId } -> delete the Deposit Issue
+ *     override, reverting that brand back to fully unconfigured.
  *
  *   Deposit Backup — "This Month" / "Last Month" rotation. Only This
  *   Month is ever directly editable; Last Month is read-only in the UI
- *   and only changes via the rollover action. See depositSheets.js for
- *   the full reasoning.
+ *   and only changes via the rollover action. See depositSheets.js.
  *   POST { action:"saveBackupThisMonth", brandId, sheetUrlOrId, tabNames }
- *     -> overwrites This Month only, leaves Last Month untouched.
  *   POST { action:"clearBackupThisMonth", brandId }
- *     -> clears This Month only (no hardcoded default to fall back to).
  *   POST { action:"rollBackup", brandId }
- *     -> This Month becomes the new Last Month (discarding whatever was
- *        there), This Month is cleared out ready for the new link.
  *
- * MODULE_SLOT / DEFAULT_CRICKEX below are hand-copied from
- * functions/api/deposit-issue/search.js's own constants — keep in sync
- * if that file's hardcoded default ever changes directly instead of
- * through this admin page.
+ * NOTE: this admin GET/POST intentionally still lists EVERY brand,
+ * including ones currently in DEPOSIT_HIDDEN_BRANDS (depositSheets.js)
+ * — a SuperAdmin can pre-configure a not-yet-launched brand's sheet
+ * here ahead of time. It's only hidden from the agent-facing search
+ * pages (deposit-issue.html / deposit-backup.html's brand dropdown and
+ * "All Brands" mode) until someone removes it from that list.
  */
 import { authenticateStaff, ROLE_RANK, canSeeAdminSection, canEditAdminSection } from "../../_shared/accounts.js";
+import { BRANDS } from "../../_shared/routing.js";
 import {
-  PKR_BRANDS,
   getAllDepositSheetOverrides,
   saveDepositSheetOverride,
   deleteDepositSheetOverride,
@@ -53,23 +50,22 @@ import {
   rollDepositBackup,
 } from "../../_shared/depositSheets.js";
 
-const MODULE_SLOT = "depositIssue";
-// Only Crickex has a real hardcoded fallback (this was the one working
-// Sheet before this admin page existed). Every other brand starts with
-// no default at all — until a link is saved here, that brand's Deposit
-// Issue search returns "not configured" rather than silently reading
-// the wrong department's data.
-const DEFAULT_CRICKEX = { sheetId: "1HByPuZMuuYZL9S5fPPGjb8RAmCwNVgKXvuLgVBbVM-E", tabNames: ["CX PKR"] };
+const MODULE_SLOT = "depositIssue"; // must match deposit-issue/{search,update,sheet-links}.js
 
-function defaultFor(brandId) {
-  return brandId === "crickex" ? DEFAULT_CRICKEX : { sheetId: "", tabNames: [] };
+function defaultFor() {
+  // No bootstrap default for any brand — every brand starts fully
+  // unconfigured until a link is saved here. If a specific brand ever
+  // needs a pre-wired fallback sheet, branch on brandId here AND add the
+  // matching branch in deposit-issue/search.js's resolveBrandSheet-
+  // equivalent — both files need it independently.
+  return { sheetId: "", tabNames: [] };
 }
 
 export async function onRequestGet(context) {
   try {
     return await handleGet(context);
   } catch (e) {
-    return json({ ok: false, error: `Unexpected server error: ${String(e && e.message || e)}` }, 500);
+    return json({ ok: false, error: `Unexpected server error: ${String((e && e.message) || e)}` }, 500);
   }
 }
 
@@ -81,7 +77,7 @@ async function handleGet({ request, env }) {
     return json({ ok: false, error: "You don't have access to Deposit Sheet Link." }, 403);
   }
 
-  const brandIds = PKR_BRANDS.map((b) => b.id);
+  const brandIds = Object.keys(BRANDS);
   const overrides = await getAllDepositSheetOverrides(env, MODULE_SLOT, brandIds);
 
   const sheets = {};
@@ -89,26 +85,23 @@ async function handleGet({ request, env }) {
     const override = overrides[brandId];
     sheets[brandId] = override
       ? { sheetId: override.sheetId, tabNames: override.tabNames, isOverride: true }
-      : { ...defaultFor(brandId), isOverride: false };
+      : { ...defaultFor(), isOverride: false };
   }
 
-  // Deposit Backup: This Month / Last Month, no hardcoded default for
-  // any brand (unlike Deposit Issue's Crickex fallback) — every brand
-  // starts fully empty until someone saves a link. Fetched in parallel
-  // (not one brand at a time) — same reason getAllDepositSheetOverrides()
-  // above does too: 9 sequential KV round-trips is what was making this
-  // modal noticeably slow to open.
+  // Fetched in parallel, not one brand at a time — same reason
+  // getAllDepositSheetOverrides() above does too.
   const backupEntries = await Promise.all(brandIds.map(async (brandId) => [brandId, await getDepositBackup(env, brandId)]));
   const backup = Object.fromEntries(backupEntries);
 
-  return json({ ok: true, brands: PKR_BRANDS, sheets, backup });
+  const brands = brandIds.map((id) => ({ id, name: BRANDS[id].name }));
+  return json({ ok: true, brands, sheets, backup });
 }
 
 export async function onRequestPost(context) {
   try {
     return await handlePost(context);
   } catch (e) {
-    return json({ ok: false, error: `Unexpected server error: ${String(e && e.message || e)}` }, 500);
+    return json({ ok: false, error: `Unexpected server error: ${String((e && e.message) || e)}` }, 500);
   }
 }
 
@@ -128,29 +121,28 @@ async function handlePost({ request, env }) {
   }
 
   const brandId = body.brandId;
-  if (!PKR_BRANDS.some((b) => b.id === brandId)) return json({ ok: false, error: `Unknown brand "${brandId}".` }, 400);
+  if (!BRANDS[brandId]) return json({ ok: false, error: `Unknown brand "${brandId}".` }, 400);
 
   if (body.action === "save") {
     try {
       const saved = await saveDepositSheetOverride(env, MODULE_SLOT, brandId, { sheetUrlOrId: body.sheetUrlOrId, tabNames: body.tabNames });
       return json({ ok: true, brandId, sheet: { ...saved, isOverride: true } });
     } catch (e) {
-      return json({ ok: false, error: String(e.message || e) }, 400);
+      return json({ ok: false, error: String((e && e.message) || e) }, 400);
     }
   }
 
   if (body.action === "reset") {
     await deleteDepositSheetOverride(env, MODULE_SLOT, brandId);
-    return json({ ok: true, brandId, sheet: { ...defaultFor(brandId), isOverride: false } });
+    return json({ ok: true, brandId, sheet: { ...defaultFor(), isOverride: false } });
   }
 
-  // ── Deposit Backup actions ──
   if (body.action === "saveBackupThisMonth") {
     try {
       const updated = await saveDepositBackupThisMonth(env, brandId, { sheetUrlOrId: body.sheetUrlOrId, tabNames: body.tabNames });
       return json({ ok: true, brandId, backup: updated });
     } catch (e) {
-      return json({ ok: false, error: String(e.message || e) }, 400);
+      return json({ ok: false, error: String((e && e.message) || e) }, 400);
     }
   }
   if (body.action === "clearBackupThisMonth") {

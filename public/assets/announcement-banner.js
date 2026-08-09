@@ -1,156 +1,212 @@
 /**
- * announcement-banner.js
+ * announcement-banner.js — the amber "REMINDER" banner, on every page.
  *
- * Include on every page that already includes authguard.js, right after
- * a `<div id="announcementBanner"></div>` placeholder (on Home, that
- * placeholder sits below the brand marquee; everywhere else it sits
- * right below the topbar — see each page's own markup).
+ * Include once per page, after authguard.js has already set up
+ * window.AgentAuth:
+ *   <div id="announcementBanner"></div>
+ *   <script src="/assets/toast.js" defer></script>   (not required by the
+ *     banner itself, but announcements.html needs it — harmless to skip
+ *     here if a page never shows toasts)
+ *   <script src="/assets/announcement-banner.js" defer></script>
  *
- * Fetches GET /api/announcements (already filtered server-side to only
- * what's effectively active right now — see _shared/announcements.js)
- * and renders it as a dismissible reminder bar:
- *   - 0 active  -> renders nothing
- *   - 1 active  -> shown, static
- *   - 2+ active -> auto-rotates one at a time (interval from the
- *     Settings tab's rotation-speed control, default 5s), with a
- *     "(2/3)" counter and small dots so it's clear more than one exists.
- *     Rotating between two announcements fades the outgoing text out in
- *     place while the incoming one slides in as full text from the
- *     right (TRANSITION_MS) — no per-character typing, no page-load
- *     jump: the text wrap uses a CSS grid overlap (see style.css) so
- *     both messages share one auto-sized box instead of a fixed height.
+ * Behavior:
+ *   - Fetches /api/announcements on load and every 60s.
+ *   - 0 active -> renders nothing (#announcementBanner:empty { display:none } in CSS).
+ *   - 1 active -> static.
+ *   - 2+ active -> rotates using the server's rotateIntervalMs. Outgoing
+ *     text fades out in place while incoming text slides in as a
+ *     complete block from the right (~2.2s) — not a typewriter effect,
+ *     not an instant swap.
+ *   - Dismiss (✕) is in-memory only — hides that one announcement for
+ *     the rest of THIS page load; a refresh or re-login brings it back.
+ *   - window.refreshAnnouncementBanner() — call after any action that
+ *     just changed the data (Save/Delete on the management page, saving
+ *     the rotation-speed setting) so this same device updates instantly
+ *     instead of waiting up to 60s for the next poll.
  *
- * Dismiss (✕) only hides that ONE announcement for the rest of THIS page
- * load — it's an in-memory set, not persisted anywhere, so refreshing
- * the page or logging back in shows it again. (An earlier version of
- * this used localStorage to remember dismissals permanently per
- * browser — deliberately reverted per feedback: agents expect a
- * refresh to bring reminders back, not hide them forever.)
+ * Implementation note: the DOM skeleton is built ONCE per data-change
+ * (buildSkeleton()) — after that, each rotation tick (showItem()) only
+ * touches two overlapping text nodes. A full innerHTML replace every
+ * tick would make the CSS transition impossible to animate (no "from"
+ * state to transition out of).
  */
 (function () {
   const POLL_MS = 60000;
   const TRANSITION_MS = 2200;
-  let rotateMs = 6000; // overwritten by the server's configured value once loaded — see Settings tab
 
-  const dismissedIds = new Set();
-  function getDismissed() { return dismissedIds; }
-  function dismiss(id) { dismissedIds.add(id); }
+  const root = document.getElementById("announcementBanner");
+  if (!root) return;
 
+  const dismissed = new Set();
   let items = [];
-  let visible = [];
-  let rotateIndex = 0;
+  let rotateIntervalMs = 5000;
   let rotateTimer = null;
+  let transitionTimer = null;
+  let currentIndex = 0;
+  let usingA = true; // which of the two overlapping text nodes is "current"
 
-  // Builds the banner's DOM shell fresh — called whenever the visible
-  // set changes (new data from a poll, or a dismiss). Rotation itself
-  // (see showItem below) never rebuilds this, it only touches the two
-  // text nodes inside it, which is what makes the slide transition
-  // possible in the first place (a full innerHTML replace every tick
-  // would just snap instantly, no transition to animate).
-  function buildSkeleton(slot) {
-    slot.innerHTML = `
-      <div class="announcement-banner">
-        <span class="announcement-banner-icon breathing">📢</span>
-        <div class="announcement-banner-body">
-          <div class="announcement-banner-label breathing"><span id="annLabel">REMINDER</span></div>
-          <div class="announcement-banner-textwrap">
-            <div class="announcement-banner-text" id="annTextA"></div>
-            <div class="announcement-banner-text" id="annTextB"></div>
-          </div>
-          <div class="announcement-banner-dots" id="annDots"></div>
-        </div>
-        <button type="button" class="announcement-banner-close" title="Dismiss">✕</button>
-      </div>
-    `;
-    slot.querySelector(".announcement-banner-close").addEventListener("click", () => {
-      dismiss(visible[rotateIndex].id);
-      paint();
+  let els = null; // { wrap, icon, label, textA, textB, dots, close }
+  let skeletonKey = ""; // ids joined — rebuild only when this changes
+
+  function topicLabel(item) {
+    return (item.topic || "REMINDER").toUpperCase();
+  }
+
+  function buildSkeleton() {
+    root.innerHTML = "";
+    if (!items.length) { els = null; return; }
+
+    const wrap = document.createElement("div");
+    wrap.className = "ann-banner";
+
+    const icon = document.createElement("span");
+    icon.className = "ann-banner-icon";
+    icon.textContent = "📢";
+
+    const body = document.createElement("div");
+    body.className = "ann-banner-body";
+
+    const label = document.createElement("div");
+    label.className = "ann-banner-label";
+
+    const textWrap = document.createElement("div");
+    textWrap.className = "ann-banner-text-wrap";
+    const textA = document.createElement("div");
+    textA.className = "ann-banner-text";
+    const textB = document.createElement("div");
+    textB.className = "ann-banner-text";
+    textWrap.appendChild(textA);
+    textWrap.appendChild(textB);
+
+    body.appendChild(label);
+    body.appendChild(textWrap);
+
+    const dots = document.createElement("div");
+    dots.className = "ann-banner-dots";
+    items.forEach(() => {
+      const d = document.createElement("span");
+      d.className = "ann-banner-dot";
+      dots.appendChild(d);
     });
+    if (items.length > 1) body.appendChild(dots);
+
+    const close = document.createElement("button");
+    close.type = "button";
+    close.className = "ann-banner-close";
+    close.title = "Dismiss";
+    close.textContent = "✕";
+
+    wrap.appendChild(icon);
+    wrap.appendChild(body);
+    wrap.appendChild(close);
+    root.appendChild(wrap);
+
+    els = { wrap, label, textA, textB, dots: items.length > 1 ? dots : null, close };
+
+    close.addEventListener("click", onDismissClick);
   }
 
-  function renderDotsAndCounter(i) {
-    const labelEl = document.getElementById("annLabel");
-    if (labelEl) labelEl.textContent = (visible[i].topic || "Reminder").toUpperCase();
-    const dotsEl = document.getElementById("annDots");
-    if (dotsEl) {
-      dotsEl.innerHTML = visible.length > 1
-        ? visible.map((_, di) => `<span class="${di === i ? "on" : ""}"></span>`).join("")
-        : "";
+  function onDismissClick() {
+    const item = items[currentIndex];
+    if (!item) return;
+    dismissed.add(item.id);
+    items = items.filter((i) => i.id !== item.id);
+    stopRotation();
+    currentIndex = 0;
+    // NOTE: do NOT force skeletonKey = "" here. render() below compares
+    // the freshly-computed key (items.map(i => i.id).join(",")) against
+    // skeletonKey to decide whether to rebuild. If items just became
+    // empty, that fresh key IS "" — forcing skeletonKey to "" first made
+    // the two look identical, so render() thought nothing had changed
+    // and skipped the rebuild entirely. The banner then stayed showing
+    // the just-dismissed announcement forever, and its ✕ button looked
+    // like it had stopped responding (dismissing a 2nd/last item did
+    // nothing) even though the dismiss logic above ran correctly.
+    // Leaving skeletonKey holding its real previous value lets render()
+    // compare against the truth and rebuild (or empty out) correctly.
+    render();
+  }
+
+  function showItem(idx, isInitial) {
+    if (!els || !items.length) return;
+    const item = items[idx];
+    els.label.textContent = topicLabel(item);
+
+    const outgoingEl = usingA ? els.textA : els.textB;
+    const incomingEl = usingA ? els.textB : els.textA;
+    usingA = !usingA;
+
+    if (isInitial) {
+      incomingEl.textContent = item.text;
+      incomingEl.className = "ann-banner-text ann-current";
+      outgoingEl.className = "ann-banner-text";
+      outgoingEl.textContent = "";
+    } else {
+      // Outgoing: fade out in place.
+      outgoingEl.className = "ann-banner-text ann-leaving";
+      // Incoming: start off-screen to the right, invisible.
+      incomingEl.textContent = item.text;
+      incomingEl.className = "ann-banner-text ann-entering";
+      // Next frame: slide/fade it in — needs the "entering" state to
+      // have actually painted first, or the transition never fires.
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          incomingEl.className = "ann-banner-text ann-current";
+        });
+      });
+      clearTimeout(transitionTimer);
+      transitionTimer = setTimeout(() => {
+        outgoingEl.className = "ann-banner-text";
+        outgoingEl.textContent = "";
+      }, TRANSITION_MS);
+    }
+
+    if (els.dots) {
+      Array.from(els.dots.children).forEach((d, i) => d.classList.toggle("active", i === idx));
     }
   }
 
-  // animate=false is used for the very first paint of a given skeleton
-  // (nothing to transition FROM yet); animate=true is the actual
-  // rotation tick — outgoing text fades out in place, incoming text
-  // slides in as a complete block from the right.
-  function showItem(i, animate) {
-    rotateIndex = i;
-    const a = visible[i];
-    renderDotsAndCounter(i);
-    const front = document.getElementById("annTextA");
-    const back = document.getElementById("annTextB");
-    if (!front || !back) return;
-    if (!animate) {
-      front.textContent = a.text;
-      front.style.transition = "none"; front.style.opacity = "1"; front.style.transform = "none";
-      back.style.opacity = "0"; back.style.transform = "translateX(50px)";
-      return;
-    }
-    back.textContent = a.text;
-    back.style.transition = "none";
-    back.style.transform = "translateX(50px)";
-    back.style.opacity = "0";
-    requestAnimationFrame(() => {
-      front.style.transition = `opacity ${TRANSITION_MS}ms ease`;
-      front.style.opacity = "0";
-      back.style.transition = `transform ${TRANSITION_MS}ms ease, opacity ${TRANSITION_MS}ms ease`;
-      back.style.transform = "translateX(0)";
-      back.style.opacity = "1";
-    });
-    setTimeout(() => {
-      // Settle: A becomes the resting "front" copy again so the next
-      // rotation always fades FROM a clean, non-transitioning element.
-      front.textContent = a.text;
-      front.style.transition = "none"; front.style.opacity = "1"; front.style.transform = "none";
-      back.style.opacity = "0"; back.style.transform = "translateX(50px)";
-    }, TRANSITION_MS + 20);
+  function stopRotation() {
+    if (rotateTimer) { clearInterval(rotateTimer); rotateTimer = null; }
   }
 
-  function paint() {
-    const slot = document.getElementById("announcementBanner");
-    if (!slot) return;
-    clearInterval(rotateTimer);
-    const dismissed = getDismissed();
-    visible = items.filter((a) => !dismissed.has(a.id));
-    if (!visible.length) { slot.innerHTML = ""; return; }
-    if (rotateIndex >= visible.length) rotateIndex = 0;
-    buildSkeleton(slot);
-    showItem(rotateIndex, false);
-    if (visible.length > 1) {
-      rotateTimer = setInterval(() => {
-        showItem((rotateIndex + 1) % visible.length, true);
-      }, rotateMs);
+  function startRotation() {
+    stopRotation();
+    if (items.length < 2) return;
+    rotateTimer = setInterval(() => {
+      currentIndex = (currentIndex + 1) % items.length;
+      showItem(currentIndex, false);
+    }, Math.max(1000, rotateIntervalMs));
+  }
+
+  function render() {
+    const key = items.map((i) => i.id).join(",");
+    if (key !== skeletonKey) {
+      skeletonKey = key;
+      currentIndex = 0;
+      usingA = true;
+      buildSkeleton();
+      if (items.length) showItem(0, true);
+      startRotation();
     }
   }
 
-  async function load() {
+  async function poll() {
     try {
-      const res = await window.AgentAuth.authFetch("/api/announcements", { cache: "no-store" });
+      const res = await window.AgentAuth.authFetch("/api/announcements");
       const data = await res.json();
-      items = data.ok ? (data.announcements || []) : [];
-      if (data.ok && Number.isFinite(data.rotateIntervalMs) && data.rotateIntervalMs > 0) rotateMs = data.rotateIntervalMs;
+      if (!data.ok) return;
+      rotateIntervalMs = data.rotateIntervalMs || rotateIntervalMs;
+      items = (data.announcements || []).filter((a) => !dismissed.has(a.id));
+      render();
     } catch {
-      // Network hiccup — leave whatever was already showing, try again next poll.
-      return;
+      // Best-effort — a failed poll just leaves the banner showing
+      // whatever it already had.
     }
-    paint();
   }
 
-  load();
-  setInterval(load, POLL_MS);
-  // Lets a page that just changed something (Save/Delete on
-  // announcements.html, or the rotation-speed setting in the Settings
-  // tab) refresh THIS device's banner immediately instead of waiting up
-  // to POLL_MS — other agents still catch up on their own next poll.
-  window.refreshAnnouncementBanner = load;
+  window.refreshAnnouncementBanner = poll;
+
+  poll();
+  setInterval(poll, POLL_MS);
 })();

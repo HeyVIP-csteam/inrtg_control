@@ -2,48 +2,63 @@
  * featureStatus.js  (SERVER-ONLY)
  *
  * Lets a SuperAdmin/Owner flip any of the hub's clickable entry points to
- * "Maintenance" or "Coming soon" — e.g. while a brand's Telegram routing
+ * "Maintenance" or "Coming soon" — e.g. while a topic's Telegram routing
  * is mid-change, or a feature isn't ready yet — WITHOUT touching who can
  * see it (that's still account.allowedModules/allowedAdminSections,
  * completely separate). This is a live on/off switch on top of that,
- * same "KV override, code default underneath" layering as routes.js /
- * depositSheets.js.
+ * same "KV override, code default underneath" layering as routes.js.
  *
- * Controllable items — PKR's 7 real form modules (ids match MODULE_META
- * in routing.js) plus 4 fixed pseudo-ids for the non-form hub features:
+ * Controllable items — the 7 real form modules (matching MODULE_META in
+ * routing.js) plus 4 fixed pseudo-ids for the hub's non-module features:
+ *   tg_reply_threads   -> /threads.html + /api/threads*
+ *   promo_code_search  -> /promo.html + /api/promo-search
  *   deposit_issue      -> /deposit-issue.html + /api/deposit-issue/*
- *   deposit_backup      -> /deposit-backup.html + /api/deposit-backup/*
- *   tg_reply_threads    -> /threads.html + /api/threads*
- *   promo_code_search   -> /promo.html + /api/promo-search
+ *   deposit_backup     -> /deposit-backup.html + /api/deposit-backup/*
  *
- * KV shape (same THREADS_KV namespace as everything else, own prefix):
- *   feature-status:<itemId>  ->  { status: "maintenance"|"coming_soon", bypassRoles: [...] }
+ * KV shape:
+ *   feature-status:<itemId>  ->  { status: "maintenance"|"coming_soon", bypassRoles: ["superadmin","owner"] }
  * Missing key = "active" (the default, nothing blocked) — turning this
  * on with an empty KV changes nothing that already works, same guarantee
  * every other KV-override feature in this project makes.
  *
- * BYPASS ROLES — an explicit array of specific role names (from
- * accounts.js's ROLE_RANK) allowed through while an item is off, e.g. an
- * Owner can grant "admin" bypass on one item without also granting it to
- * senior/agent. "owner" is always force-included (see sanitizeRoles) so
- * a mis-click that unchecks every role can never lock everyone out of
- * un-blocking it again.
+ * BYPASS ROLES — an explicit ARRAY of specific roles allowed through
+ * per item (not a single "at least this rank" threshold) — an Owner can
+ * grant e.g. "admin" bypass on one item without also granting it to
+ * superadmin/owner as a side effect, and can pick any combination.
+ * Stored as role name strings from _shared/accounts.js's ROLE_RANK.
+ */
+/**
+ * ============================================================
+ * LESSON LEARNED — KV IS ONLY EVENTUALLY CONSISTENT
+ * ============================================================
+ * A write via saveFeatureStatus()/resetFeatureStatus() is NOT guaranteed
+ * to be visible to a getFeatureStatus() call from a fresh request a
+ * moment later (Cloudflare KV replicates across edge locations
+ * asynchronously). The admin panel's Save handler must use the value its
+ * own POST response already returned to update the UI locally instead of
+ * re-fetching — see public/assets/apply-feature-status-to-ui.js's
+ * applyFeatureStatusItem() and settings-admin-panel.js's onSaved.
+ * ============================================================
  */
 import { ROLE_RANK } from "./accounts.js";
 
 export const FEATURE_STATUS_ITEMS = [
   { id: "qa", emoji: "🔐", name: "QA" },
   { id: "account_issue", emoji: "🔑", name: "Account Issue" },
-  { id: "withdraw_issue", emoji: "💸", name: "Withdraw Issue" },
   { id: "risk_issue", emoji: "⚠️", name: "Risk Issue" },
   { id: "promotion_request", emoji: "🎟️", name: "Promotion Request" },
   { id: "daily_report", emoji: "📊", name: "Daily Report" },
   { id: "genie_issue", emoji: "🤖", name: "Genie Issue" },
+  { id: "withdraw_issue", emoji: "💸", name: "Withdraw Issue" },
+  { id: "tg_reply_threads", emoji: "💬", name: "TG Reply Threads" },
+  { id: "promo_code_search", emoji: "🎟️", name: "Promo Code Search" },
   { id: "deposit_issue", emoji: "💳", name: "Deposit Issue" },
   { id: "deposit_backup", emoji: "💻", name: "Deposit Backup" },
-  { id: "tg_reply_threads", emoji: "💭", name: "TG Reply Threads" },
-  { id: "promo_code_search", emoji: "🎟️", name: "Promo Code Search" },
-  { id: "announcements", emoji: "📢", name: "Announcement" },
+  // Not a tool card — governs the REMINDER banner itself (see
+  // _shared/announcements.js + api/announcements.js). Switching this to
+  // Maintenance/Coming-soon just makes the banner endpoint return an
+  // empty list to non-bypass roles; it never 403s.
+  { id: "announcements", emoji: "📢", name: "Announcement Banner" },
 ];
 const VALID_ITEM_IDS = new Set(FEATURE_STATUS_ITEMS.map((i) => i.id));
 const VALID_STATUSES = new Set(["maintenance", "coming_soon"]);
@@ -57,6 +72,9 @@ function statusKey(itemId) {
 
 function sanitizeRoles(roles) {
   const arr = Array.isArray(roles) ? roles.filter((r) => VALID_BYPASS_ROLES.includes(r)) : [];
+  // Owner can always get back in regardless of what was saved — otherwise
+  // a mis-click that unchecks every role would lock EVERYONE (including
+  // the person who just saved it) out of un-blocking it again.
   if (!arr.includes("owner")) arr.push("owner");
   return arr;
 }
@@ -108,7 +126,8 @@ export async function resetFeatureStatus(env, itemId) {
 
 // True if `account`'s role is one of the item's explicitly-allowed
 // bypass roles — i.e. this account is NOT blocked by a maintenance/
-// coming-soon status.
+// coming-soon status, same as a SuperAdmin/Owner testing something
+// while it's still locked for everyone else.
 export function accountCanBypass(account, bypassRoles) {
   if (!account) return false; // bootstrap mode has no feature-status concept yet
   return Array.isArray(bypassRoles) && bypassRoles.includes(account.role);

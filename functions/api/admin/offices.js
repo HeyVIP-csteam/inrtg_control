@@ -1,25 +1,18 @@
 /**
  * /api/admin/offices
- *   GET                                  -> list offices.
- *     Base auth floor is Senior (the lowest of the sections that need an
- *     office list — Create Account needs the office dropdown too). Two
- *     data tiers on top of that: an actor with canSeeAdminSection(...,
- *     "whitelistIp") gets the full record (name + allowedIPs); anyone
- *     else (e.g. Senior/Admin who only has createAccount access) gets
- *     just { id, name } — enough to populate an office picker without
- *     leaking the IP whitelist to someone who has no whitelistIp access
- *     at all. (Bugfix, 2026-07: this endpoint used to hard-require
- *     whitelistIp access for the GET entirely, which meant an account
- *     with ONLY createAccount access couldn't see any offices and so
- *     couldn't pick one when creating a new account.)
+ *   GET                                  -> list offices. Base floor rank
+ *     >= senior; canSeeAdminSection() then does the real per-account
+ *     gating. Full IP data only if Can-See Whitelist IP; otherwise
+ *     id+name only (enough to populate an office picker).
  *   POST { action:"save", id?, name, allowedIPs[] }  -> create/update.
- *     Requires Can-Edit(whitelistIp).
- *   POST { action:"delete", id }         -> delete. Requires Can-Edit(whitelistIp).
+ *     Requires Can-Edit access to Whitelist IP.
+ *   POST { action:"delete", id }         -> delete. Requires Can-Edit
+ *     access to Whitelist IP.
  *
  * See _shared/accounts.js authenticateStaff() for the two ways in (real
  * login at the required rank, or the one-time bootstrap password), and
- * canSeeAdminSection()/canEditAdminSection() for the per-account
- * Account Management Access layer these checks are built on.
+ * canSeeAdminSection()/canEditAdminSection() for the Account Management
+ * Access layer that replaced the old flat rank checks here.
  */
 import { listOffices, saveOffice, deleteOffice, authenticateStaff, ROLE_RANK, canSeeAdminSection, canEditAdminSection } from "../../_shared/accounts.js";
 
@@ -33,19 +26,25 @@ export async function onRequestGet(context) {
 
 async function handleGet({ request, env }) {
   if (!env.THREADS_KV) return json({ ok: false, error: "THREADS_KV is not bound yet." }, 500);
-  // Lowest floor among the sections that need an office list at all —
-  // "can I even get in the door" is separate from "how much data do I
-  // get back", handled below.
+  // Base floor is senior — the lowest floor among the sections that need
+  // this endpoint (createAccount). canSeeAdminSection() below does the
+  // real per-section gating. This matters because a Senior-rank account
+  // whose ONLY admin access is Create Account still needs to reach this
+  // endpoint to populate the office picker when creating a new account —
+  // it used to require rank >= admin outright, which silently broke that
+  // picker for exactly that account type (a real bug, fixed here).
   const auth = await authenticateStaff(request, env, ROLE_RANK.senior);
   if (!auth.ok) return json({ ok: false, error: "Not authorized." }, 401);
 
+  const canSeeIPs = canSeeAdminSection(auth.account, "whitelistIp");
+  const canEnter = canSeeIPs || canSeeAdminSection(auth.account, "createAccount") || canSeeAdminSection(auth.account, "agentProfile") || canSeeAdminSection(auth.account, "tgRoutes");
+  if (!canEnter) return json({ ok: false, error: "Not authorized." }, 403);
+
   const offices = await listOffices(env);
-  if (canSeeAdminSection(auth.account, "whitelistIp")) {
-    return json({ ok: true, offices });
-  }
-  // Minimal shape for anyone who can reach this endpoint (e.g. via
-  // createAccount access) but has no whitelistIp access — enough to
-  // populate an office <select>, nothing about the IP whitelist itself.
+  // Full IP whitelist data only if this account can actually see Whitelist
+  // IP — everyone else (e.g. Create-Account-only) gets just id+name, enough
+  // to populate a dropdown without leaking IP data they have no access to.
+  if (canSeeIPs) return json({ ok: true, offices });
   return json({ ok: true, offices: offices.map((o) => ({ id: o.id, name: o.name })) });
 }
 
@@ -59,6 +58,12 @@ export async function onRequestPost(context) {
 
 async function handlePost({ request, env }) {
   if (!env.THREADS_KV) return json({ ok: false, error: "THREADS_KV is not bound yet." }, 500);
+  // Editing IPs requires Can-Edit access to Whitelist IP — owner-controlled
+  // per account now, not a flat SuperAdmin-only rule. The bootstrap
+  // password still works here during initial setup (creating the very
+  // first Office before any admin account exists) since authenticateStaff
+  // grants bootstrap mode full trust until an admin-or-above account
+  // exists — see _shared/accounts.js.
   const auth = await authenticateStaff(request, env, ROLE_RANK.senior);
   if (!auth.ok) return json({ ok: false, error: "Not authorized." }, 401);
   if (!canEditAdminSection(auth.account, "whitelistIp")) {

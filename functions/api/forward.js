@@ -58,6 +58,7 @@ export async function onRequestPost(context) {
   try {
     return await handlePost(context);
   } catch (e) {
+    console.error("forward.js: unexpected error", e && e.stack || e);
     return json({ ok: false, error: `Unexpected server error: ${String((e && e.message) || e)}` }, 500);
   }
 }
@@ -164,7 +165,6 @@ async function handlePost({ request, env }) {
   try {
     tgResult = await sendCombinedAttachments({ botToken: env.TELEGRAM_BOT_TOKEN, route, text, fileIds, newAttachments: newAttachments || [] });
   } catch (e) {
-    console.error(`[forward.js] Telegram send failed: ${String((e && e.message) || e)}`);
     return json({ ok: false, error: `Telegram send failed: ${String((e && e.message) || e)}` }, 502);
   }
   // Fallback link resolveColumnValues() reaches for when THIS module
@@ -328,26 +328,27 @@ async function sendCombinedAttachments({ botToken, route, text, fileIds, newAtta
   media[0].parse_mode = "HTML";
   form.append("media", JSON.stringify(media));
 
-  // Only the FRESH uploads have bytes to compress — carried-over
-  // fileIds are already sitting on Telegram's servers under their
-  // original size and can't be (and don't need to be) touched. Same
-  // "compress before Telegram can reject it" fix as submit.js's
-  // sendMediaGroup — see telegram-photo-limit-fix.md.
+  // Only fresh uploads get compressed — the fileIds entries above are
+  // already sitting on Telegram's own servers (reused via file_id, no
+  // bytes ever pass through this request), so there's nothing for them
+  // to be compressed INTO; only genuinely new bytes can be too large.
   for (let i = 0; i < newAttachments.length; i++) {
     const att = newAttachments[i];
-    const isImage = looksLikeImage(att.type, att.name);
-    const rawBytes = base64ToBytes(dataUrlToBase64(att.dataUrl));
-    const { bytes, type, name } = isImage
-      ? await compressImageForTelegram(rawBytes, { type: att.type, name: att.name })
-      : { bytes: rawBytes, type: att.type, name: att.name };
-    const blob = new Blob([bytes], { type: type || "application/octet-stream" });
-    form.append(`newfile${i}`, blob, name || `attachment${i}`);
+    const raw = base64ToBytes(dataUrlToBase64(att.dataUrl));
+    let bytes = raw;
+    let sendType = att.type;
+    if (looksLikeImage(att.type, att.name)) {
+      const result = await compressImageForTelegram(raw, att.type);
+      bytes = result.bytes;
+      sendType = result.type;
+    }
+    const blob = new Blob([bytes], { type: sendType || "application/octet-stream" });
+    form.append(`newfile${i}`, blob, att.name || `attachment${i}`);
   }
 
   const res = await fetch(`https://api.telegram.org/bot${botToken}/sendMediaGroup`, { method: "POST", body: form });
   const data = await res.json();
   if (!data.ok) {
-    console.error(`[forward.js] sendMediaGroup rejected by Telegram (${fileIds.length} carried-over + ${newAttachments.length} new): ${data.description || "unknown error"}`);
     // Most likely cause: one of the carried-over file_ids isn't
     // actually a photo (a media group requires every "photo"-typed
     // entry to genuinely resolve as one) — fall back to sending
@@ -384,16 +385,16 @@ function looksLikeImage(type, name) {
 }
 
 async function sendOneFreshUpload({ botToken, route, text, attachment }) {
-  let { name, type, dataUrl } = attachment;
+  const { name, type, dataUrl } = attachment;
   let bytes = base64ToBytes(dataUrlToBase64(dataUrl));
+  let sendType = type;
   const isImage = looksLikeImage(type, name);
   if (isImage) {
-    const compressed = await compressImageForTelegram(bytes, { type, name });
-    bytes = compressed.bytes;
-    type = compressed.type;
-    name = compressed.name;
+    const result = await compressImageForTelegram(bytes, type);
+    bytes = result.bytes;
+    sendType = result.type;
   }
-  const blob = new Blob([bytes], { type: type || "application/octet-stream" });
+  const blob = new Blob([bytes], { type: sendType || "application/octet-stream" });
   const method = isImage ? "sendPhoto" : "sendDocument";
   const field = isImage ? "photo" : "document";
 

@@ -1,16 +1,23 @@
 /**
  * Custom dropdown used by the Settings admin panel (status picker +
  * multi-select role picker). Not a plain <select> — browsers render
- * <select> popups unstyled/white by default, so this is a from-scratch
- * dark-themed dropdown instead.
+ * <select> popups unstyled/white by default outside of a few special
+ * cases, so this is a from-scratch dark-themed dropdown instead.
  *
- * The menu uses position:fixed and gets moved to a direct child of
- * <body> while open (see settings-dropdown.js) so it can float above
- * the modal's own scrolling row list without being clipped.
+ * IMPORTANT — the "float above everything" trick:
+ * .fs-dropdown-menu uses `position: fixed`. When a dropdown OPENS, the
+ * companion JS (settings-dropdown.js) moves the menu element itself to
+ * be a direct child of <body> and sets its top/left/width via inline
+ * style computed from the trigger's on-screen position. This is
+ * REQUIRED, not optional styling — if the menu instead stays nested
+ * inside a scrollable container (overflow-y:auto), that container will
+ * silently clip the menu at its own edge the instant it extends past
+ * the box, no matter how high you set z-index. Moving it out of that
+ * container entirely is the only fix. See settings-dropdown.js.
  *
- * Reuses the same CSS vars as the rest of the theme:
- * --field-bg, --border, --ink, --ink-soft, --card-bg, --panel-border,
- * --sidebar-item-hover.
+ * Depends on: --field-bg, --border, --ink, --ink-soft, --card-bg,
+ * --panel-border, --sidebar-item-hover (same CSS vars as the rest of
+ * the theme this was pulled from — define your own equivalents).
  */
 
 .fs-dropdown { position: relative; flex: 1; min-width: 0; }
@@ -24,17 +31,15 @@
   content: "▾"; position: absolute; right: 9px; top: 50%; transform: translateY(-50%);
   color: var(--ink-soft); font-size: 10px; pointer-events: none;
 }
-.fs-dropdown-trigger:focus, .fs-dropdown.open .fs-dropdown-trigger { outline: none; border-color: var(--accent-gold); }
-.fs-dropdown-trigger:disabled { cursor: not-allowed; opacity: 0.6; }
-/* "Not applicable" state — the bypass-role picker while the parent
-   item's status is "active". */
+.fs-dropdown-trigger:focus, .fs-dropdown.open .fs-dropdown-trigger { outline: none; border-color: #38bdf8; }
+/* "Not applicable" state — e.g. gray out a bypass-role picker while the
+   parent item's status is "active" (see settings-admin-panel.js). */
 .fs-dropdown-na .fs-dropdown-trigger { color: var(--ink-soft); font-style: italic; cursor: default; opacity: 0.6; }
 
 .fs-dropdown-menu {
   display: none; position: fixed; z-index: 1000;
   background: var(--card-bg); border: 1px solid var(--panel-border); border-radius: 10px;
   padding: 4px; box-shadow: 0 10px 24px -8px rgba(0, 0, 0, 0.5);
-  max-height: 260px; overflow-y: auto;
 }
 .fs-dropdown-option {
   display: flex; align-items: center; justify-content: space-between; gap: 8px;
@@ -42,12 +47,13 @@
   cursor: pointer; white-space: nowrap;
 }
 .fs-dropdown-option:hover { background: var(--sidebar-item-hover); }
-.fs-dropdown-option .fs-check { color: var(--accent-gold); font-weight: 700; visibility: hidden; }
-.fs-dropdown-option.selected { background: rgba(200, 145, 47, 0.14); }
+.fs-dropdown-option .fs-check { color: #38bdf8; font-weight: 700; visibility: hidden; }
+.fs-dropdown-option.selected { background: rgba(56, 189, 248, 0.12); }
 .fs-dropdown-option.selected .fs-check { visibility: visible; }
 
-/* Freezes the modal's title/close button in place while the row list
-   scrolls internally — without this, the list keeps growing the whole
-   .edit-modal taller than the viewport and the BACKDROP ends up
-   scrolling instead, taking the header out of view along with it. */
+/* Freeze the modal's title/close button in place while a long row list
+   scrolls internally — put whatever's meant to scroll inside a
+   `<div class="fs-scroll">`. Sizes itself against the viewport so it
+   never grows tall enough to ALSO trigger your modal backdrop's own
+   scroll (two scrollbars at once looks broken). */
 .fs-scroll { max-height: min(55vh, calc(100vh - 260px)); overflow-y: auto; padding-right: 4px; }

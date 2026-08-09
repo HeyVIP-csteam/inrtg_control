@@ -87,9 +87,11 @@ async function handleSearch({ request, env }) {
   const account = await verifyRequest(request, env);
   if (!account) return json({ ok: false, error: "Login required." }, 401);
 
+  // Maintenance/Coming-soon toggle (Settings admin panel) — see
+  // _shared/featureStatus.js.
   const featureStatus = await getFeatureStatus(env, "promo_code_search");
   if (featureStatus.status !== "active" && !accountCanBypass(account, featureStatus.bypassRoles)) {
-    return json({ ok: false, error: featureStatus.status === "coming_soon" ? "Promo Code Search isn't available yet." : "Promo Code Search is currently under maintenance." }, 403);
+    return json({ ok: false, error: "Currently unavailable." }, 403);
   }
 
   const codes = (new URL(request.url).searchParams.get("codes") || "")

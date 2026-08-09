@@ -1,13 +1,15 @@
 /**
- * /api/admin/announcement-settings — Settings tab's control for how fast
- * the reminder banner cycles through 2+ simultaneously active
- * announcements. Gated by the "settings" admin section — same tier as
- * Maintenance/Coming soon on this same tab — NOT by "announcements"
- * (that section only covers the announcements themselves, see
- * /api/admin/announcements.js).
+ * /api/admin/announcement-settings — the banner's rotation-speed control
+ * (lives on the Settings tab, alongside Maintenance/Coming-soon).
  *
- *   GET  -> { ok: true, rotateIntervalMs }
- *   POST { rotateIntervalMs } -> { ok: true, rotateIntervalMs }
+ *   GET                          -> { ok, rotateIntervalMs }
+ *   POST { rotateIntervalMs }    -> { ok, rotateIntervalMs }
+ *
+ * Gated by the "settings" Account Management Access section — same tier
+ * as the Maintenance/Coming-soon controls — DELIBERATELY NOT the
+ * "announcements" section: "manage the announcements" and "manage how
+ * the banner behaves" are different concerns. This is a global
+ * display-behavior setting, not per-announcement content.
  */
 import { authenticateStaff, ROLE_RANK, canSeeAdminSection, canEditAdminSection } from "../../_shared/accounts.js";
 import { getAnnouncementSettings, saveAnnouncementSettings } from "../../_shared/announcements.js";
@@ -22,12 +24,11 @@ export async function onRequestGet(context) {
 
 async function handleGet({ request, env }) {
   if (!env.THREADS_KV) return json({ ok: false, error: "THREADS_KV is not bound yet." }, 500);
-  const auth = await authenticateStaff(request, env, ROLE_RANK.senior);
+  const auth = await authenticateStaff(request, env, ROLE_RANK.admin);
   if (!auth.ok) return json({ ok: false, error: "Not authorized." }, 401);
   if (!canSeeAdminSection(auth.account, "settings")) {
     return json({ ok: false, error: "You don't have access to Settings." }, 403);
   }
-
   const settings = await getAnnouncementSettings(env);
   return json({ ok: true, ...settings });
 }
@@ -42,8 +43,11 @@ export async function onRequestPost(context) {
 
 async function handlePost({ request, env }) {
   if (!env.THREADS_KV) return json({ ok: false, error: "THREADS_KV is not bound yet." }, 500);
-  const auth = await authenticateStaff(request, env, ROLE_RANK.senior);
+  const auth = await authenticateStaff(request, env, ROLE_RANK.admin);
   if (!auth.ok) return json({ ok: false, error: "Not authorized." }, 401);
+  if (!canSeeAdminSection(auth.account, "settings")) {
+    return json({ ok: false, error: "You don't have access to Settings." }, 403);
+  }
   if (!canEditAdminSection(auth.account, "settings")) {
     return json({ ok: false, error: "You don't have Can-Edit access to Settings." }, 403);
   }
@@ -55,18 +59,14 @@ async function handlePost({ request, env }) {
     return json({ ok: false, error: "Invalid JSON body." }, 400);
   }
 
-  const ms = Number(body.rotateIntervalMs);
-  if (!Number.isFinite(ms) || ms < 1000) {
-    return json({ ok: false, error: "Rotation interval must be at least 1 second." }, 400);
+  try {
+    const settings = await saveAnnouncementSettings(env, { rotateIntervalMs: body.rotateIntervalMs });
+    return json({ ok: true, ...settings });
+  } catch (e) {
+    return json({ ok: false, error: String(e.message || e) }, 400);
   }
-
-  const settings = await saveAnnouncementSettings(env, { rotateIntervalMs: ms });
-  return json({ ok: true, ...settings });
 }
 
 function json(obj, status = 200) {
-  return new Response(JSON.stringify(obj), {
-    status,
-    headers: { "Content-Type": "application/json", "Cache-Control": "no-store" },
-  });
+  return new Response(JSON.stringify(obj), { status, headers: { "Content-Type": "application/json", "Cache-Control": "no-store" } });
 }
