@@ -1,11 +1,4 @@
-/* Space Grotesk / Inter / JetBrains Mono are loaded via a <link> tag in
-   each HTML file's <head> now, not an @import here — @import forces the
-   browser to wait for that external font-CSS request to finish before it
-   can even start applying the REST of this file's own rules (body's
-   background, the starfield styles, etc.), chaining two network requests
-   back-to-back instead of letting them load in parallel. That's what was
-   stretching out the "flat fallback color" window on page navigation —
-   see the critical inline <style> in index.html/form.html's <head>. */
+@import url("https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;600&display=swap");
 
 :root {
   --ink: #1b2559;
@@ -31,8 +24,8 @@
   --sf-filter: brightness(1.4) saturate(0.85) contrast(0.95);
   --sf-shade: linear-gradient(180deg, rgba(234,241,255,0.55) 0%, rgba(217,206,244,0.62) 45%, rgba(196,178,238,0.72) 100%);
   --sidebar-bg: rgba(255, 255, 255, 0.28);
-  --sidebar-item-bg: rgba(255, 255, 255, 0.68);
-  --sidebar-item-hover: rgba(255, 255, 255, 0.82);
+  --sidebar-item-bg: rgba(255, 255, 255, 0.65);
+  --sidebar-item-hover: rgba(255, 255, 255, 0.85);
   --pill-bg: rgba(255, 255, 255, 0.6);
   --pill-border: rgba(255, 255, 255, 0.75);
   --brand-row-bg: rgba(255, 255, 255, 0.3);
@@ -74,8 +67,8 @@
   --sf-filter: none;
   --sf-shade: linear-gradient(180deg, rgba(3,4,13,0.35) 0%, rgba(3,4,13,0.55) 55%, rgba(3,4,13,0.75) 100%);
   --sidebar-bg: rgba(15, 19, 40, 0.75);
-  --sidebar-item-bg: rgba(20, 26, 51, 0.85);
-  --sidebar-item-hover: rgba(255, 255, 255, 0.07);
+  --sidebar-item-bg: rgba(15, 19, 40, 0.88);
+  --sidebar-item-hover: rgba(28, 34, 66, 0.96);
   --pill-bg: rgba(255, 255, 255, 0.04);
   --pill-border: rgba(255, 255, 255, 0.1);
   --brand-row-bg: rgba(255, 255, 255, 0.03);
@@ -85,6 +78,14 @@
 
 * { box-sizing: border-box; }
 
+/* Global scrollbar — thin and low-key by default (barely visible against
+   the background) but still clearly shows scroll position/progress once
+   you look for it or start dragging it; replaces every browser's fat,
+   high-contrast default scrollbar everywhere on the site (sidebars,
+   thread panels, modals, tables, all of it) with one consistent style.
+   Firefox uses scrollbar-color/-width; everything else (Chrome, Edge,
+   Safari) uses the ::-webkit-scrollbar-* pseudo-elements below — both
+   are needed to cover all browsers. */
 * { scrollbar-width: thin; scrollbar-color: var(--accent-glow) transparent; }
 ::-webkit-scrollbar { width: 8px; height: 8px; }
 ::-webkit-scrollbar-track { background: transparent; }
@@ -92,25 +93,39 @@
 ::-webkit-scrollbar-thumb:hover { background: rgba(124, 108, 240, 0.75); background-clip: padding-box; }
 ::-webkit-scrollbar-corner { background: transparent; }
 
+/* The canvas background now lives on <html> (see the rule below), not on
+   <body> — this is what lets the inline placeholder <style> in each
+   page's <head> (first paint, before this file has even downloaded)
+   hand off to this "real" rule with zero visible change: same photo,
+   same shade gradient, same values, just now driven by a CSS variable
+   instead of hard-coded numbers. If <body> also carried an opaque
+   background here, it would paint *above* the negative-z-index
+   #starfieldRoot layer once <html> owns its own background (the
+   propagation trick that lets a bare <body> background become the page
+   canvas background only applies while <html> itself specifies none) —
+   so <body> is deliberately left transparent and the starfield/photo
+   show straight through it. */
+html {
+  background-color: #090c1c;
+  background-image: var(--sf-shade), url('/assets/img/bg-space.jpg');
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+  background-attachment: fixed;
+}
+html[data-theme="light"] {
+  /* Light theme skips the photo for this base layer entirely — the
+     shade over it is already 55%~72% opaque, so a plain gradient in
+     the exact same tones reads as visually identical while being one
+     fewer thing to keep in sync with the placeholder <style>. */
+  background-color: #dbe7fb;
+  background-image: var(--page-bg);
+}
 body {
   margin: 0;
   min-height: 100vh;
   color: var(--ink);
-  background: var(--page-bg);
-  background-attachment: fixed;
-  transition: background 0.2s ease, color 0.2s ease;
-  /* Forces <body> to establish its own stacking context, cleanly (no
-     side effects on layout, unlike position:relative + z-index) — this
-     is what makes #starfieldRoot's z-index: -2 (see below) actually
-     land BETWEEN body's own background and body's other content,
-     instead of underneath body's own background entirely. Without this,
-     whether the starfield is visible at all ends up depending on
-     incidental things elsewhere on the page that happen to give body a
-     stacking context as a side effect (an animation/transition
-     currently affecting a compositable property, etc.) — fragile and
-     exactly what broke here. isolation: isolate makes it explicit and
-     permanent, independent of anything else on the page. */
-  isolation: isolate;
+  transition: color 0.2s ease;
 }
 
 /* ---- Animated space-photo background (both themes) ----
@@ -179,7 +194,6 @@ html:has(body.threads-page), body.threads-page {
   flex-direction: column;
 }
 body.threads-page .topbar { flex-shrink: 0; }
-body.threads-page #announcementBanner { flex-shrink: 0; }
 body.threads-page .threads-topline { flex-shrink: 0; }
 body.threads-page .threads-shell { flex: 1; height: auto; min-height: 0; }
 
@@ -333,6 +347,10 @@ a { color: inherit; text-decoration: none; }
   display: flex;
   position: fixed; inset: 0; z-index: 50;
   background: rgba(10, 12, 25, 0.55);
+  /* flex-start (not center) + generous top padding: with overflow-y:auto,
+     align-items:center clips content that overflows ABOVE the viewport —
+     you can scroll down to the bottom but never up to the true top. See
+     php-issue-hub-完整优化记录.md §5.3 for the full writeup. */
   align-items: flex-start; justify-content: center;
   opacity: 0;
   pointer-events: none;
@@ -433,27 +451,6 @@ a { color: inherit; text-decoration: none; }
   color: var(--ink-soft); margin: 0 0 8px;
 }
 .agent-profile-locked-note { text-transform: none; font-weight: 600; letter-spacing: 0; color: var(--ink-soft); }
-
-/* Plain divider marking the start of a new section (Topic access /
-   Account Management Access) inside the Agent Personal Profile popup —
-   same thin gray line style as .form-divider, just scoped separately in
-   case this section ever needs its own treatment later. */
-.agent-profile-section-divider {
-  height: 1px; margin-bottom: 14px; background: var(--border);
-}
-
-/* ---- Collapsible "Topic access" / "Account Management Access" blocks
-   inside the Agent Personal Profile popup — collapsed by default, click
-   the header to expand. Same open/arrow-rotate pattern as the sidebar's
-   .sidebar-item.expandable / .arrow above. ---- */
-.agent-profile-collapsible-header {
-  cursor: pointer; user-select: none; display: flex; align-items: center;
-  justify-content: space-between; gap: 8px; margin-bottom: 0; padding: 2px 0;
-}
-.agent-profile-collapsible-header .arrow { transition: transform 0.15s ease; flex-shrink: 0; }
-.agent-profile-collapsible.open .agent-profile-collapsible-header .arrow { transform: rotate(90deg); }
-.agent-profile-collapsible > .agent-profile-collapsible-body { display: none; margin-top: 8px; }
-.agent-profile-collapsible.open > .agent-profile-collapsible-body { display: flex; }
 .agent-profile-status-row {
   display: flex; align-items: center; justify-content: space-between; gap: 8px;
   border: 1.5px solid var(--border); background: var(--field-bg); border-radius: 12px;
@@ -464,27 +461,35 @@ a { color: inherit; text-decoration: none; }
 .agent-profile-status-text.is-active { color: #1a9c6e; }
 .agent-profile-status-text.is-locked { color: var(--required); }
 .agent-profile-module-list { display: flex; flex-direction: column; gap: 2px; }
-.agent-profile-module-check {
-  display: flex; align-items: center; gap: 8px; font-size: 13px; padding: 4px 2px;
-  color: var(--ink);
-}
-.agent-profile-module-check input[disabled] { cursor: not-allowed; }
-
-/* ---- Account Management Access panel (Owner-only, inside the Agent
-   Personal Profile popup) — same look as .agent-profile-module-list
-   above, plus a per-section View only/Can Edit radio row that only
-   appears while that section's checkbox is checked. ---- */
 .agent-profile-admin-section-list { display: flex; flex-direction: column; gap: 2px; }
+.agent-profile-collapsible { margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--border); }
+.agent-profile-collapsible-header {
+  width: 100%; display: flex; align-items: flex-start; justify-content: space-between; gap: 10px;
+  padding: 0; margin: 0 0 10px; background: none; border: none; cursor: pointer; font-family: inherit; text-align: left;
+}
+.agent-profile-collapsible-header:hover .agent-profile-section-label-lg { color: var(--wordmark); }
+.agent-profile-section-label-lg {
+  font-size: 12px; font-weight: 800; letter-spacing: 0.04em; text-transform: uppercase;
+  color: var(--ink); display: block;
+}
+.agent-profile-section-hint {
+  display: block; font-size: 11px; font-weight: 600; letter-spacing: 0; text-transform: none;
+  color: var(--ink-soft); margin-top: 2px;
+}
+.agent-profile-chev { color: var(--ink-soft); font-size: 13px; flex-shrink: 0; transition: transform 0.15s ease; }
+.agent-profile-collapsible.is-open .agent-profile-chev { transform: rotate(90deg); }
+.agent-profile-collapsible-body { padding: 0; }
+.agent-profile-divider { border: none; border-top: 1px solid var(--border); margin: 10px 0; }
 .agent-profile-edit-level-row {
   display: flex; align-items: center; gap: 14px; margin: 0 0 6px 26px;
   font-size: 12px; color: var(--ink-soft);
 }
 .agent-profile-edit-level-row label { display: flex; align-items: center; gap: 5px; cursor: pointer; }
-.agent-profile-admin-delegate-row {
-  margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--border);
+.agent-profile-module-check {
+  display: flex; align-items: center; gap: 8px; font-size: 13px; padding: 4px 2px;
+  color: var(--ink);
 }
-.agent-profile-admin-delegate-row .agent-profile-module-check { align-items: flex-start; line-height: 1.35; }
-.agent-profile-admin-delegate-row .agent-profile-module-check input { margin-top: 3px; }
+.agent-profile-module-check input[disabled] { cursor: not-allowed; }
 
 /* ---- TG Group / Channel (live-editable Telegram routing) ---- */
 .tgroute-layout { display: flex; gap: 14px; max-height: 78vh; }
@@ -532,6 +537,11 @@ a { color: inherit; text-decoration: none; }
   padding: 7px 9px; font-size: 12px; color: var(--ink); font-family: inherit;
 }
 .tgroute-row-actions { display: flex; flex-shrink: 0; gap: 8px; }
+.mention-backfill-row { display: flex; align-items: flex-start; justify-content: space-between; gap: 24px; margin-top: 18px; }
+.mention-backfill-copy { flex: 1; min-width: 0; }
+.mention-backfill-title { font-size: 13px; font-weight: 700; color: var(--ink); margin-bottom: 6px; }
+.mention-backfill-action { flex-shrink: 0; text-align: right; }
+.mention-backfill-action .edit-modal-note { margin: 8px 0 0; white-space: nowrap; }
 .tgroute-action-btn {
   font-size: 11.5px; font-weight: 700; padding: 7px 14px; border-radius: 8px;
   cursor: pointer; border: 1.5px solid var(--accent-gold); color: #0f1220;
@@ -550,6 +560,15 @@ a { color: inherit; text-decoration: none; }
 }
 .tgroute-divider { border: none; border-top: 1px solid var(--panel-border); margin: 18px 0 0; }
 .tgroute-footnote { margin-top: 12px; }
+
+/* ---- Settings (Maintenance / Coming soon toggle) — reuses .tgroute-row/
+   .route-tag/.tgroute-action-btn styling above; the status + role fields
+   themselves are .fs-dropdown instances (see settings-dropdown.css). */
+.fs-fields { flex-wrap: wrap; align-items: flex-start; }
+.fs-fields .fs-dropdown { min-width: 170px; }
+@media (max-width: 720px) {
+  .fs-fields .fs-dropdown { min-width: 100%; }
+}
 
 
 /* ---- Theme toggle (legacy floating button, kept for old pages) ---- */
@@ -573,12 +592,12 @@ a { color: inherit; text-decoration: none; }
 }
 .theme-toggle:hover { transform: translateY(-1px); }
 
-/* ---- Fixed viewport shell (topbar pinned, sidebar independently
-   scrolling, main content frozen until it actually overflows) — same
-   pattern threads.html/announcements.html already use (see their
-   `body.threads-page`/`body.announcements-page` rules), copied here so
-   the home hub behaves the same way instead of the whole page scrolling
-   as one block. */
+/* ---- Sidebar hub layout ---- */
+/* ---- Fixed-viewport hub page: topbar stays put, sidebar scrolls
+   independently, right column (brand ticker + banner + main content)
+   is its own scroll container. Same pattern already proven on
+   threads.html (body.threads-page) — see
+   php-issue-hub-完整优化记录.md §6 for the writeup this was ported from. */
 html:has(body.hub-page), body.hub-page {
   height: 100%;
   overflow: hidden;
@@ -587,31 +606,56 @@ html:has(body.hub-page), body.hub-page {
 }
 body.hub-page .topbar { flex-shrink: 0; }
 
-/* ---- Sidebar hub layout ---- */
+/* ---- Generic fixed-viewport 2-column shell for sub-pages that get the
+   shared "Issue Submission" nav (form.html, promo.html, deposit-issue.html,
+   deposit-backup.html) — mirrors body.hub-page's pattern above. Reuses
+   .sidebar as-is for the nav column. ---- */
+html:has(body.subpage-fixed), body.subpage-fixed {
+  height: 100%;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+body.subpage-fixed .topbar { flex-shrink: 0; }
+.subpage-shell { display: flex; flex: 1; min-height: 0; }
+.subpage-right-col { flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; }
+.subpage-right-col > #announcementBanner { flex-shrink: 0; }
+.subpage-main { flex: 1; min-height: 0; overflow-y: auto; }
+
+/* ---- SPA shell (index.html only) — #spaMount swaps in a fetched
+   route's content in place of #viewHome; see spa-shell.js ---- */
+#spaMount { min-width: 0; min-height: 0; }
+.spa-loading {
+  flex: 1; display: flex; align-items: center; justify-content: center;
+  color: var(--ink-soft); font-size: 13px; letter-spacing: 0.02em;
+}
+.spa-loading.spa-error {
+  flex-direction: column; gap: 12px; text-align: center; padding: 0 24px;
+}
+.spa-retry-btn {
+  border: 1px solid var(--panel-border); background: var(--pill-bg);
+  color: var(--ink); font-size: 13px; font-weight: 700;
+  padding: 8px 18px; border-radius: 999px; cursor: pointer;
+}
+.spa-retry-btn:hover { background: var(--pill-border); }
+
 .hub-layout {
   display: flex;
   flex: 1;
-  min-height: 0; /* flex children default to min-height:auto, which would
-                     let this row grow past the viewport instead of
-                     respecting the fixed-height column above — easy to
-                     miss, breaks the whole scroll-locking trick if left
-                     out. */
+  min-height: 0; /* flex children default to min-height:auto and will
+                    otherwise refuse to shrink below their content size,
+                    silently breaking the "independent scroll" effect */
 }
 .sidebar {
   width: 290px;
   flex-shrink: 0;
+  background: var(--sidebar-bg);
   border-right: 1px solid var(--panel-border);
   padding: 24px 16px 40px;
-  overflow-y: auto; /* independent scroll — a long ISSUE SUBMISSION list
-                        never pushes the main content area down. */
+  overflow-y: auto;
+  backdrop-filter: blur(16px) saturate(160%);
+  -webkit-backdrop-filter: blur(16px) saturate(160%);
 }
-/* .brand-row + #announcementBanner used to be siblings of .hub-layout,
-   full page width — which meant they rendered ON TOP of the sidebar's
-   column instead of stopping where it ends. Moved inside .hub-right-col
-   (a sibling of .sidebar, alongside .hub-main) so their width naturally
-   aligns to just the right-hand column; flex-shrink:0 keeps them at
-   their natural height while .hub-main is the one flexible/scrolling
-   piece below them. */
 .hub-right-col {
   flex: 1;
   min-width: 0;
@@ -623,18 +667,6 @@ body.hub-page .topbar { flex-shrink: 0; }
 .hub-right-col > #announcementBanner {
   flex-shrink: 0;
 }
-/* Hamburger toggle + drawer backdrop — both start hidden/inert; only
-   turned on inside the @media (max-width: 720px) block further below,
-   where .sidebar itself switches to an off-canvas drawer. */
-.sidebar-toggle-btn { display: none; }
-.sidebar-backdrop {
-  display: none;
-  position: fixed; inset: 0; z-index: 44;
-  background: rgba(10, 12, 25, 0.55);
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity 0.2s ease;
-}
 .sidebar-header {
   display: flex;
   align-items: center;
@@ -643,64 +675,14 @@ body.hub-page .topbar { flex-shrink: 0; }
   font-weight: 700;
   letter-spacing: 0.08em;
   text-transform: uppercase;
-
   color: var(--ink-soft);
   padding: 0 10px 16px;
 }
 .sidebar-header .dot { width: 6px; height: 6px; border-radius: 50%; background: #7c6cf0; }
 
-/* ---- "Cool factor" treatment for the Home page's Topic sidebar items
-   only: a twinkling corner star + a slow breathing edge glow + a soft
-   shimmer sweep across the surface. Three independent animation timings
-   so they never sync up and look mechanical. `position: relative` +
-   `overflow: hidden` are required here — the sweep's ::before and the
-   star's ::after are both absolutely positioned and need to stay
-   clipped to the card's own rounded corners.
-   NOTE: this used to also run on .thread-item (TG Reply Threads list)
-   and .ann-list-item (Announcement list) — removed from both. Those two
-   lists can grow unbounded (dozens/hundreds of rows), and a permanently-
-   running decorative animation on every row adds a real paint-cost tier
-   that scales with row count (see sidebar-diffed-rendering.md §2.4). The
-   Home page sidebar stays small and fixed, so it's fine to keep there. */
 .sidebar-item {
   position: relative;
   overflow: hidden;
-  animation: card-glow 2.6s ease-in-out infinite;
-}
-.sidebar-item::before {
-  content: "";
-  position: absolute; inset: 0;
-  background: linear-gradient(115deg, transparent 40%, rgba(255,255,255,0.09) 50%, transparent 60%);
-  background-size: 250% 100%;
-  animation: card-sweep 3.4s ease-in-out infinite;
-  pointer-events: none;
-}
-.sidebar-item::after {
-  content: "";
-  position: absolute; top: 10px; right: 12px;
-  width: 5px; height: 5px; border-radius: 50%; background: #fff;
-  box-shadow: 0 0 4px 1px rgba(255, 255, 255, 0.8);
-  animation: card-twinkle 2.2s ease-in-out infinite;
-  pointer-events: none;
-}
-@keyframes card-glow {
-  0%, 100% { box-shadow: 0 0 0 0 rgba(124, 108, 240, 0); }
-  50% { box-shadow: 0 0 14px 1px rgba(124, 108, 240, 0.45); }
-}
-@keyframes card-sweep {
-  0% { background-position: 200% 0; }
-  60%, 100% { background-position: -50% 0; }
-}
-@keyframes card-twinkle {
-  0%, 100% { opacity: 0.3; transform: scale(0.8); }
-  50% { opacity: 1; transform: scale(1.3); }
-}
-/* Recall History cards keep their existing red tint undisturbed — the
-   glow above is a general blue/purple accent that would clash with
-   "this is sensitive" red styling, so it's turned off there specifically. */
-.recall-item { animation: none; }
-.recall-item::before, .recall-item::after { display: none; }
-.sidebar-item {
   display: flex;
   align-items: center;
   gap: 12px;
@@ -711,6 +693,39 @@ body.hub-page .topbar { flex-shrink: 0; }
   border-left: 3px solid transparent;
   margin-bottom: 8px;
   transition: background 0.15s ease, transform 0.12s ease, border-color 0.15s ease;
+  animation: card-glow 2.6s ease-in-out infinite;
+}
+/* Corner twinkle + light-sweep — three different-length cycles (2.2s /
+   2.6s / 3.4s, roughly coprime) so they never fall into visible sync and
+   read as one mechanical "blink" instead of ambient sparkle. */
+.sidebar-item::after {
+  content: "";
+  position: absolute; top: 9px; right: 11px;
+  width: 5px; height: 5px; border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 0 4px 1px rgba(255, 255, 255, 0.8);
+  animation: card-twinkle 2.2s ease-in-out infinite;
+  pointer-events: none;
+}
+.sidebar-item::before {
+  content: "";
+  position: absolute; inset: 0;
+  background: linear-gradient(115deg, transparent 40%, rgba(255, 255, 255, 0.09) 50%, transparent 60%);
+  background-size: 250% 100%;
+  animation: card-sweep 3.4s ease-in-out infinite;
+  pointer-events: none;
+}
+@keyframes card-glow {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(124, 108, 240, 0); }
+  50%      { box-shadow: 0 0 14px 1px rgba(124, 108, 240, 0.45); }
+}
+@keyframes card-twinkle {
+  0%, 100% { opacity: 0.3; transform: scale(0.8); }
+  50%      { opacity: 1;   transform: scale(1.3); }
+}
+@keyframes card-sweep {
+  0%        { background-position: 200% 0; }
+  60%, 100% { background-position: -50% 0; }
 }
 .sidebar-item:hover {
   background: var(--sidebar-item-hover);
@@ -746,15 +761,15 @@ body.hub-page .topbar { flex-shrink: 0; }
 .sidebar-item.expandable .arrow { transition: transform 0.15s ease; }
 .sidebar-item.expandable.open .arrow { transform: rotate(90deg); }
 
-/* "Seamless card" wrapper — the toggle + its subitems render as one
-   continuous rounded card instead of an indented list with a left
-   border line. */
+/* Account Management — "one continuous card" style: the toggle header
+   and its sub-items live inside one rounded, bordered group instead of
+   an indented tree line, so it reads as a single self-contained panel. */
 .am-group {
   border-radius: 14px;
   border: 1px solid transparent;
   background: var(--sidebar-item-bg);
   overflow: hidden;
-  margin-bottom: 8px;
+  margin-bottom: 16px;
   transition: border-color 0.15s ease;
 }
 .am-group:has(.am-toggle:hover),
@@ -767,24 +782,25 @@ body.hub-page .topbar { flex-shrink: 0; }
   background: transparent;
 }
 .am-group .am-toggle:hover { background: var(--sidebar-item-hover); transform: none; }
-
-.sidebar-subitems {
-  display: none; margin: 0; padding: 6px;
+.am-group .sidebar-subitems {
+  display: none; margin: 0; padding: 6px; border-left: none;
   border-top: 1px solid var(--panel-border);
 }
-.sidebar-subitems.open { display: block; }
+.am-group .sidebar-subitems.open { display: block; }
 .sidebar-subitem {
+  position: relative;
   display: flex; align-items: center; gap: 9px; padding: 9px 10px;
   border-radius: 10px; font-size: 12.5px; font-weight: 600;
   color: var(--ink-soft); cursor: pointer; margin-bottom: 4px;
   transition: background 0.15s ease, color 0.15s ease;
 }
 .sidebar-subitem:hover { background: var(--sidebar-item-hover); color: var(--ink); }
+/* Hover circle behind each row's icon — color comes from that row's own
+   --sub-accent inline style, so every row can have a different tint. */
 .sidebar-subitem .sub-icon {
-  width: 26px; height: 26px; border-radius: 50%;
+  width: 26px; height: 26px; border-radius: 50%; flex-shrink: 0;
   display: inline-flex; align-items: center; justify-content: center;
-  font-size: 13px;
-  transition: background 0.15s ease;
+  font-size: 13px; transition: background 0.15s ease;
 }
 .sidebar-subitem:hover .sub-icon { background: var(--sub-accent, rgba(255, 255, 255, 0.1)); }
 .brand-checks { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 6px; }
@@ -828,90 +844,17 @@ body.hub-page .topbar { flex-shrink: 0; }
 
 .hub-main {
   flex: 1;
-  min-height: 0; /* same reason as .hub-layout above — lets overflow-y
-                     below actually do something instead of the box
-                     growing to fit its content. */
-  overflow-y: auto; /* frozen/no scrollbar until content genuinely
-                        exceeds the visible height — this is the "main
-                        content area doesn't move" behavior; it only
-                        starts scrolling once it has to. */
+  min-height: 0;
+  overflow-y: auto; /* only scrolls if content actually exceeds the
+                        visible height — normally sits still */
   position: relative;
-  padding: 54px 40px 36px;
+  padding: 36px 40px;
   display: flex;
   align-items: flex-start;
   justify-content: center;
   text-align: center;
 }
 .hub-main .inner { max-width: 480px; }
-/* #spaMount (spa-shell.js's SPA mount point) lives INSIDE .hub-main as a
-   sibling of .inner, so the persistent sidebar stays visible while a
-   routed view (threads/promo/deposit-issue/deposit-backup/announcements)
-   is mounted — see spa-shell.js's comment on #spaMount for why.
-
-   Two different kinds of mounted content, two different treatments:
-   - promo.html / deposit-issue.html / deposit-backup.html already carry
-     their OWN max-width:1500px + padding (see their injected <style>
-     blocks) — they're padded, centered card layouts, same spirit as
-     .inner's home cards, so they're left to sit inside .hub-main's
-     normal padding/centering untouched.
-   - threads.html / announcements.html are real sidebar+panel app-shells
-     that were built assuming they own the ENTIRE viewport below a
-     single topbar — cramming them into .hub-main's padded 480px-ish
-     column would squeeze them badly. These get .spa-fullbleed (added by
-     spa-shell.js per-route, see ROUTES.fullBleed there).
-
-   For .spa-fullbleed specifically: removing .hub-main's padding via
-   NEGATIVE MARGIN on the child (the obvious fix) doesn't work now that
-   .hub-main scrolls its own overflow (see the fixed-viewport rules
-   above) — a negative top/left margin tries to pull content above/left
-   of the scroll container's origin, which a scroll container can't show
-   (scrollTop/scrollLeft can't go negative), so the top of the mounted
-   view would just be silently clipped. Using :has() on the PARENT to
-   drop its own padding AND overflow to 0/hidden when it contains an
-   active .spa-fullbleed child sidesteps that. It ALSO fixes a real
-   "two scrollbars" bug: threads-shell/ann-shell's OWN height rules
-   (`calc(100vh - 61px)` / `100%`) assume they own the full viewport, so
-   left as .hub-main's overflow-y:auto scrolling child, you got BOTH
-   .hub-main's own scrollbar (because the mounted shell is taller than
-   .hub-main's actual available box) AND the mounted shell's own
-   internal scroll panes — two scrollbars fighting each other. Turning
-   .hub-main's overflow off for fullbleed views, and making
-   #spaMount.spa-fullbleed + the mounted shell fill 100% of the
-   now-unpadded box instead of assuming their own 100vh, leaves exactly
-   ONE scroll mechanism: the mounted shell's own internal panes — same
-   as how threads.html/announcements.html scroll when visited standalone. */
-.hub-main:has(> #spaMount.spa-fullbleed) { padding: 0; overflow: hidden; }
-/* Plain BLOCK by default — promo.html/deposit-issue.html/deposit-
-   backup.html/form.html's own root elements (.promo-shell, .dep-shell,
-   .form-page) all use `margin: 0 auto` to center themselves, same as
-   they do in their standalone pages where they're a normal block-flow
-   child of <body>. If #spaMount were `display:flex` here instead, those
-   auto side-margins would trigger flexbox's "auto margins absorb the
-   free space" behavior INSTEAD of stretch — the child would shrink-to-
-   fit its own content width rather than filling the row, which is
-   exactly the "narrow before search results, wide after a wide results
-   table appears" bug this replaced. Plain block layout has no such
-   interaction — margin:auto centering just works normally. */
-#spaMount.spa-mounted {
-  display: block;
-  width: 100%;
-  text-align: left;
-}
-/* Only the genuine sidebar+panel app-shells (threads/announcements) get
-   flex — THEIR content (.threads-shell/.ann-shell) is `display:flex`
-   itself and relies on `flex:1` from a flex PARENT to fill available
-   height; a plain block #spaMount can't give that. */
-#spaMount.spa-mounted.spa-fullbleed {
-  display: flex;
-  flex-direction: column;
-  height: 100%;
-}
-#spaMount.spa-fullbleed .threads-shell,
-#spaMount.spa-fullbleed .ann-shell {
-  height: 100%;
-  flex: 1;
-  min-height: 0;
-}
 .status-badge-corner {
   display: inline-flex;
   margin-top: 14px;
@@ -956,19 +899,32 @@ body.hub-page .topbar { flex-shrink: 0; }
   display: grid;
   grid-template-columns: repeat(2, 1fr);
   gap: 14px;
+  margin-top: 30px;
   max-width: 520px;
 }
 .tool-card {
   display: block;
+  position: relative;
   text-align: left;
   background: var(--card-bg);
   border: 1px solid var(--panel-border);
   border-radius: 16px;
   padding: 18px 18px 16px;
+  padding-bottom: 34px;
   box-shadow: var(--shadow);
-  transition: transform 0.15s ease, border-color 0.15s ease;
+  transition: transform 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
 }
-.tool-card:hover { transform: translateY(-2px); border-color: var(--tool-accent, var(--accent-gold)); }
+.tool-card:hover {
+  transform: translateY(-2px);
+  border-color: var(--tool-accent, var(--accent-gold));
+  box-shadow: var(--shadow), 0 0 32px -8px var(--tool-accent, transparent);
+}
+.tool-card .t-arrow {
+  position: absolute; right: 18px; bottom: 16px;
+  color: var(--ink-soft); font-size: 15px;
+  transition: transform 0.15s ease, color 0.15s ease;
+}
+.tool-card:hover .t-arrow { transform: translateX(3px); color: var(--tool-accent, var(--ink)); }
 .tool-card .t-icon {
   position: relative;
   width: 36px; height: 36px; border-radius: 10px;
@@ -992,56 +948,95 @@ body.hub-page .topbar { flex-shrink: 0; }
 .tool-card .t-desc { font-size: 11.5px; color: var(--ink-soft); line-height: 1.4; }
 .t-sub-stat { font-size: 10.5px; font-weight: 700; color: var(--tool-accent, var(--ink-soft)); margin-top: 8px; }
 .t-sub-stat:empty { display: none; }
+.tool-card-soon { cursor: default; opacity: 0.6; }
+.tool-card-soon:hover { transform: none; border-color: var(--panel-border); box-shadow: var(--shadow); }
+.tool-card-soon .t-icon { opacity: 0.7; }
+.t-soon-badge {
+  position: absolute; right: 18px; bottom: 16px;
+  font-size: 11px; font-weight: 700; color: var(--ink-soft);
+  background: var(--field-bg); border: 1px solid var(--border);
+  padding: 3px 9px; border-radius: 20px;
+}
 .t-sub-stat.has-unsolved {
   color: #ef4a72;
   font-weight: 800;
   animation: breathe 1.8s ease-in-out infinite;
 }
 @keyframes breathe { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
-/* Generic "needs attention" pulse — reused wherever a card/icon should
-   breathe (e.g. the Announcement tool card's icon while at least one
-   announcement is currently active). Same keyframe as .has-unsolved
-   above, just usable on any element directly. */
-.breathing { animation: breathe 1.8s ease-in-out infinite; }
+.tool-card .t-icon.breathing { animation: breathe 1.8s ease-in-out infinite; }
 @media (max-width: 560px) {
   .tool-cards { grid-template-columns: 1fr; }
 }
 
 @media (max-width: 720px) {
-  .sidebar-toggle-btn {
-    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px;
-    width: 34px; height: 34px; border: none; background: none; cursor: pointer; margin-right: 4px; padding: 0;
-  }
-  .sidebar-toggle-btn span { display: block; width: 19px; height: 2px; border-radius: 2px; background: var(--ink); }
-
-  /* Sidebar becomes an off-canvas drawer instead of a stacked-above-
-     content block — it's out of normal flow now (position:fixed), so
-     .hub-layout/.hub-main keep the SAME fixed-viewport/internal-scroll
-     behavior mobile used to have to opt out of (see the now-removed
-     body.hub-page overflow override this replaced) — nothing left in
-     flow to make that layout break at this width anymore. */
-  .sidebar {
-    position: fixed; top: 61px; left: 0; bottom: 0; z-index: 45;
-    width: 290px; max-width: 82vw; max-height: none;
-    border-right: 1px solid var(--panel-border); border-bottom: none;
-    background: var(--card-bg); box-shadow: var(--shadow);
-    transform: translateX(-100%);
-    transition: transform 0.22s ease;
-  }
-  .sidebar.open { transform: translateX(0); }
-  .sidebar-backdrop.open { display: block; opacity: 1; pointer-events: auto; }
+  .hub-layout { flex-direction: column; min-height: auto; }
+  .sidebar { width: 100%; border-right: none; border-bottom: 1px solid var(--panel-border); max-height: 60vh; }
 }
+
+/* ---- Announcements sidebar (New button / search / status dots) ---- */
+.announce-new-btn {
+  width: 100%;
+  padding: 12px;
+  margin-bottom: 14px;
+  border-radius: 12px;
+  border: 1.5px dashed var(--border);
+  background: transparent;
+  color: var(--ink-soft);
+  font-size: 12.5px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: border-color 0.15s ease, color 0.15s ease, background 0.15s ease;
+}
+.announce-new-btn:hover { border-color: var(--accent-gold); color: var(--ink); background: rgba(200, 145, 47, 0.06); }
+.announce-item .t-title { white-space: normal; overflow: visible; text-overflow: unset; }
+.status-indicator { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
+.status-text { font-size: 10.5px; font-weight: 700; }
+.status-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+.status-dot.breathing { animation: statusBreathe 1.8s ease-in-out infinite; }
+@keyframes statusBreathe {
+  0%, 100% { opacity: 1; box-shadow: 0 0 0 0 rgba(26, 156, 110, 0.45); }
+  50% { opacity: 0.4; box-shadow: 0 0 6px 2px rgba(26, 156, 110, 0.4); }
+}
+/* Edit-modal action buttons: Save always shows/colors the state it will
+   switch TO (green = Active, gray = Inactive); Delete stays a distinct
+   red outline so it doesn't compete with Save for attention. */
+.announce-save-btn {
+  font-size: 11.5px; font-weight: 700; padding: 7px 14px; border-radius: 8px;
+  cursor: pointer; border: 1.5px solid transparent; transition: all 0.15s ease; white-space: nowrap;
+}
+.announce-save-btn:hover { transform: translateY(-1px); }
+.announce-save-btn.state-active { background: rgba(26, 156, 110, 0.16); color: #1a9c6e; }
+.announce-save-btn.state-active:hover { box-shadow: 0 4px 12px -4px rgba(26, 156, 110, 0.5); }
+.announce-save-btn.state-inactive { background: rgba(136, 144, 192, 0.18); color: #8890c0; }
+.announce-save-btn.state-inactive:hover { box-shadow: 0 4px 12px -4px rgba(136, 144, 192, 0.5); }
+.announce-delete-btn {
+  font-size: 12px; font-weight: 700; padding: 7px 12px; border-radius: 8px;
+  cursor: pointer; border: 1.5px solid rgba(239, 74, 114, 0.5); background: none; color: #ef4a72;
+  display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; transition: all 0.15s ease;
+}
+.announce-delete-btn:hover { background: rgba(239, 74, 114, 0.1); border-color: #ef4a72; }
 
 /* ---- TG Reply Threads ---- */
 .threads-shell { display: flex; height: calc(100vh - 61px); }
+/* Right column of the shell — announcement banner + "Back to Home" topline
+   + main content, all width-aligned to the content area instead of
+   spanning full-page-width and sitting on top of the sidebar. Same fix
+   already applied to index.html's .hub-right-col — see
+   CHANGES-batch1-modal-cache-layout.md. */
+.threads-right-col { flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; }
+.threads-right-col > #announcementBanner,
+.threads-right-col > .threads-topline { flex-shrink: 0; }
 .threads-sidebar {
   width: 300px;
   flex-shrink: 0;
+  background: var(--sidebar-bg);
   border-right: 1px solid var(--panel-border);
   padding: 18px 14px 0;
   overflow-y: auto;
   display: flex;
   flex-direction: column;
+  backdrop-filter: blur(16px) saturate(160%);
+  -webkit-backdrop-filter: blur(16px) saturate(160%);
 }
 .threads-search {
   display: flex; align-items: center; gap: 8px;
@@ -1067,8 +1062,10 @@ body.hub-page .topbar { flex-shrink: 0; }
 .threads-empty { font-size: 12px; color: var(--ink-soft); text-align: center; padding: 24px 10px; }
 .thread-list {
   display: flex; flex-direction: column; gap: 6px; margin-bottom: 18px;
-  padding: 6px;
+  padding: 6px; border-radius: 12px;
+  background: rgba(255, 255, 255, 0.025); border: 1px solid var(--panel-border);
 }
+[data-theme="light"] .thread-list { background: rgba(0, 0, 0, 0.02); }
 
 /* Recall Chat History — same template as Active/Solved, red-tinted count +
    box border so it reads as "sensitive" without being hidden from admins. */
@@ -1085,25 +1082,10 @@ body.hub-page .topbar { flex-shrink: 0; }
 .thread-item {
   display: flex; align-items: center; gap: 10px;
   padding: 9px 10px; border-radius: 12px;
+  background: var(--sidebar-item-bg);
   border-left: 3px solid transparent;
   cursor: pointer;
-  background: var(--sidebar-item-bg);
   transition: background 0.15s ease;
-  /* Solved Chat History can grow into the thousands, and every row is a
-     real DOM node all the time (collapsing the section only hides it via
-     `display: none` on the parent — see .threads-section.collapsed above
-     — the rows themselves are still there). content-visibility lets the
-     browser skip layout/paint for rows currently scrolled out of view
-     instead of doing that work for the whole list on every frame — this
-     is what actually smooths out scrolling on a long list, independent
-     of how few/many rows get rebuilt by the JS-side diffing above.
-     contain-intrinsic-size is a size *estimate* used only to reserve
-     scrollbar space before an off-screen row's real layout is known —
-     ~50px matches this row's icon height (26px) + vertical padding
-     (9px×2) + the 6px .thread-list gap; being slightly off just means a
-     tiny, self-correcting scrollbar jump, not a layout bug. */
-  content-visibility: auto;
-  contain-intrinsic-size: 0 50px;
 }
 .thread-item:hover { background: var(--sidebar-item-hover); }
 .thread-item.selected { background: var(--sidebar-item-hover); border-left-color: var(--thread-accent, var(--accent-gold)); }
@@ -1112,47 +1094,6 @@ body.hub-page .topbar { flex-shrink: 0; }
 .thread-item .t-title { font-size: 12.5px; font-weight: 700; color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .thread-item .t-sub { font-size: 11px; color: var(--ink-soft); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .thread-item .t-done { color: #34d399; font-size: 13px; flex-shrink: 0; }
-.thread-item-checkbox { flex-shrink: 0; width: 15px; height: 15px; accent-color: #38bdf8; cursor: pointer; }
-.thread-item.checked { background: rgba(56, 189, 248, 0.1); border-left-color: #38bdf8; }
-.thread-kebab {
-  flex-shrink: 0; color: var(--ink-soft); font-size: 15px; letter-spacing: 1px; line-height: 1;
-  padding: 3px 6px; border-radius: 6px; cursor: pointer;
-}
-.thread-kebab:hover { background: var(--sidebar-item-hover); color: var(--ink); }
-.thread-kebab-menu {
-  position: fixed; z-index: 1000; min-width: 170px;
-  background: var(--card-bg); border: 1px solid var(--panel-border); border-radius: 12px;
-  padding: 5px; box-shadow: 0 10px 24px -8px rgba(0, 0, 0, 0.5);
-}
-.thread-kebab-item {
-  display: flex; align-items: center; gap: 9px; padding: 8px 10px; border-radius: 8px;
-  font-size: 12px; font-weight: 600; color: var(--ink); cursor: pointer; white-space: nowrap;
-}
-.thread-kebab-item:hover { background: var(--sidebar-item-hover); }
-.thread-kebab-divider { height: 1px; background: var(--panel-border); margin: 3px 6px; }
-
-.threads-select-bar {
-  display: none; flex-direction: column; gap: 8px;
-  background: rgba(56, 189, 248, 0.1); border: 1px solid rgba(56, 189, 248, 0.3);
-  border-radius: 10px; padding: 9px 10px; margin: 0 0 14px;
-}
-.threads-select-bar.open { display: flex; }
-.threads-select-bar .sel-top-row { display: flex; align-items: center; justify-content: space-between; }
-.threads-select-bar .sel-count {
-  background: rgba(56, 189, 248, 0.18); color: #38bdf8; font-size: 11.5px; font-weight: 800;
-  border-radius: 999px; min-width: 20px; height: 20px; padding: 0 7px;
-  display: inline-flex; align-items: center; justify-content: center;
-}
-.threads-select-bar .sel-cancel { color: var(--ink-soft); font-size: 11px; font-weight: 700; cursor: pointer; }
-.threads-select-bar .sel-cancel:hover { color: var(--ink); }
-.threads-select-bar .sel-actions { display: flex; gap: 6px; }
-.threads-select-bar .sel-actions button {
-  flex: 1; display: flex; align-items: center; justify-content: center; gap: 5px;
-  background: rgba(255, 255, 255, 0.06); border: 1px solid var(--panel-border); color: var(--ink);
-  border-radius: 8px; padding: 7px 6px; font-size: 11.5px; font-weight: 700; cursor: pointer; font-family: inherit;
-}
-.threads-select-bar .sel-actions button:hover { background: var(--sidebar-item-hover); }
-.threads-section-title .select-all-checkbox { accent-color: #38bdf8; margin-right: 2px; vertical-align: -2px; }
 .unread-badge {
   flex-shrink: 0;
   min-width: 18px;
@@ -1168,7 +1109,96 @@ body.hub-page .topbar { flex-shrink: 0; }
   justify-content: center;
 }
 
+.threads-section-title .title-right { display: flex; align-items: center; gap: 8px; }
+.threads-section-title .section-select-all { display: none; cursor: pointer; }
+.threads-section-title .section-select-all.visible { display: inline-block; }
+
+/* ---- Bulk action bar (Select batch mode) ---- */
+.bulk-action-bar {
+  display: flex; flex-direction: column; gap: 8px;
+  background: var(--field-bg); border: 1.5px solid var(--border);
+  border-radius: 12px; padding: 10px 12px; margin-bottom: 14px;
+}
+.bulk-action-row1 { display: flex; align-items: center; justify-content: space-between; }
+.bulk-count {
+  background: var(--accent-gold); color: #0f1220; font-weight: 800; font-size: 11.5px;
+  min-width: 20px; height: 20px; padding: 0 7px; border-radius: 999px;
+  display: flex; align-items: center; justify-content: center;
+}
+.bulk-cancel { background: none; border: none; color: var(--ink-soft); font-size: 12px; font-weight: 700; cursor: pointer; }
+.bulk-cancel:hover { color: var(--ink); }
+.bulk-action-row2 { display: flex; gap: 8px; }
+.bulk-action-btn {
+  flex: 1; padding: 9px 6px; border-radius: 10px; border: 1.5px solid var(--border);
+  background: var(--field-bg); color: var(--ink); font-size: 12px; font-weight: 700; cursor: pointer;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-align: center;
+}
+.bulk-action-btn:hover:not(:disabled) { border-color: var(--accent-gold); }
+.bulk-action-btn:disabled { opacity: 0.45; cursor: not-allowed; }
+/* Same red/green convention as .status-chip.unsolved/.solved above — applied
+   the same way to BOTH bulk buttons (not just Solved/Not solved) so the two
+   rows read consistently: green = this action moves the ticket forward
+   (read, solved), red = this action reverts it (unread, reopened). */
+.bulk-action-btn.tone-positive { background: rgba(52, 211, 153, 0.16); border-color: transparent; color: #1a9c6e; }
+.bulk-action-btn.tone-negative { background: rgba(239, 74, 114, 0.16); border-color: transparent; color: #ef4a72; }
+
+/* ---- Per-item ⋮ menu + Select-mode checkbox ---- */
+.thread-item.select-mode { cursor: pointer; }
+.thread-item-check { width: 16px; height: 16px; flex-shrink: 0; cursor: pointer; }
+.item-menu-btn {
+  flex-shrink: 0; width: 24px; height: 24px; border-radius: 8px; border: none;
+  background: none; color: var(--ink-soft); font-size: 15px; cursor: pointer; line-height: 1;
+}
+.item-menu-btn:hover { background: var(--sidebar-item-hover); color: var(--ink); }
+.item-menu {
+  position: absolute; top: 34px; right: 8px; z-index: 20; min-width: 172px;
+  background: var(--card-bg); border: 1px solid var(--panel-border); border-radius: 10px;
+  padding: 4px; box-shadow: 0 10px 28px -8px rgba(0, 0, 0, 0.45);
+}
+.item-menu-option {
+  display: flex; align-items: center; gap: 8px; padding: 8px 9px; border-radius: 7px;
+  font-size: 12px; font-weight: 600; color: var(--ink); cursor: pointer;
+}
+.item-menu-option:hover { background: var(--sidebar-item-hover); }
+.item-menu-icon { width: 14px; text-align: center; flex-shrink: 0; color: var(--ink-soft); }
+.item-menu-icon.ok { color: #1a9c6e; }
+.item-menu-icon.danger { color: #e0577a; }
+
+/* ---- @ Tag Username autocomplete ---- */
+.mention-dropdown {
+  position: absolute; left: 0; right: 0; bottom: calc(100% + 6px); z-index: 20;
+  max-height: 220px; overflow-y: auto;
+  background: var(--card-bg); border: 1px solid var(--panel-border); border-radius: 10px;
+  padding: 4px; box-shadow: 0 10px 28px -8px rgba(0, 0, 0, 0.45);
+}
+.mention-option {
+  display: flex; align-items: center; gap: 8px; padding: 7px 10px; border-radius: 7px;
+  cursor: pointer; font-size: 12.5px;
+}
+.mention-option.active, .mention-option:hover { background: var(--sidebar-item-hover); }
+.mention-handle { font-weight: 700; color: var(--ink); }
+.mention-from { color: var(--ink-soft); font-size: 11.5px; }
+
 .threads-main { flex: 1; display: flex; flex-direction: column; overflow: hidden; min-height: 0; }
+
+/* ---- Announcement reminder banner (public/assets/announcement-banner.js) ---- */
+#announcementBanner:empty { display: none; }
+.announcement-banner {
+  display: flex; align-items: flex-start; gap: 10px;
+  padding: 10px 24px; background: rgba(200, 145, 47, 0.14);
+  border-top: 1px solid var(--accent-gold); border-bottom: 1px solid var(--accent-gold);
+}
+.announcement-banner-icon { font-size: 16px; flex-shrink: 0; line-height: 1.4; }
+.announcement-banner-body { flex: 1; min-width: 0; }
+.announcement-banner-label { font-size: 10.5px; font-weight: 800; letter-spacing: 0.05em; color: var(--accent-gold); }
+.announcement-banner-textwrap { display: grid; margin-top: 2px; }
+.announcement-banner-text { grid-column: 1; grid-row: 1; font-size: 12.5px; color: var(--ink); line-height: 1.5; }
+.announcement-banner-dots { display: flex; gap: 4px; margin-top: 6px; }
+.announcement-banner-dots span { width: 5px; height: 5px; border-radius: 50%; background: rgba(200, 145, 47, 0.35); }
+.announcement-banner-dots span.on { background: var(--accent-gold); }
+.announcement-banner-close { background: none; border: none; color: var(--accent-gold); font-size: 13px; cursor: pointer; flex-shrink: 0; padding: 2px; }
+.announcement-banner-close:hover { opacity: 0.7; }
+.announcement-banner-icon.breathing, .announcement-banner-label.breathing { animation: breathe 1.8s ease-in-out infinite; }
 .threads-placeholder { flex: 1; display: flex; align-items: center; justify-content: center; color: var(--ink-soft); font-size: 14px; text-align: center; }
 .thread-top-fixed { flex-shrink: 0; padding: 30px 40px 0; }
 .thread-scroll-area { flex: 1; overflow-y: auto; padding: 20px 40px; min-height: 0; }
@@ -1184,24 +1214,17 @@ body.hub-page .topbar { flex-shrink: 0; }
 .icon-btn { width: 32px; height: 32px; border-radius: 10px; border: 1px solid var(--border); background: var(--card-bg); color: var(--required); font-size: 13px; cursor: pointer; }
 .icon-btn:hover { background: rgba(239, 74, 114, 0.1); }
 .icon-btn.spinning { color: var(--required); animation: spin 0.8s linear infinite; }
-/* When a .icon-btn-labeled button spins (currently just Refresh), only
-   the icon glyph should rotate — the button itself must stay still or
-   the visible label text spins with it, which looks broken. */
-.icon-btn-labeled.spinning { animation: none; }
-.icon-btn-labeled .icon-btn-glyph { display: inline-block; }
-.icon-btn-labeled.spinning .icon-btn-glyph { animation: spin 0.8s linear infinite; }
-/* Thread detail header toolbar (Edit/Forward/Recall/Delete/Refresh) —
-   the base .icon-btn above is a fixed 32x32 icon-only square with no
-   room for text; this modifier widens it to fit an icon + visible label
-   instead of relying on the title="" tooltip alone. */
-.icon-btn.icon-btn-labeled {
-  width: auto; height: 34px; padding: 0 12px; display: inline-flex; align-items: center;
-  gap: 6px; font-size: 13px; font-weight: 700; color: var(--ink);
-}
-.icon-btn.icon-btn-labeled span { font-size: 12px; }
+/* Icon + text label variant (e.g. thread-detail-actions toolbar) — same
+   pill family as .icon-btn but auto width, with a short caption next to
+   the emoji instead of an icon-only square. Color goes back to --ink
+   (neutral) since these aren't all "danger" actions like the plain
+   icon-btn's red tint implies. */
+.icon-btn.labeled { width: auto; height: auto; padding: 7px 12px; display: inline-flex; align-items: center; gap: 6px; color: var(--ink); font-size: 12px; font-weight: 700; white-space: nowrap; }
+.icon-btn.labeled:hover { background: var(--field-bg); }
+.icon-btn.labeled.spinning { color: var(--ink); }
 @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
 
-.threads-topline { display: flex; align-items: center; justify-content: flex-start; gap: 14px; padding-left: 24px; }
+.threads-topline { display: flex; align-items: center; justify-content: flex-end; gap: 14px; padding-right: 24px; }
 .agent-whoami { font-size: 12px; font-weight: 600; color: var(--ink-soft); }
 .agent-whoami .role-badge {
   display: inline-block; margin-left: 6px; padding: 2px 8px; border-radius: 20px;
@@ -1399,15 +1422,6 @@ body.hub-page .topbar { flex-shrink: 0; }
 .msg-actions button { border: none; background: none; cursor: pointer; font-size: 10.5px; opacity: 0.55; padding: 0; }
 .msg-actions button:hover { opacity: 1; }
 
-.mention-dropdown {
-  position: absolute; z-index: 50; bottom: 100%; left: 60px; right: 8px; margin-bottom: 6px;
-  background: var(--card-bg); border: 1px solid var(--panel-border); border-radius: 10px;
-  padding: 4px; box-shadow: 0 10px 24px -8px rgba(0, 0, 0, 0.5); max-height: 180px; overflow-y: auto;
-}
-.mention-option { display: flex; align-items: baseline; gap: 8px; padding: 7px 9px; border-radius: 7px; font-size: 12px; color: var(--ink); cursor: pointer; }
-.mention-option:hover, .mention-option.active { background: var(--sidebar-item-hover); }
-.mention-option .mo-handle { font-weight: 700; }
-.mention-option .mo-from { color: var(--ink-soft); font-size: 11px; }
 .reply-box { display: flex; gap: 10px; }
 .reply-box input { flex: 1; border: 1.5px solid var(--border); background: var(--field-bg); border-radius: 12px; padding: 11px 14px; font-size: 13.5px; color: var(--ink); font-family: inherit; }
 .reply-box input:focus { outline: none; border-color: #38bdf8; }
@@ -1530,7 +1544,7 @@ h1 {
   outline: none;
   border-color: #38bdf8;
 }
-.field textarea { resize: vertical; min-height: 170px; }
+.field textarea { resize: vertical; min-height: 90px; }
 
 /* Highlighted "what kind of issue" box */
 .field-emphasize {
@@ -1635,21 +1649,17 @@ h1 {
 .status-msg.ok { color: #1a9c6e; }
 .status-msg.err { color: #e0577a; }
 
-/* ---- Page-to-page fade transition (index.html <-> form.html) ----
-   These are REAL full page navigations (plain <a href>, not an SPA),
-   so this can't be a smooth in-DOM swap like a single-page app — it's a
-   quick fade-out on the page you're leaving, then a fade-in on the page
-   you land on, timed to roughly overlap with the browser's own
-   navigation. See /assets/pageTransition.js for the click-intercept
-   logic that drives this. Deliberately NOT a static `body { opacity: 0 }`
-   rule — the "enter" class is baked directly into the HTML's <body
-   class="..."> in each page (not added by JS), so if the JS file ever
-   fails to load for any reason, the page still renders at full opacity
-   immediately rather than getting stuck invisible. */
-@keyframes pageFadeIn { from { opacity: 0; } to { opacity: 1; } }
-@keyframes pageFadeOut { to { opacity: 0; } }
-body.page-transition-in { animation: pageFadeIn 0.12s ease; }
-body.page-transition-out { animation: pageFadeOut 0.09s ease forwards; }
+/* ---- Page transition: Home <-> Form navigation ("slide" style, matches
+   transition-preview.html option 2) ----
+   Home (index.html) applies these to .hub-layout (sidebar + main content,
+   header/brand-row stay put); Form (form.html) applies these to
+   .form-page (topbar/back-pill stay put). See app.js/index.html inline
+   script for the click-intercept + setTimeout(navigate) wiring — CSS
+   alone can't delay a real cross-page navigation. */
+.page-slide-out { animation: pageSlideOut 0.2s ease forwards; }
+.page-slide-in { animation: pageSlideIn 0.28s cubic-bezier(.22, .9, .34, 1) forwards; }
+@keyframes pageSlideOut { to { opacity: 0; transform: translateX(-24px) scale(0.98); } }
+@keyframes pageSlideIn { from { opacity: 0; transform: translateX(24px); } to { opacity: 1; transform: translateX(0); } }
 
 /* ---- "Edit fields — syncs Telegram + Sheet" modal, threads.html only.
    Field rows themselves reuse the existing .field/label/input/select/
@@ -1680,12 +1690,10 @@ body.page-transition-out { animation: pageFadeOut 0.09s ease forwards; }
 .edit-details-status.err { color: #e0577a; }
 @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
 
-/* "Generate to another Topic" (forward.js) — the bidirectional reference
-   cards rendered in buildSummaryHTML() in threads.html: "↩️ Forwarded
-   from ..." on the new ticket, "↗️ Forwarded to ..." on the original.
-   Dashed border deliberately distinguishes it from .thread-summary-card
-   (solid border) — this is a pointer to ANOTHER ticket, not this
-   ticket's own content. */
+/* ---- "Forwarded from/to" reference cards (threads.html) — same idea as
+   the quoted "Original ticket" card already used in reply threads, just
+   for cross-Topic links instead of cross-message ones. Clickable, jumps
+   straight to the linked ticket via openThread(). */
 .forward-link-card {
   background: rgba(255, 255, 255, 0.03);
   border: 1px dashed var(--panel-border);
@@ -1699,7 +1707,7 @@ body.page-transition-out { animation: pageFadeOut 0.09s ease forwards; }
 .forward-link-card:hover { border-color: var(--accent-gold); background: rgba(255, 255, 255, 0.05); }
 .forward-link-time { color: var(--ink-soft); font-size: 11.5px; }
 
-/* Withdraw Issue — duplicate-TID guard */
+/* ---- Withdraw Issue: duplicate-TID inline warning (public/assets/app.js) ---- */
 .tid-warning {
   margin-left: 8px;
   font-size: 12px;
@@ -1708,351 +1716,12 @@ body.page-transition-out { animation: pageFadeOut 0.09s ease forwards; }
 }
 .tid-warning.checking { color: var(--ink-soft); font-weight: 500; font-style: italic; }
 
+/* Withdraw Issue: TID input itself, not just the label warning — see
+   setTidState() in app.js, which is the single place that toggles this
+   class alongside the warning text and Submit's disabled state, so all
+   three always agree with each other. */
 .field input.field-error {
   border-color: var(--required);
   background: color-mix(in srgb, var(--field-bg) 85%, var(--required) 15%);
 }
 .field input.field-error:focus { border-color: var(--required); }
-
-/* ================================================================
-   Announcement banner (public/assets/announcement-banner.js)
-   ================================================================ */
-#announcementBanner:empty { display: none; }
-.ann-banner {
-  position: relative;
-  flex-shrink: 0;
-  display: flex;
-  align-items: flex-start;
-  gap: 12px;
-  padding: 10px 40px 10px 24px;
-  background: linear-gradient(90deg, rgba(245, 158, 11, 0.14), rgba(245, 158, 11, 0.05));
-  border-top: 1px solid rgba(245, 158, 11, 0.3);
-  border-bottom: 1px solid rgba(245, 158, 11, 0.3);
-  color: var(--ink);
-}
-.ann-banner-icon {
-  font-size: 15px; flex-shrink: 0; margin-top: 1px;
-  animation: breathe 1.8s ease-in-out infinite;
-}
-.ann-banner-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
-.ann-banner-label {
-  font-size: 10px; font-weight: 800; letter-spacing: 0.08em; text-transform: uppercase;
-  color: #b45309;
-  animation: breathe 1.8s ease-in-out infinite;
-}
-[data-theme="dark"] .ann-banner-label { color: #f59e0b; }
-/* Overlapping-crossfade trick via CSS Grid: both text nodes share the
-   same grid cell, so the wrap auto-sizes to whichever is tallest right
-   now — needed because the message text WRAPS across lines (responsive
-   to window width / browser zoom, per the reference screenshots) rather
-   than truncating to a single line, so its height isn't a fixed
-   constant we could hardcode. */
-.ann-banner-text-wrap { display: grid; }
-.ann-banner-text {
-  grid-row: 1; grid-column: 1;
-  font-size: 13px; font-weight: 600; color: var(--ink); line-height: 1.45;
-  white-space: normal; overflow-wrap: break-word;
-  opacity: 0; transform: translateX(0);
-  transition: opacity 2.2s ease, transform 2.2s ease;
-}
-.ann-banner-text.ann-current { opacity: 1; transform: translateX(0); }
-.ann-banner-text.ann-entering { opacity: 0; transform: translateX(24px); }
-.ann-banner-text.ann-leaving { opacity: 0; transform: translateX(0); }
-.ann-banner-dots { display: flex; gap: 5px; flex-shrink: 0; margin-top: 2px; }
-.ann-banner-dot { width: 5px; height: 5px; border-radius: 50%; background: rgba(180, 83, 9, 0.3); transition: background 0.2s ease; }
-[data-theme="dark"] .ann-banner-dot { background: rgba(245, 158, 11, 0.28); }
-.ann-banner-dot.active { background: #b45309; }
-[data-theme="dark"] .ann-banner-dot.active { background: #f59e0b; }
-.ann-banner-close {
-  position: absolute; top: 8px; right: 14px;
-  flex-shrink: 0; border: none; background: none; cursor: pointer;
-  color: var(--ink-soft); font-size: 13px; line-height: 1; padding: 4px;
-  border-radius: 6px;
-}
-.ann-banner-close:hover { color: var(--ink); background: rgba(0, 0, 0, 0.08); }
-
-/* ================================================================
-   Site-wide toast (feedback popup) styles.
-
-   One rule set shared by every page via window.showToast(message, type) —
-   see /assets/toast.js. Success and failure are deliberately styled very
-   differently (see toast.js for why they also *behave* differently):
-   success is a quick, quiet confirmation; failure is visually heavier
-   (thicker border, tinted background, darker overlay) because it usually
-   needs to be read carefully, not just glanced at.
-   ================================================================ */
-#globalToastOverlay {
-  position: fixed;
-  inset: 0;
-  z-index: 9999;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  /* Not a modal — never intercept clicks. This also lets "click anywhere
-     to dismiss" (for error toasts) reuse a plain document-level click
-     listener instead of needing its own hit target. */
-  pointer-events: none;
-  background: rgba(5, 7, 20, 0);
-  transition: background 0.25s ease;
-}
-#globalToastOverlay.toast-show { background: rgba(5, 7, 20, 0.45); }
-#globalToastOverlay.toast-overlay-err.toast-show { background: rgba(5, 7, 20, 0.6); }
-#globalToastOverlay .toast-card {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  background: var(--card-bg);
-  border: 1px solid var(--panel-border);
-  border-radius: 14px;
-  padding: 16px 26px;
-  font-size: 13px;
-  font-weight: 700;
-  color: var(--ink);
-  text-align: center;
-  max-width: min(440px, 82vw);
-  box-shadow: 0 20px 40px -12px rgba(0, 0, 0, 0.45);
-  opacity: 0;
-  transform: translateY(-8px) scale(0.94);
-  transition: opacity 0.2s ease, transform 0.2s ease;
-}
-#globalToastOverlay.toast-show .toast-card {
-  opacity: 1;
-  transform: translateY(0) scale(1);
-}
-#globalToastOverlay .toast-icon { font-size: 17px; line-height: 1; flex: none; }
-#globalToastOverlay .toast-card.toast-ok {
-  border-color: rgba(26, 156, 110, 0.4);
-}
-#globalToastOverlay .toast-card.toast-ok .toast-icon { color: #1a9c6e; }
-#globalToastOverlay .toast-card.toast-err {
-  border: 2px solid #e0577a;
-  background: rgba(224, 87, 122, 0.1);
-  text-align: left;
-}
-#globalToastOverlay .toast-card.toast-err .toast-icon { color: #e0577a; }
-#globalToastOverlay .toast-body { display: flex; flex-direction: column; gap: 4px; }
-#globalToastOverlay .toast-hint {
-  font-size: 11px;
-  font-weight: 500;
-  opacity: 0.75;
-}
-
-/* ================================================================
-   Announcements management page (public/announcements.html)
-   ================================================================ */
-html:has(body.announcements-page), body.announcements-page {
-  height: 100%; overflow: hidden; display: flex; flex-direction: column;
-}
-body.announcements-page .topbar { flex-shrink: 0; }
-body.announcements-page #announcementBanner { flex-shrink: 0; }
-body.announcements-page .ann-page-backrow { flex-shrink: 0; }
-body.announcements-page .ann-shell { flex: 1; min-height: 0; }
-
-.ann-page-backrow { padding: 8px 24px 0; }
-/* When the announcement banner is actually showing above this row (it's
-   empty — no padding/border of its own — when there's nothing active to
-   show), the banner's own bottom border already anchors the top of the
-   page visually, so the row below it needs less breathing room than
-   when it's the very first thing on the page. */
-#announcementBanner:has(.ann-banner) + .ann-page-backrow { padding-top: 2px; }
-.ann-shell { display: flex; height: 100%; overflow: hidden; }
-.ann-sidebar {
-  width: 300px; flex-shrink: 0; border-right: 1px solid var(--panel-border);
-  padding: 16px; overflow-y: auto;
-}
-.ann-sidebar .threads-search { margin-bottom: 12px; }
-.ann-list-item {
-  position: relative;
-  display: flex; flex-direction: column; gap: 3px;
-  padding: 10px 12px; border-radius: 12px; cursor: pointer;
-  border-left: 3px solid transparent;
-  margin-bottom: 4px;
-  background: var(--sidebar-item-bg);
-}
-.ann-list-item:hover { background: var(--sidebar-item-hover); }
-.ann-list-item.selected { background: var(--sidebar-item-hover); border-left-color: var(--accent-gold); }
-.ann-list-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
-.ann-list-topic { font-size: 12.5px; font-weight: 700; color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.ann-list-status { display: inline-flex; align-items: center; gap: 4px; font-size: 10.5px; font-weight: 700; flex-shrink: 0; }
-.ann-list-status .dot { width: 6px; height: 6px; border-radius: 50%; }
-.ann-list-status.active .dot { background: #34d399; animation: ann-pulse 1.8s ease-in-out infinite; }
-@keyframes ann-pulse {
-  0%, 100% { opacity: 1; box-shadow: 0 0 0 0 rgba(52, 211, 153, 0.55); }
-  50% { opacity: 0.75; box-shadow: 0 0 0 4px rgba(52, 211, 153, 0); }
-}
-.ann-list-status.inactive .dot { background: var(--ink-soft); }
-.ann-list-status.scheduled .dot { background: #38bdf8; }
-.ann-list-status.expired .dot { background: #e0577a; }
-.ann-list-meta { font-size: 10.5px; color: var(--ink-soft); }
-.ann-new-btn {
-  width: 100%; margin-bottom: 10px; padding: 9px 12px; border-radius: 12px;
-  border: 1.5px dashed var(--border); background: none; color: var(--ink-soft);
-  font-weight: 700; font-size: 12.5px; cursor: pointer;
-}
-.ann-new-btn:hover { border-color: var(--accent-gold); color: var(--ink); }
-
-.ann-main { flex: 1; min-width: 0; display: flex; align-items: stretch; justify-content: center; padding: 20px; overflow: hidden; }
-.ann-form-card {
-  width: 640px; max-width: 100%; height: 100%;
-  display: flex; flex-direction: column;
-  background: var(--card-bg); border: 1px solid var(--panel-border);
-  border-radius: var(--radius); box-shadow: var(--shadow);
-  overflow: hidden;
-}
-.ann-form-scroll { flex: 1; min-height: 0; overflow-y: auto; padding: 24px; }
-.ann-form-footer {
-  flex-shrink: 0; display: flex; justify-content: flex-end; gap: 8px;
-  padding: 14px 24px; border-top: 1px solid var(--panel-border);
-}
-.ann-form-meta { font-size: 11px; color: var(--ink-soft); margin-top: 4px; }
-.ann-datetime-row { display: flex; gap: 10px; }
-.ann-datetime-row .field { flex: 1; }
-.btn-danger {
-  border: 1.5px solid #e0577a; background: none; color: #e0577a;
-  border-radius: 10px; padding: 9px 16px; font-size: 13px; font-weight: 700; cursor: pointer;
-}
-.btn-danger:hover { background: rgba(224, 87, 122, 0.1); }
-.ann-empty-state { display: flex; align-items: center; justify-content: center; height: 100%; color: var(--ink-soft); font-size: 13px; }
-
-/* ---- IP Access dashboard (ip-access-panel.js) ---- */
-.edit-modal.wide { max-width: 940px; }
-:root { --ipa-ip-color: #0f7a52; }
-[data-theme="dark"] { --ipa-ip-color: #34d399; }
-.ipa-ip-text { font-family: var(--font-mono); color: var(--ipa-ip-color); font-weight: 600; }
-
-.ipa-stat-cards {
-  display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px;
-  margin-bottom: 16px;
-}
-.ipa-stat-card {
-  background: var(--field-bg); border: 1px solid var(--border); border-radius: 12px;
-  padding: 14px 16px; cursor: pointer; transition: border-color 0.15s ease, background 0.15s ease;
-}
-.ipa-stat-card:hover { border-color: var(--accent-gold); }
-/* Which card's table(s) are currently shown below — see activeView in
-   ip-access-panel.js. Left border instead of full-card recolor so it
-   reads as "selected filter", not "this number is now a warning". */
-.ipa-stat-card-active { border-color: var(--accent-gold); background: var(--sidebar-item-hover); box-shadow: inset 3px 0 0 var(--accent-gold); }
-.ipa-stat-label { font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--ink-soft); margin-bottom: 6px; }
-.ipa-stat-value { font-size: 24px; font-weight: 700; font-family: var(--font-display); color: var(--ink); }
-.ipa-stat-approved { color: #16a34a; }
-[data-theme="dark"] .ipa-stat-approved { color: #34d399; }
-.ipa-stat-pending { color: #d97706; }
-[data-theme="dark"] .ipa-stat-pending { color: #f3c463; }
-.ipa-stat-blocked { color: #e0577a; }
-
-/* Pending "breathing light" — only while there's actually something
-   waiting (pending > 0). 0 pending stays the plain, calm card style
-   above; this is purely additive on top of it. Same 1.8s timing as
-   maintenance-breathing-light.css's fs-breathe so it reads as the same
-   "needs attention" language used elsewhere in the app, not a one-off. */
-.ipa-pending-alert { animation: ipa-pulse 1.8s ease-in-out infinite; }
-@keyframes ipa-pulse {
-  0%, 100% { box-shadow: 0 0 0 0 rgba(217, 119, 6, 0.35); border-color: #d97706; }
-  50% { box-shadow: 0 0 0 5px rgba(217, 119, 6, 0); border-color: #f3c463; }
-}
-[data-theme="dark"] .ipa-pending-alert { animation-name: ipa-pulse-dark; }
-@keyframes ipa-pulse-dark {
-  0%, 100% { box-shadow: 0 0 0 0 rgba(243, 196, 99, 0.4); border-color: #f3c463; }
-  50% { box-shadow: 0 0 0 5px rgba(243, 196, 99, 0); border-color: #f3c463; }
-}
-
-/* Relocated into .edit-modal-header-row, next to the ✕ close button
-   (was a full-width row above the tables). Smaller than the dashboard's
-   other buttons on purpose — this is header chrome now, not a primary
-   action competing with the stat cards for attention. */
-.ipa-header-actions { display: flex; gap: 8px; }
-.ipa-header-actions .ipa-ghost-btn { padding: 6px 12px; font-size: 12px; width: auto; }
-.ipa-ghost-btn {
-  background: var(--field-bg); color: var(--ink); box-shadow: none;
-  border: 1px solid var(--border);
-}
-
-.ipa-collapsible { border: 1px solid var(--border); border-radius: 12px; margin-bottom: 10px; overflow: hidden; }
-.ipa-collapsible-header {
-  padding: 12px 16px; font-weight: 700; font-size: 13.5px; cursor: pointer;
-  display: flex; align-items: center; gap: 8px; user-select: none;
-  background: var(--field-bg);
-}
-.ipa-chev { display: inline-block; transition: transform 0.15s ease; color: var(--ink-soft); }
-.ipa-collapsible-body { padding: 14px 16px 16px; }
-.ipa-form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; align-items: end; }
-.ipa-form-row .field { margin: 0; }
-.ipa-input-with-btn { display: flex; gap: 8px; }
-.ipa-input-with-btn input { flex: 1; }
-.ipa-inline-btn {
-  flex-shrink: 0; border: 1px solid var(--border); background: var(--field-bg); color: var(--ink);
-  border-radius: 10px; padding: 0 16px; font-size: 13px; font-weight: 700; cursor: pointer;
-}
-.ipa-inline-btn:hover { background: var(--panel-border); }
-.ipa-inline-btn-amber { background: linear-gradient(135deg, #f3c463, #e0a531); color: #1b2559; border-color: transparent; }
-.ipa-inline-btn-amber:hover { filter: brightness(1.05); }
-.ipa-form-hint { font-size: 11.5px; color: var(--ink-soft); margin: 8px 0 0; }
-.ipa-settled-hint { margin: 4px 0 16px; }
-@media (max-width: 640px) {
-  .ipa-form-row { grid-template-columns: 1fr; }
-}
-
-.ipa-hint { font-size: 12px; color: var(--ink-soft); margin: 4px 0 16px; }
-
-.ipa-table-section { margin-bottom: 20px; }
-.ipa-table-header-row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
-.ipa-table-title { font-weight: 700; font-size: 13.5px; }
-.ipa-table-count { color: var(--ink-soft); font-weight: 400; font-size: 12px; }
-.ipa-page-size select {
-  font-size: 12px; border: 1px solid var(--border); border-radius: 8px;
-  background: var(--field-bg); color: var(--ink); padding: 4px 8px;
-}
-.ipa-table { border: 1px solid var(--border); border-radius: 12px; overflow: hidden; }
-.ipa-row {
-  display: grid; gap: 10px; padding: 10px 14px; align-items: center;
-  font-size: 12.5px; border-bottom: 1px solid var(--border);
-}
-.ipa-row:last-child { border-bottom: none; }
-.ipa-row-head {
-  font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.03em;
-  color: var(--ink-soft); font-weight: 700; background: var(--field-bg);
-}
-.ipa-row > div:last-child, .ipa-row-head > div:last-child { text-align: right; }
-/* Column divider lines. Not on the last column — it's the right-aligned
-   Actions column, a line right before it just crowds the row-btn text. */
-.ipa-row > div:not(:last-child), .ipa-row-head > div:not(:last-child) {
-  border-right: 1px solid var(--border); padding-right: 10px;
-}
-@media (max-width: 720px) {
-  /* Stacked single-column layout below — a right border here would just
-     be a stray line under each field, not a column separator anymore. */
-  .ipa-row > div:not(:last-child), .ipa-row-head > div:not(:last-child) { border-right: none; padding-right: 0; }
-}
-.ipa-row-actions { display: flex; gap: 8px; justify-content: flex-end; }
-.ipa-row-actions .row-btn, .ipa-table .row-btn {
-  background: none; border: none;
-  color: var(--label-blue); cursor: pointer; font-size: 12.5px; font-weight: 700;
-  padding: 0; text-decoration: underline; text-underline-offset: 2px;
-}
-.ipa-row-actions .row-btn:hover, .ipa-table .row-btn:hover { opacity: 0.75; }
-.ipa-empty-row { padding: 20px; text-align: center; color: var(--ink-soft); font-size: 12.5px; }
-
-.ipa-pagination { display: flex; align-items: center; justify-content: flex-end; gap: 14px; margin-top: 10px; }
-/* Previous/Next used class="row-btn" but sat inside .ipa-pagination, which
-   wasn't part of either selector that actually styles that class
-   (.ipa-row-actions .row-btn / .ipa-table .row-btn below) — so these two
-   were silently falling back to the bare, unstyled browser default button
-   (white fill, black border), the "white box" bug. Explicit rule here
-   instead of widening one of those selectors to include .ipa-pagination,
-   so this stays easy to find/adjust independent of the row-action buttons. */
-.ipa-pagination .row-btn {
-  background: none; border: none; color: var(--label-blue);
-  font-size: 12.5px; font-weight: 700; padding: 0;
-  text-decoration: underline; text-underline-offset: 2px; cursor: pointer;
-}
-.ipa-pagination .row-btn:hover:not(:disabled) { opacity: 0.75; }
-.ipa-page-indicator { font-size: 12px; color: var(--ink-soft); }
-.ipa-pagination .row-btn:disabled { opacity: 0.4; cursor: not-allowed; }
-
-@media (max-width: 720px) {
-  .ipa-stat-cards { grid-template-columns: repeat(2, 1fr); }
-  .ipa-row, .ipa-row-head { grid-template-columns: 1fr !important; gap: 2px; }
-  .ipa-row-head { display: none; }
-  .ipa-row { border: 1px solid var(--border); border-radius: 10px; margin-bottom: 8px; }
-}

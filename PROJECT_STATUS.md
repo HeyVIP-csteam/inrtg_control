@@ -1,933 +1,112 @@
-# PROJECT STATUS — Issue Submission Hub + TG Reply Threads (INR CS Team)
+# PROJECT STATUS — Issue Submission Hub + TG Reply Threads (PKR CS Team fork)
 
 Paste this whole document as the first message in a new conversation, along
-with the latest `telegram-issue-hub-updated.zip`. That gives the new chat
+with the latest project zip (`pkr-issue-hub.zip`). That gives the new chat
 the complete current state of the project.
 
-## 🔁 移植自 PKR,2026-07-23 — 工单字段级编辑("🔄 Sync to Sheet")
-
-**改动前**：`threads.html` 点 ✏️ 编辑工单,只有一个 `prompt()` 弹窗,把
-**整条原始 Telegram 消息文本**丢给你手改,改完存回去——如果这个工单当
-时写过 Google Sheet,那一行**完全不会跟着变**,Telegram 消息和 Sheet
-两边各自为政,没有任何机制保持同步。
-
-**改动后**：新提交的工单会多一个按钮 **📊**,点开是一个跟提交表单一样
-的、按字段填写的表单(用的是同一份 `window.MODULES` schema,预填工单
-当时的真实字段值)。点"Save & Sync":
-1. 用**跟 `submit.js` 当初生成消息一模一样的函数**重新拼出 Telegram
-   消息文本,编辑那条线上的消息
-2. 如果这个工单当时写过一行可追踪的 Sheet 记录,**原地覆盖那一行**
-   (不是新增一行)
-3. 侧边栏的标题/预览文字也跟着更新
-
-**✏️ 没有被删除**——只对"这次改动之前提交的老工单"显示(老工单没存
-`fieldMap`/`brandId`/`sheetRef`,📊 没有数据可以拿来重建表单)。**新
-工单只显示 📊,不是两个按钮都显示**,这是刻意设计,合并/以后维护时
-不要把 ✏️ 删掉。
-
-### 这次是"按架构合并",不是整份复制(PKR 自己在 CHANGES.md 里强调过)
-
-因为 `submit.js` 这个文件本身就是每个币种项目各自维护、各不相同的
-(模块列表不一样),所以没有直接拿 PKR 的 `submit.js` 覆盖 INR 的,而是
-按同样的思路在 INR 自己的代码基础上做了同等的两处结构调整:
-
-1. **把所有"拼消息文本"/"拼 Sheet 列值"的函数,从 `submit.js` 搬进新
-   文件 `functions/_shared/messageBuilders.js`**,`submit.js`/
-   `threads/[id].js` 都从这里导入,不会各自维护一份、慢慢跑偏。INR 版
-   跟 PKR 版的差别:**没有 `buildBankIssueDynamicMessage`/
-   `buildWithdrawIssueDynamicMessage`**(INR 没有这两个模块),
-   `CURRENCY_LABEL` 保持 `"INR"`
-2. **Sheet 写入的顺序挪到 `createThread()` 之前**,并且把写入返回的
-   实际行号(`row`)存进 thread 记录的新字段 `sheetRef`(`{sheetId,
-   tab, startColumn, columns, row}`)——这样以后编辑时才知道该覆盖
-   Sheet 的哪一行,而不是又新增一行
-
-**涉及的文件(6 个)**：
-- `functions/_shared/messageBuilders.js`(新建)
-- `functions/api/submit.js`(结构性重排,不是整份覆盖)
-- `functions/_shared/googleSheets.js`(`appendRowByColumns` 现在会
-  返回 `{row}`,新增 `updateRowByColumns`,`sheetsFetch` 支持
-  `method` 参数)
-- `functions/_shared/threads.js`(`createThread` 加 4 个新参数,新增
-  `updateThreadDetails`)
-- `functions/api/threads/[id].js`(新增 `editDetails` action)
-- `public/threads.html`(加载 `schemas.js`、✏️/📊 按钮互斥逻辑、新增
-  `openEditDetailsModal()`)
-- `public/assets/style.css`(追加 `.edit-details-*` 样式,没动任何
-  现有规则)
-
-**特意没有搬过来的东西**：PKR 那份 patch 里 `createThread()` 还带了
-一个 `attachmentNames` 参数,但那是**另一个还没合并进 INR 的功能**
-(不在这次 patch 自己写的 CHANGES.md 范围内),这次没有引入。
-
-## 💸 新增,2026-07-27 — Withdraw Issue(提款问题)模块
-
-按 `WITHDRAW_ISSUE_SETUP.md`(设计文档,已放进项目根目录)实现。7 种
-Issue Type(门控字段),只有 "Withdraw Amount Received Less" 才会展开
-Submitted Amount / Received Amount 这两个金额字段。
-
-**这个模块的两个特殊点**(设计上如此,不是疏漏)：
-- 识别字段用的是 `username`,不是大部分模块常用的 `uid`
-- Sheet **没有 Screenshot Link 这一列**——业务方明确要求提款问题不需要
-  记录截图链接,但截图本身照样会正常显示在 TG Reply Threads 里(这套
-  预览走的是 Telegram 自己的 `file_id`,跟要不要接 Sheet 完全独立,
-  这个模块特意没加进 `SCREENSHOT_R2_ENABLED`)
-
-**Sheet 结构已经用业主提供的截图确认过,直接按真实结构接上,`RECORD_TO_SHEET.withdraw_issue`
-从一开始就是 `true`**（tab 名 "Withdraw Issue",起始列是 A 不是常见的
-B,因为 Date 就在 A 列;列顺序 Date/Brand/Username/Issue Type/TID/
-Submitted Amount/Received Amount/Remark/PIC）。
-
-**涉及的文件(3 个)**：
-- `public/assets/schemas.js` —— 新增模块定义,货币符号沿用 INR 项目
-  已有的 "Rs." 写法
-- `functions/_shared/routing.js` —— 5 个品牌都加了路由占位(chatId
-  留空,**部署后需要去 TG Group / Channel 面板填真实值**)、
-  `MODULE_META`、新增 `WITHDRAW_ISSUE_FIELD_STYLE`、
-  `SHEET_LAYOUT.withdraw_issue`、`RECORD_TO_SHEET.withdraw_issue: true`
-- `functions/_shared/messageBuilders.js` —— 新增
-  `buildWithdrawIssueDynamicMessage()`、调度分支、`resolveColumnValues()`
-  加了 `autoDate` 这个列关键字(今天日期,自动写入,不需要表单字段)
-
-**`app.js`/`threads.html` 完全没改**——门控字段(`emphasize: true`)
-和截图预览都是通用逻辑,新模块直接就能用。
-
-**部署后必须做的事**：去 TG Group / Channel 管理面板,给 5 个品牌都
-填上 Withdraw Issue 真实的 Telegram chatId/topicId(现在是空占位,
-不填的话这个模块没法发消息)。
-
-**测试顺序**：先测一个"普通类型"(比如 Withdraw Disapproved)和
-"Withdraw Amount Received Less"(唯一带金额字段的)各提交一次,确认
-Telegram 消息格式、字段展开/收起逻辑都正常;再确认 Sheet 里
-Date/Brand/Username 这些列写对了位置、没有 Screenshot Link 那一列;
-最后确认截图能在 TG Reply Threads 里正常预览。
-
-
-
-按 `FORWARD_FEATURE_SETUP.md`(设计文档,业主提供)完整实现。在工单
-详情页点 ↗️,基于当前工单在**另一个 Topic** 生成一张全新工单——效果
-跟在那个 Topic 正常提交一次表单完全一样:新 Telegram 消息、新 Sheet
-记录(如果那个模块接了 Sheet)、新的可追踪工单记录。
-
-**设计要点**：
-- 同名字段(UID/Number/Email 等)自动带过去,**但全部可编辑**
-- **Brand 锁死**,转发时不能改成别的品牌
-- 附件走"转发"效果——复用 Telegram 自己的 `file_id`,不重新上传
-- 可以在转发时额外加新附件(目标 Topic 的群可能要求原 Topic 不需要的
-  照片),拖拽上传区域直接复用了 `threads.html` 页面里回复框已经有的
-  同一套实现(`fileToDataUrl`/`.dropzone`/`.file-chip`),没有重新写
-- PIC 默认填当前点击转发的这个人,可以改
-- 两边互相留痕迹:新工单显示"↩️ Forwarded from",原工单显示
-  "↗️ Forwarded to",都能点击跳转
-- 该写 Sheet 就写 Sheet,包括 Screenshot Link 这一列
-
-**涉及的文件(6 个,1 个全新)**：
-- (新建)`functions/api/forward.js` —— 核心接口,INR 现有的
-  `messageBuilders.js`/`routing.js` 各项导出全部对得上,直接能用,
-  没做额外改动
-- `functions/_shared/threads.js` —— `createThread()` 加
-  `rootMessageIds`/`forwardedFrom` 两个参数,新增 `addForwardedToLink()`
-- `functions/api/threads/[id].js` —— `recallRoot` 改成删除相册里的
-  每一张图,不只是第一张(**这个 bug 不是转发功能才有的,是从最早的
-  提交逻辑就存在**,只是转发功能测试多附件场景时更容易暴露)
-- `functions/api/submit.js` —— 三个发送分支 + fallback 分支都改成
-  返回完整的 `messageIds` 数组(配合上面的 recall 修复)
-- `public/threads.html` —— ↗️ 按钮、两边"Forwarded from/to"引用卡片
-  (可点击跳转)、`openForwardModal()`(两阶段弹窗:先选 Topic,再展开
-  预填表单 + 拖拽上传区域)
-- `public/assets/style.css` —— 新增 `.forward-link-card` 样式
-
-**部署后建议测试顺序(照抄自设计文档第 7 节)**：
-1. 挑一张有 2+ 张附件的旧工单,转发到另一个 Topic,确认字段预填对不对、
-   Brand 是不是锁死的
-2. 加一张新附件,确认转发出去的消息里旧图+新图都在
-3. 去 Sheet 确认 Screenshot Link 那一列有没有值(如果该模块接了 R2)
-4. 两边工单互相点"Forwarded from/to"确认能跳转
-5. **单独测试 Recall**:提交一张带 3+ 张图的工单,点 Recall,去 Telegram
-   确认**每一张**图都被删掉了,不是只删了第一张——这个顺带修复的老 bug
-   务必测一下
-
-
-
-按 `OWNER_ROLE_SETUP.md`(已经放进项目根目录)完整实现。核心规则只有
-一条,取代了原本手写的白名单式权限:
-
-> **actor 只能管理 `actor.rank > target.rank` 的账号。同级不能管
-> 同级。**
-
-等级体系：`Owner(4) > SuperAdmin(3) > Admin(2) > Senior(1) > Agent(0)`。
-
-**Owner 的特性**：权限最高、能管所有其他角色、**没有任何人(包括
-SuperAdmin)能改 Owner 的权限**、账号**完全隐藏**(不出现在 Agent
-Profile 表格/账号列表/任何查询接口,除了 Owner 自己能看到自己)、
-**不受 Office+IP 白名单限制**登录。
-
-**⚠️⚠️⚠️ 部署前必须做的事,这个非常重要,不检查会直接把人锁在门外：**
-
-**SuperAdmin 从此不再免检查 Office+IP,变成必须绑定才能登录**(这是
-设计上刻意的改动,豁免权从 SuperAdmin 转移给了 Owner)。**部署前必须
-先确认现有的每一个 SuperAdmin 账号,都已经绑了 Office,而且这个
-Office 的 IP 白名单包含了这个人实际登录会用的 IP**——不然这次代码
-一上线,原来能正常登录的 SuperAdmin 会立刻被拒绝登录,而且**这不是
-bug,是权限模型改了**,得先手动去 Agent Profile 弹窗里逐个检查、
-补上 Office 绑定,再部署。
-
-**涉及的文件(9 个改动 + 2 个新建)**：
-- `functions/_shared/accounts.js` —— `ROLE_RANK`/`ASSIGNABLE_ROLES`、
-  `saveAccount()` 的 role 赋值逻辑、`officeIpCheckPasses()`、
-  `listAccounts()` 加 `viewerUsername` 参数
-- `functions/api/admin/accounts.js` —— 整个权限判断主逻辑重写,
-  `canManage()`/`isHiddenTarget()` 取代原来的 `MANAGE_SCOPE` 手写
-  白名单;**顺带修了一个真实漏洞**：原来 SuperAdmin 之间可以互相
-  锁定账号(lock/unlock 只看"是不是 SuperAdmin",不比较目标等级),
-  现在也纳入等级比较
-- `functions/api/auth/login.js` —— 登录流程里独立的一份 office 检查,
-  同步从 superadmin 改成 owner
-- `public/index.html` —— 客户端 `ROLE_RANK` 加 owner;建账号角色
-  下拉、Reset Password 目标列表都改成"严格低于自己等级";Agent
-  Profile 弹窗(Role/Office/Brands/Topic Access/锁定按钮)从"只看
-  isSuperAdmin"改成针对具体目标账号的 `canManageAccess` 判断;
-  `saveAgentProfileModal()` 改成检查 DOM 元素是否存在而不是全局变量;
-  表格里 Office 单元格和锁定按钮也做了同样的按目标判断处理;Owner
-  自己那一行 Office 显示"unrestricted, OK for Owner"
-- `public/accounts-admin.html`、`public/threads.html` —— 客户端
-  `ROLE_RANK` 加 owner(这两个文件按文档说明只需要这一处改动)
-- (新建)`create-owner-account.js` —— 本地跑的脚本,生成写入 Owner
-  账号的 KV 命令,密码不会发送到任何地方
-- (新建)`OWNER_ROLE_SETUP.md` —— 完整设计文档,放在项目根目录
-
-**创建 Owner 账号**：网站里没有任何路径能创建/提升出 Owner,唯一方法
-是直接操作 Cloudflare KV——具体两种方法(全新建号 / 把现有账号直接
-升级)见 `OWNER_ROLE_SETUP.md` 第 5 节。
-
-**部署后建议走一遍 `OWNER_ROLE_SETUP.md` 第 6.3 节的完整验证清单。**
-
-
-
-**现象**：agent 在 "Verify Bank Detail" 这个类型的 Remark 框里明明
-写了内容,提交后 Telegram 消息里完全没有 Remark 这一行。
-
-**根因**：`public/assets/schemas.js` 的 `risk_issue` 模块里,**`remark`
-这个 key 被定义了两次**——一次给 "Bonus Auto Force" 等 5 种类型用,
-另一次单独给 "Verify Bank Detail" 用。两个字段渲染到页面上变成两个
-`name="remark"` 的输入框(一个隐藏、一个显示),浏览器的
-`FormData.get("remark")` 只会取**第一个**同名字段的值——选中
-"Verify Bank Detail" 时,第一个字段是隐藏且空的,所以不管 agent 在
-页面上看到的那个框里写了什么,提交时读到的永远是那个隐藏空框,
-自然是空的。
-
-**修复**：把 "Verify Bank Detail" 合并进第一个 `remark` 字段的
-`showIf` 列表,删掉重复定义的第二个。只改了 `public/assets/schemas.js`
-一个文件。顺手写了个小脚本扫了一遍整个文件,确认**没有其他模块存在
-同样的 key 重复问题**,这次是唯一一处。
-
-
-
-在 "All roles" 筛选下拉旁边加了一个搜索框,可以按 **Username / Full
-Name / PSD** 实时过滤表格(打字就更新,不用按回车),跟角色筛选可以
-叠加使用。只改了 `public/index.html`(加输入框 + 过滤逻辑)、
-`public/assets/style.css`(样式跟角色筛选下拉保持一致)。
-
-
-
-**现象**：弹窗里 Status 的 "Active" 文字没有边框、Cancel 和锁定按钮
-显示成浏览器默认的白色按钮,跟网站深色主题不搭。
-
-**根因**：这几个按钮当时漏套了网站已有的深色按钮样式类
-(`.icon-btn`,`threads.html` 的 "🔄 Sync to Sheet" 弹窗里 Cancel 就是
-用这个),直接吃了浏览器默认样式。
-
-**改动(只改了 `public/index.html`、`public/assets/style.css`)**：
-- Status 文字外面加了跟 Role 下拉一样的边框(`.agent-profile-status-row`
-  改成跟 `.field select` 同款的边框/背景/圆角)——**Active 显示绿色,
-  Locked 显示红色 + 🔒 emoji**
-- Cancel、锁定切换按钮统一换成 `.icon-btn`(深色背景、跟 Save 按钮
-  同一套按钮语言,不是同一个颜色,但不再是刺眼的白色默认样式)
-
-**待办,还没做**：你之前提过想在 Agent Profile 表格顶部加一个搜索框
-(搜 Username / Full Name / PSD),中途被这次的按钮样式问题打断了,还
-没实现——需要的话告诉我一声继续。
-
-
-
-**背景**：Account Management 的 Agent Profile 原来是一张大表格,编辑
-靠行内的 ✏️ 按钮,而且账号系统一直只有"品牌权限"(`allowedBrands`),
-没有"模块/Topic 权限"——没法限制"这个 agent 不能用 Daily Report"这种
-需求。这次先讨论定了方案,给了 preview 确认过效果,才动手做。
-
-### 交互改动
-- **表格简化**：只保留 Username、Role、Office、Brands、Status、
-  Full Name、PSD 这几列 + Lock/Unlock 按钮;"Last Log In
-  Time"、"Password Changed"这两列挪进了弹窗里(不是删掉,是收起来)
-- **点用户名**(Admin 及以上才能点)弹出 **"Agent Personal Profile"**
-  弹窗——Edit Profile 区块(Username 只读、Role+Status 一起一行、
-  Office、Brands 改成跟 Create Account 一样的品牌勾选格子、Full Name、
-  Agent PSD)+ 新增的 **Topic Access** 区块(6 个模块各一个勾选框)
-
-### 权限模型(新)
-- 账号新增 `allowedModules` 字段,形状跟 `allowedBrands` 一样(`"all"`
-  或者具体的模块 id 数组),**默认 `"all"`**——新建账号、以及这次上线
-  之前就存在的老账号,都是"全部 Topic 能用",不会有人平白无故被这次
-  改动收走权限
-- **改 Topic Access 的权限,跟改 Role 一个级别——只有 SuperAdmin 能
-  改**,Admin 打开弹窗能看到这个区块但勾选框是禁用的(跟 Role/Office/
-  Brands 这几个字段一样的处理)
-
-### 强制生效,不是纯前端隐藏(这点你特意要求过)
-- **首页侧边栏**：被限制的 Topic 直接不出现在列表里
-- **表单页**：就算直接拼 URL 硬进被限制的模块的 `form.html`,也会被
-  拦下显示"Not available"
-- **服务器端(`functions/api/submit.js`)**：这是真正兜底的一层——就算
-  懂技术的人绕过前端、直接调 `/api/submit` 接口,服务器也会用
-  `canSeeModule()` 真的拒绝掉这次提交,返回 403
-
-**涉及的文件(9 个)**：`functions/_shared/accounts.js`、
-`functions/api/admin/accounts.js`、`functions/api/submit.js`、
-`functions/api/auth/login.js`、`public/login.html`、
-`public/accounts-admin.html`、`public/assets/authguard.js`、
-`public/assets/app.js`、`public/index.html`、`public/assets/style.css`。
-
-**部署前无需新增任何东西**——复用现有的 `THREADS_KV`,没有新的
-Cloudflare 密钥/绑定要加。
-
-
-
-**现象**：工单摘要卡片里的原始截图(不是回复里带的),显示成
-`📎 ticket-attachment-1 — click to download` 这种下载链接,不会像
-回复附件那样自动加载显示成图片。
-
-**根因**：原始工单附件之前**只存了 Telegram 的文件 ID,没存真实原始
-文件名**——显示时只能用写死的占位名字(`ticket-attachment-1`),这个
-名字没有扩展名。判断"是不是图片、要不要自动显示"这一步,第一优先级
-就是看文件名后缀,占位名字没有后缀,直接判断失败,退回到"当成未知
-文件"处理。**回复里带的截图一直是正常的**,因为那边存的是真实文件名。
-
-这不是这几轮新改动引入的问题,是"附件预览"这个功能从更早的合并
-(`attachment_preview_fix_export`)开始就一直存在的缺口,只是现在才被
-实际用到、发现了。
-
-**修复**：`functions/api/submit.js`(三个发送函数现在会同时记住每个
-附件的真实文件名,跟 file_id 一一对应)、`functions/_shared/threads.js`
-(`createThread()` 新增 `attachmentNames` 字段存下来)、
-`public/threads.html`(优先用真实文件名,老工单没有的话才退回占位
-名字)。**只对这次部署之后新提交的工单生效**,已经存在的旧工单没有
-真实文件名可以补,还是会显示占位样式。
-
-
-
-**用户反馈**：即使 Sheet 数据本身是对的,重新点 Generate 有时候还是会
-吐出旧编号——说明不只是上一条修复的"抢跑时间差"问题,还有更根本的
-原因。
-
-**真正根因**：`getNextSequenceValue()`(以及同一个文件里另外三处读取
-Google Sheets 的函数)请求 Google Sheets API 时,**URL 是固定不变的**
-(比如永远是 `Tab!B2:B100000` 这个范围,不管表格里实际有多少行数据)。
-Cloudflare Workers 的 `fetch()` 默认会遵循标准 HTTP 缓存规则,哪怕是
-请求第三方 API(比如 Google Sheets)也一样——如果 Google 的响应带着
-可缓存的 header,Cloudflare 边缘节点就可能把这次查询结果**缓存住**,
-下次同样的 URL 请求,直接返回缓存里的旧数据,根本不会真的再问一次
-Google Sheets。这才是"Sheet 数据明明对,Generate 还是给旧编号"的真正
-原因——不是竞争条件,是缓存吐出了过期数据。
-
-**修复**：`functions/_shared/googleSheets.js` 里全部 4 处读取 Sheet
-数据的 `fetch()` 调用(`getNextSequenceValue`、`writeRowForDate` 的
-扫描读取、`getSheetTabTitles`、`batchGetValues`),全部加上明确禁用
-缓存的设置(`cf: { cacheTtl: -1, cacheEverything: false }` +
-`Cache-Control: no-cache` 请求头),强制每次都真正打到 Google Sheets,
-不吃任何缓存。
-
-**这是共用函数级别的修复,不分品牌**——`getNextSequenceValue()` 是
-所有品牌、所有 Promotion 共用的同一个函数,这次修完,13 个品牌/推广
-组合全部一起受益,不需要每个品牌单独处理。`writeRowForDate` 影响的是
-Daily Report(同样的缓存问题理论上也可能导致"没找到今天已有的那一行,
-又新增了一行"这种重复),`getSheetTabTitles`/`batchGetValues` 影响的
-是 Promo Code Search 的查询结果新鲜度。
-
-
-
-**现象**：`MP INR Promotion Manual Issue Bonus` 这类表里,自动生成的
-TID 出现了重复(比如 `MPBD0392`/`MPBD0393` 在同一张表里出现了两次,
-分别对应完全不同日期、不同 agent 的两次提交)。
-
-**根因**：TID 是靠表单里一个"Generate"按钮(`/api/next-tid` 接口)
-生成的,这个按钮**在提交之前就能点**——agent 点了按钮拿到预览的编号
-(比如 "MPBD0392")之后,可能还要花好几分钟继续填完表单其他字段才会
-真正点提交。这段时间里,`getNextSequenceValue()` 判断"下一个编号"
-用的是"扫描 Sheet,找最后一行有值的那个编号"——如果另一个 agent 在
-这几分钟内**也**点了 Generate(这时候前一个人的那一行还没真正写进
-表格),扫描到的"最后一行"还是同一行,两边就会拿到**一模一样**的
-预览编号,谁先提交谁占到,后提交的那个人还是会带着同一个编号交上去,
-造成重复。
-
-**修复**：`functions/api/submit.js`——**真正提交(写入 Sheet)之前**,
-再重新扫描一次当前真实的"下一个编号";如果跟 agent 表单里带着的编号
-对不上(说明这段等待期间有别的提交抢先用掉了),**静默换成最新扫描到
-的编号**再继续写入。这样把"能产生重复"的等待窗口,从"agent 填表单
-那几分钟"压缩到"这次重新扫描到真正写入之间的几十毫秒",不是数学上
-绝对杜绝(理论上还是有极小概率两次提交精确同一瞬间冲突),但已经覆盖
-了实际观察到的这种"隔了好几分钟才重复"的真实场景。
-
-**⚠️ 这次修复不会自动清理已经产生的重复数据**——截图里那两行
-`MPBD0392`/`MPBD0393`(2026-07-24、07-25 提交的那两行)需要手动去
-Sheet 里改成正确的编号。
-
-
-
-**现象**：首页 ↔ 表单页跳转时,"防白屏"那个纯色兜底背景(深色导航蓝/
-浅色版本 `#dbe7fb`)停留的时间比设计预期长不少,不是一闪而过。
-
-**根因**：`style.css` 文件**第一行**是:
-
-```css
-@import url("https://fonts.googleapis.com/css2?family=Space+Grotesk...");
-```
-
-`@import` 写在样式表最开头,会强迫浏览器**先等这个 Google Fonts 请求
-完全返回**,才处理 `style.css` 剩下的规则(包括真正的深色背景、星空
-样式)——相当于把"加载 CSS"这件事,从"并行请求两个文件"变成"串行:
-先等字体、再等真正的样式表",凭空拉长了纯色兜底背景显示的窗口期。
-
-**修复**：把 Google Fonts 的加载方式,从 `style.css` 里的 `@import`
-改成 6 个 HTML 文件(`index.html`、`form.html`、`login.html`、
-`threads.html`、`promo.html`、`accounts-admin.html`)各自 `<head>`
-里的标准 `<link rel="stylesheet">` 标签,外加两条
-`<link rel="preconnect">` 提前建好连接——这样字体和 `style.css` 变成
-**并行加载**,不再互相等待,纯色兜底背景显示的时间会明显缩短。
-
-
-
-**排查了四轮才彻底定位,完整记录一下,避免以后再走弯路：**
-
-- 第一轮：怀疑 `<body>` 因为挂着 `animation` 被迫建立堆叠层——方向没错
-  但代码本身有 bug(`document.body` 在 `<head>` 阶段还不存在),没跑起来
-- 第二轮：把执行时机的 bug 修好了,但背景还是没恢复
-- 第三轮：发现"防白屏"内联样式误把 `<body>` 的背景也写死了,跟 `body`
-  自己的 `transition: background` 打架——修掉了,但背景依然没恢复
-- 第四轮(这次)：用户在浏览器 Console 里跑了几行诊断代码,证实
-  `#starfieldRoot` 存在、`<body>` 没有卡住的动画、`<body>` 自己的背景
-  也正确解析成了深色渐变、星空图片路径也是对的——**所有数值都是对
-  的**,问题出在更底层的**图层堆叠顺序**本身
-
-**真正原因**：`#starfieldRoot` 用 `z-index: -2` 实现"垫在最底下",这个
-写法要生效,依赖 `<body>` 自己得先"单独算一个堆叠层"——如果
-`<body>` 没有这个身份,它自己的渐变背景在浏览器的绘制顺序里,会排在
-"负 z-index 的子元素"**前面**,直接把星空图片盖住。这个项目里
-`<body>` 之前很可能是**碰巧**因为某些其他属性(动画/过渡相关)间接
-获得了这个"堆叠层"身份,而不是被显式声明出来的——这次会话里的几次
-改动动到了这些属性,碰巧把这个"意外生效"的条件改没了,背景就跟着
-消失了。
-
-**修复**：`public/assets/style.css` 的 `body` 规则,加一行
-`isolation: isolate;`——明确告诉浏览器"`<body>` 自己单独算一个堆叠
-层",不再依赖任何其他属性顺带触发这个效果。这样星空背景的显示,不会
-再因为页面上别的地方(动画、过渡这些)有没有变动而跟着受影响。
-
-
-
-**这个问题排查了三轮才真正找到根子,记录清楚方便以后不要再踩同一个坑：**
-
-- **第一轮猜测**(`animation` 让 `<body>` 强制建立堆叠层)：方向部分
-  正确(`page-transition-in` 这个 class 确实该在动画播完后摘掉,这个
-  修复本身没错,保留了),但代码有 bug(`document.body` 在 `<head>`
-  阶段还不存在),根本没跑起来
-- **第二轮**：把执行时机的 bug 修好了,但背景还是没恢复——说明
-  堆叠层不是唯一原因,甚至可能都不是主要原因
-
-**真正原因**："防白屏"那次改动加的内联样式写的是
-`html, body { background: #090c1c; }`——**把 `<body>` 也一起写死了**。
-但 `style.css` 里 `body` 自己的规则是：
-
-```css
-body { background: var(--page-bg); transition: background 0.2s ease; }
-```
-
-`body` 的背景**设计成主题切换时要有过渡动画**。我的内联样式把 body
-背景强行设成纯色之后,浏览器要把它**过渡**到 `style.css` 里真正的
-星空渐变——但"纯色"和"渐变图片"这两种值,浏览器没法做平滑过渡插值,
-这个过渡经常卡住、切不过去,星空背景就这么没了。
-
-**修复**：内联样式**只设置 `<html>` 的背景,不再碰 `<body>`**。原理
-不变——`style.css` 加载完之前,`<body>` 自己没有任何背景规则(透明),
-`<html>` 的深色背景一样能透出来防白屏;但不再直接给 `<body>` 设置
-背景,就不会跟它自己的 `transition`/渐变系统打架。改了
-`index.html`/`form.html` 两个文件的 `<head>` 内联样式部分。
-
-
-
-**现象**：提交任何工单,不管是不是重复提交,一律报错
-`KV PUT failed: 400 Invalid expiration_ttl of 30. Expiration TTL must be
-at least 60.`
-
-**根因**：Cloudflare KV 的 `expirationTtl` 有**硬性最低 60 秒**的限制,
-低于这个数值直接拒绝写入、报 400。之前那份"防重复提交"的改动说明里,
-占位符那步写的是 `expirationTtl: 30`——而这个占位符写入是**每次提交
-都会跑一遍**的(不是只有重复提交才触发),所以这个数值错误直接导致
-**所有工单提交全部失败**,不分是不是重复。
-
-**修复**：改成 `60`(Cloudflare 允许的最小值)。只改了
-`functions/api/submit.js` 这一行。
-
-**顺带说明**：同一批截图里反馈的"Account Management 点击没反应",
-不是新 bug——是上一条修复的 `pageTransition.js` 那个"脚本报错中断
-执行"的问题的连锁反应(`window.wireFadeLinks` 没定义成功 →
-调用它直接报错 → 后面绑定 Account Management 点击事件的代码根本没
-跑到)。这次一起重新打包的 `pageTransition.js` 已经带着上一条的修复,
-不需要额外改动。
-
-
-
-**现象**：首页/表单页(用了淡入淡出效果的两个页面)背景变成一片纯色,
-动态星空/星球图完全消失;`threads.html`(没加这个效果)背景正常。
-
-**根因**：`<body class="page-transition-in">` 这个 class 对应一段淡入
-动画,但**动画播完之后从来没有被摘掉**,永远留在 `<body>` 上。浏览器
-有个规则:只要元素身上挂着 `animation`(不管有没有在播),这个元素就会
-强制"建立一个新的堆叠层"。星空背景(`#starfieldRoot`)靠
-`z-index: -2` 垫在最底下实现,`<body>` 一旦被迫建立了自己的堆叠层,
-`-2` 就只能在这个新层内部生效,没法再垫到 `<body>` 自己的背景下面,
-背景直接消失,只剩一片纯色。
-
-**第一版修复(有 bug,实际没生效)**：一开始写的是动画播完就摘掉这个
-class,但**这段代码直接调用了 `document.body.addEventListener(...)`**
-——而 `pageTransition.js` 是放在 `<head>` 里、不带 `defer` 的脚本,
-执行的时候 `<body>` 还没解析出来,`document.body` 是 `null`,这行代码
-直接报错,**还把这个脚本文件剩下的代码一起中断执行**(包括下面定义
-`window.wireFadeLinks` 那部分),相当于这次"修复"自己又引入了一个新
-问题,而且第一次报告"还是一样"是真的一样,压根没生效过。
-
-**真正的修复**：改成防御性写法,跟 `starfield.js` 本来就在用的同一个
-套路——`<body>` 存在就直接跑清理逻辑,不存在就等 `DOMContentLoaded`
-再跑。只改了 `public/assets/pageTransition.js` 这一个文件。
-
-
-
-**现象**：淡入淡出效果播放时,中间会闪一下白屏,很难看。
-
-**根因**：这是真实整页跳转,不是同一页面切换。旧页面淡出之后,浏览器
-要重新请求、解析新页面的 HTML,在它加载完 `style.css`、真正画出深色
-背景之前,浏览器默认先显示白色——这个空档**跟选哪种动画无关**,换成
-滑动/缩放也一样会闪,因为问题不在动画本身,而是"新页面自己的深色
-背景画出来之前,天生是白的"。
-
-**修复**：`index.html`/`form.html` 的 `<head>` 最开头,插入一小段
-**内联样式**(不需要额外发一次网络请求,浏览器解析到就立刻生效)把
-`<html>`/`<body>` 背景色写死成深色,这样不管网速快慢,新页面第一帧
-就是深色,不会有白色空档。用 `prefers-color-scheme: light` 做了个
-兜底(如果用户系统本身是浅色模式,背景改成浅紫色而不是深色),但没法
-读到 `theme.js`/`localStorage` 里保存的实际主题选择(那个需要 JS
-跑起来才能读到)——这个项目的实际使用大部分是深色主题,这个兜底覆盖
-了绝大多数情况。
-
-**动画样式本身还没定**——之前发了一个可以点击试效果的预览(滑动/
-缩放/向上抽出/淡入淡出四选一),等你选好了再改代码。
-
-
-
-**背景问题**：同一次提交,偶尔会因为前端网络重传/手机误触/边缘节点重试
-等原因,实际打到服务器两次,导致 Telegram 发两条一样的消息、网站建两条
-一样的工单记录、Sheet 有时候只多/少一行(并发写入冲突)。
-
-**改动 1 — `public/assets/app.js`**：提交时给 `payload` 加一个
-`idempotencyKey` 字段,每次点提交按钮都生成一个新的随机 ID(不跟表单
-内容绑定,提交失败后重新填写照样能正常提交)。
-
-**改动 2 — `functions/api/submit.js`**：
-- 解析 body 时多取 `idempotencyKey`
-- 基础校验(reporter/fields 是否存在)通过之后、真正开始处理(发
-  Telegram/写 Sheet/建工单)之前,先查 `THREADS_KV` 里
-  `submit_dedupe:<idempotencyKey>` 这个 key 有没有值——有就说明已经
-  处理过(或正在处理),直接把之前存的结果原样返回,不再重复处理；
-  没有就先占位(30 秒 TTL),让几乎同时到达的第二个重复请求也能立刻
-  被拦下
-- 真正处理完、返回成功结果之前,把占位符覆盖成真正的结果,TTL 延长到
-  10 分钟
-
-**依赖 `env.THREADS_KV`**——INR 这边本来就绑了这个 KV(TG Reply
-Threads 功能用的那个),条件天然满足,不用额外配置。
-
-**这个修复不会清理已经产生的历史重复数据**——部署完之后,已经存在于
-Sheet/TG/网站上的重复记录,还是需要手动清一遍。
-
-
-
-**现象**：点侧边栏的 "Account Management",不会展开选项,反而直接跳飞
-到一个空白/报错页面。
-
-**根因**：Account Management 是个 `<div>`,靠 JS 切换展开/收起,本身
-不是跳转链接,但为了视觉统一,跟真正的跳转链接共用了 `.sidebar-item`
-这个 CSS class。上次做首页 ↔ 表单页淡入淡出效果时,`index.html` 里写的
-是 `window.wireFadeLinks(".sidebar-item")`——这个选择器**不分青红皂白
-把所有长得像侧边栏项目的元素都当成跳转链接处理**,连这个 `<div>` 也
-被接上了"点击后跳转"的逻辑。但这个 `<div>` 没有 `href`,于是变成:
-淡出动画播完,尝试跳转到 `location.href = undefined`,浏览器把这个当
-不存在的网址处理,页面直接跳飞,而不是正常展开下拉选项。
-
-**修复**：`public/assets/pageTransition.js` 的 `wireFadeLinks()` 加了
-一道防御性检查——只有真正的 `<a href="...">` 元素才会被接上淡出效果,
-没有 `href` 的元素(不管是不是共用了同一个 class)一律跳过,保留它
-原本的点击行为不受影响。只改了这一个文件。
-
-
-
-上面那次合并完成时,Daily Report 的工单其实**已经会显示 📊 按钮**(按钮
-显示条件 `t.fieldMap && t.brandId` 是所有模块统一传的,不分模块),
-只是点了之后**只会同步 Telegram 消息,Sheet 那部分会被静默跳过**——
-因为 `writeRowForDate()`(Daily Report 专用的"两个班次共用同一行"写入
-函数)当时没有把最终写到了第几行汇报出来,`sheetRef` 只能是 `null`。
-
-**修复**：
-- `functions/_shared/googleSheets.js` 的 `writeRowForDate()` 现在会把
-  内部扫描算出来的目标行号 `return { row: targetRow }`
-- `functions/api/submit.js` 的 `daily_report` 分支,捕获这个行号,构建
-  `sheetRef = { sheetId, tab, startColumn, columns, row }`——
-  `startColumn` 固定用**这次实际写入的那个班次自己的 block**(Day
-  Shift 是 `leftBlock.startColumn`,Night Shift 是
-  `rightBlock.startColumn`),不是共享的
-
-**为什么这样是安全的,不会日班夜班互相覆盖**：`sheetRef` 是存在**每
-个工单自己身上**的,不是全局共享的一份。同一天日班、夜班各自的工单,
-`sheetRef.row` 会指向**同一行**(这是设计上就该如此,两个班次本来就
-共用那一行),但 `sheetRef.startColumn` 各自记的是**自己那半边**——
-之后编辑日班工单,只会覆盖左半边(B~M 列);编辑夜班工单,只会覆盖
-右半边(O~Z 列),不会碰到对方的数据。
-
-
-
-**背景**：点首页侧边栏的模块进 `form.html`,以及表单页点"Back to Home"
-回首页,都是**真实的整页跳转**(普通 `<a href>`,不是单页应用),浏览器
-直接硬切,没有任何过渡,感觉很生硬。参考了另一个币种那边做的一个
-预览对比(3 种动画方案:淡入淡出 / 左右滑动 / 缩放渐变),选了效果最
-简单干净的**淡入淡出**方案。
-
-**做法**：新建 `public/assets/pageTransition.js`(两个页面共用):
-- 点击链接时先让当前页面淡出(160ms),淡出动画播完再真正跳转
-- 目标页面的淡入效果是**直接写在 HTML 的 `<body class="page-transition-in">` 里的**,不是靠 JS 加上去的——这样即使这个新脚本文件加载失败,两个页面也只是变回"硬切",不会卡在一片空白看不到内容
-- 只处理了鼠标左键单击;Cmd/Ctrl+点击这种想在新标签页打开的操作,不受影响,该怎么样还怎么样
-
-**改了 3 个文件**：新增 `public/assets/pageTransition.js`,`style.css`
-加了两个淡入淡出的 CSS 动画,`index.html`/`form.html` 引入这个脚本、
-`<body>` 加了个 class,各自的跳转链接(侧边栏模块列表、Back to Home)
-接上这个效果。
-
-
-
-**改动前**：进任何一个模块的表单,Brand/Platform 和 Issue Type(或者
-Motive/Promotion/Shift,看哪个模块)下面**所有字段**——UID、Remark、
-截图上传框、Agent Name——一开始就全部摆在页面上,显得很乱,agent 也可能
-在系统还不知道要提交哪种工单之前就开始乱填。
-
-**改动后**：只有 **Brand/Platform + 主选择器**(`emphasize: true` 标记
-的那个字段)先显示,其余字段(包括截图上传框、Agent Name 这两个不在
-`module.fields` 数组里、写死在 `form.html` 公共部分的元素)**全部隐藏
-到主选择器选完才展开**。这是**通用的、按 schema 驱动**的改动,不认模块
-名字、不认品牌——哪个模块的 schema 里有且只有一个 `emphasize: true`
-字段,就自动生效;没有的(目前是 **Genie Issue**,它没有主选择器这个
-结构)保持原样,不受影响。
-
-**只改了一个文件**：`public/assets/app.js`。CSS 不用动
-(`.field[data-conditional="true"]` / `.is-visible` 这条规则 INR 这边
-本来就有,复用的是已有机制)。`schemas.js`/`routing.js`/`submit.js`
-都没碰。
-
-**应用了这个效果的 5 个模块**：QA(主选择器 Motive)、Account Issue
-(Issue Type)、Risk Issue(Issue Type)、Promotion Request(Promotion)、
-Daily Report(Shift)。
-
-
-
-跟已有的 "Customer Email Change / Inactive / Lost" 是同一个模式,只是
-从 Gmail 换成手机号:填 UID、Register Number、Previous Number
-(Remove)、Update New Number,加通用的 Issue & Remark + 截图。
-
-- `public/assets/schemas.js` —— 加了下拉选项,新增 `previousNumber`/
-  `updateNewNumber` 两个字段,`uid`/`registerNumber` 的 `showIf` 也加了
-  这个新类型
-- `functions/_shared/routing.js` —— `ACCOUNT_ISSUE_FIELD_STYLE` 加了两
-  个新字段的 emoji;**Sheet 列没有新增**——`previousNumber`/
-  `updateNewNumber` 分别塞进了"Gmail 相关"和"nid/aadharPan"这两个对
-  这个新类型来说本来就空着的列(同一时间只会有一个 issueType 生效,
-  不会真的撞车),不需要去 Google Sheet 那边插新列
-- Telegram 消息不用写专属模板,通用的"按表单字段顺序显示"逻辑自动就能
-  拼出跟业主给的格式一致的消息
-
-
-
-这个改动(`Screenshot Link`/`Chat Link(s)` 从原始网址拆成 3 列
-`HYPERLINK()` 公式)代码都写完过,后来评估下来觉得"要手动去 Sheet 插列
-+ 连带影响 Risk Issue/Promotion Request"这个维护成本不划算,**已经撤回
-到原样**——`googleSheets.js` 改回 `RAW`,`routing.js` 的 `SHEET_LAYOUT`
-改回单列,`submit.js` 去掉了 `sheetHyperlink()`。现在这几列还是原来的
-"网址直接堆进一个格子"的样子,没有任何变化。
-
-（如果之后想再尝试,讨论过程中还比较过三个方案 A/B/C,细节可以翻这次
-会话记录找回来,这里就不重复展开了。）
-
-
-
-**现象**：`BNAssistant`(群里另一个真正注册过的 Telegram Bot,不是普通
-账号)在群里回复的 "✅ DONE" 之类的消息,在 Telegram App 里看得到,但
-网站这边的工单详情页完全没有记录,消息列表里凭空少了一条。
-
-**根因**：`functions/api/telegram-webhook.js` 的 `handleUpdate()`
-一进来就有 `if (!msg || msg.from?.is_bot) return;`——凡是发送者是"机器
-人账号"(Telegram 的 `is_bot` 字段为 true)的消息,一律直接丢弃,不记录。
-这行代码原本是想防止"我们自己的 Bot 把自己发出去的消息,又当成一条新
-回复记录进来"造成死循环,但实际上 Telegram 的 webhook 机制根本不会把
-Bot 自己 `sendMessage`/`sendPhoto` 发出去的内容,又作为一条"收到新消息"
-推送回同一个 Bot——这个过滤条件从一开始就没在防它真正想防的问题,
-副作用却是把群里**所有**其他机器人(不只是我们自己的)的回复全部
-静默丢弃,包括 `BNAssistant` 这种真正有用的自动化机器人。
-
-（这里有个容易搞混的地方：`PYT_BOT ACC` 虽然名字里带 "BOT"，但技术上
-只是个普通 Telegram 账号，不是真正注册过的 Bot，所以之前一直能正常
-记录，只有像 `BNAssistant` 这种**真正**注册过的 Bot 才会被这行代码
-误伤。）
-
-**修复**：改成只排除"我们自己这个 Bot"发的消息（Bot 的 Telegram 数字
-ID，就是 `TELEGRAM_BOT_TOKEN` 里冒号前面那一串数字，不需要额外调用
-API 去查），群里其他任何机器人的回复现在都会正常记录、正常显示。
-
-## 🔁 移植自 PKR(master 合并版),2026-07-21 — 附件预览全部功能 + KV 写入配额修复
-
-这次是把之前分几次发的附件预览小改动,汇总成一份完整版(`master_attachment_and_quota_fix_export.zip`)一次性合并进 INR。涉及 6 个代码文件 + Part B 提到的独立 cron worker(不在这个仓库里,需要手动去 Cloudflare 后台调整,见下)。
-
-### Part A —— 附件预览,累计 7 项(A1-A7)
-
-- **A1**(上次已合并):回复消息带的附件能预览
-- **A2**(上次已合并):原始工单摘要卡片显示完整 `rootText` + 附件
-- **A3**(上次已合并):预览支持视频播放
-- **A4**(这次新增):**发送侧**图片误判成"文件"的修复——`submit.js` 和
-  `threads/[id].js` 都加了 `looksLikeImage(type, name)`,MIME 类型判断
-  不出来时退回看文件后缀名(`.jpg/.png/.gif/.webp/.bmp/.heic/.heif`),
-  避免图片被当成文件发送(Telegram 里显示成 📎 图标,没有缩略图)
-- **A5**(这次新增,INR 原本完全没有):**接收方向**——玩家/同事直接在
-  Telegram 群里回复的附件,现在也能提取 `file_id` 了。之前
-  `telegram-webhook.js` 遇到这种情况只会写死成文字 `"(attachment)"`,
-  现在跟 A1 用同一套字段(`attachmentFileId`)存下来,前端不用额外改就
-  自动能显示(消息气泡不区分是自己发的还是对方发的)
-- **A6**(这次新增,UI 改动较大):**从"点击才显示"改成"打开就自动
-  显示"**——`threads.html` 两处渲染附件的地方(摘要卡片、消息气泡)从
-  `<button>` 改成空占位 `<div class="inline-attach-slot">`,新函数
-  `loadInlineAttachments()` 在 `renderDetail()`(首次打开)和
-  `updateThreadContent()`(每次轮询/回复后刷新)末尾自动扫描并填充。
-  配了一个 `attachmentCache`(`Map<fileId, Promise>`,缓存 Promise 本身
-  防止重复请求)防止 6 秒轮询反复重新请求同一张图。原来"点击查看全屏
-  大图"的 lightbox 还在,变成锦上添花而不是唯一入口。
-  **⚠️ 这是交互方式的改动,是 PKR 业务方明确反馈要的,不代表 INR 业务方
-  也认可这个方向——如果 INR 这边还没人拍板过,部署前建议先跟业务方过一
-  遍效果,确认要保留"自动加载"还是想改回"点击才加载"。**
-- **A7**(这次新增,连历史老数据都受益):`attachment/[fileId].js` 判断
-  文件类型不准的修复——接口现在接受 `?name=<原始文件名>` 查询参数
-  (前端调用时把存下来的 `attachmentName` 带上),优先级改成:先信自己
-  存的原始文件名 → 再信 Telegram 的 Content-Type(除非它就是笼统的
-  `application/octet-stream`)→ 再猜 Telegram 内部路径 → 兜底
-
-### Part B —— KV 写入配额修复(**cron worker 部分需要手动去 Cloudflare 后台调整,不在这个 zip 里**)
-
-- 排查出**独立部署的 cron worker**(负责定时刷新侧边栏缓存,跟这个
-  Pages 项目分开部署,不在这个代码仓库里)本身每次运行就要写 2 次 KV,
-  原来设的是每 2 分钟一次 → 一天 720 次运行 × 2 = 1,440 次写入,**光这
-  一个自动化脚本就超过免费版 1,000 次/天的上限**,还没算真实业务写入
-- 第一步权宜之计:cron 频率从 2 分钟降到 10 分钟(`functions/_shared/
-  threads.js` 的 `LIST_CACHE_TTL_MS` 已经同步改成 10 分钟,这个已经合并
-  进 INR 了)——但业务方反馈"新工单要等最多 10 分钟才出现"不能接受
-- **真正的修复(已合并进 INR)**:新增 `patchListCache(env, thread,
-  {remove})`,新工单/新回复/切换已解决/删除这四个动作发生的瞬间,直接
-  "打补丁"式更新现有缓存(1 次读 + 1 次写,不用整个重新扫描),已经挂在
-  `createThread()`/`appendMessage()`/`setSolved()`/`softDeleteThread()`
-  四处。10 分钟这个间隔现在只管低风险的后台全量体检,不再影响"新工单能
-  不能被及时看到"
-
-**⚠️ 需要你手动去 Cloudflare 后台做的事(不在这次的代码改动里)：**
-如果 INR 这边也有同样的独立 cron worker,去它的 `wrangler.toml` 把
-Cron Trigger 从 `*/2 * * * *` 改成 `*/10 * * * *`,重新部署那个
-worker(注意:这是跟 Pages 项目分开部署的另一个 Cloudflare Worker,不
-是这次的 `telegram-issue-hub-updated.zip`)。如果不确定 INR 有没有这个
-cron worker、或者它现在实际设的频率是多少,需要你自己先去 Cloudflare
-后台确认一下。
-
-**部署时的一个操作提醒**：PKR 那边部署时踩过一次坑——用 GitHub 网页
-"直接编辑某个文件"的方式改动量大的文件,导致新旧代码拼接、同一个函数
-声明了两次,网站 500 崩溃。**改动量大的文件(这次是 `threads.html`、
-`_shared/threads.js`)务必用"Add file → Upload files" 整份覆盖上传,
-不要用网页在线编辑逐行改。**
-
-
-
-同样从 PKR 那边逐文件 diff 后手动合并进 INR(涉及 7 个文件:
-`functions/_shared/threads.js`、`functions/api/threads/[id].js`、
-`functions/api/attachment/[fileId].js`【新文件】、`functions/api/submit.js`、
-`public/index.html`、`public/threads.html`、`public/assets/style.css`)。
-
-**核心原理:实时代理,不存储**——业务方明确要求过这个功能不能占用 R2
-存储,所以做法是:发送时只记住 Telegram 自己的 `file_id`(一段引用字符
-串,不是文件本身),点开预览的那一刻才实时向 Telegram 现取字节流转发给
-浏览器(Bot Token 全程只在服务器内部用,不暴露给客户端)。
-
-1. **回复消息带的图片/文件,能在网站里点开预览**——新增
-   `functions/api/attachment/[fileId].js` 这个登录态代理接口;
-   `threads.html` 侧边栏附件从纯文字标签变成可点击按钮,弹出全屏
-   lightbox(点 ✕/点背景/按 ESC 都能关)。只对这次改动后的新回复生效,
-   旧消息当时没存 `file_id`,还是显示旧样式。
-2. **顺手修的独立小 bug:首页 "TG Reply Threads" 卡片未读徽章不显示**
-   ——`loadThreadsSummary()` 用的是没带登录 token 的 `fetch()`,
-   `/api/threads` 早就要求登录,一直被 401 拒绝。改成
-   `window.AgentAuth.authFetch()`。
-3. **工单详情顶部摘要卡片,改成显示完整 TG 消息原文**(`rootText`,带
-   emoji,不再是抽取几个字段拼出来的简化列表)+ 原始工单自己的附件也能
-   点开预览。旧工单的文字摘要会自动跟着变成新样式(`rootText` 一直都有
-   存),只是没有附件预览按钮(没存 `attachmentFileIds`)。
-4. **预览弹窗支持视频播放**——`viewAttachment()` 加了 `video/*` 分支,
-   用 `<video controls autoplay playsinline>`,不再是触发下载。
-
-**部署前无需新增任何东西**——复用现有的 `TELEGRAM_BOT_TOKEN`、
-`THREADS_KV`,不占用 R2、不需要新的 Cloudflare 密钥/绑定。
-
-**可选但没做的优化(供参考)**:视频现在发去 Telegram 走的是
-`sendDocument`(文档方式),不是 Telegram 原生视频消息格式
-(`sendVideo`)——不影响咱们网站这边的播放,只是 Telegram App 里显示成
-可下载文件而不是内嵌播放器。如果想要 Telegram 里也是原生视频消息样式,
-需要把发送逻辑按 `type.startsWith("video/")` 单独分支出来调用
-`sendVideo`,这次没做。
-
-
-
-从另一个币种(PKR)的对话里,把两个已经调好的功能合并进了 INR(逐文件
-diff 后手动合并,不是整份覆盖——INR 这边 login.js 已经有 token 机制,
-两边基础版本一致,合并很干净):
-
-**功能 1 — TG Group / Channel 面板新增 "🔒 Security Alerts" 行**
-- 登录安全警报(密码错误/IP 异常/没分配 Office/账号自动锁定)现在发到
-  哪个 Telegram 群/Topic,可以直接在网页上改,立刻生效,不用再去
-  Cloudflare 后台改 `SECURITY_ALERTS_CHAT_ID`/`SECURITY_ALERTS_TOPIC_ID`
-  环境变量 + 重新部署(这两个环境变量变成"没在网页上配置过时的兜底默认
-  值")
-- 涉及:`functions/api/admin/routes.js`(整份替换)、
-  `functions/api/auth/login.js`(整份替换,见下)、`public/index.html`
-  (TG Routes 面板那一段整段替换)、`public/assets/style.css`(加了
-  `.tgroute-security` 的样式)
-
-**功能 2 — 登录失败警报 + 自动锁定逻辑重构**
-- 三种登录失败(密码错误 / IP 异常 / 没分配 Office)现在**每种都会发
-  Telegram 警报**(以前只有 IP 异常才发)
-- 自动锁定门槛改成**一个合并计数器**:密码错误 + IP 异常,1 小时内不
-  分种类、不分是不是同一个 IP,累计满 5 次就锁定(以前是两套独立门槛:
-  连续 5 次密码错误 / 1 小时内 5 个不同 IP,而且不同 IP 反复失败不算数
-  ——这次改成同一个 IP 反复失败也会真实累加)
-- "没分配 Office" 只发警报、**不计入**锁定门槛(这是后台配置疏漏,不是
-  真正的安全风险,不该跟密码猜测用同一套惩罚机制)
-- 涉及:`functions/api/auth/login.js`(整份替换——KV key 从
-  `pwfail:<user>`/`ipfail:<user>` 两套合并成 `loginfail:<user>` 一套)
-
-**部署前无需新增任何东西**——复用的都是已经在用的
-`SECURITY_ALERTS_CHAT_ID`/`SECURITY_ALERTS_TOPIC_ID`/`THREADS_KV`,没有
-新的 Cloudflare 密钥/绑定要加。
-
- — plaintext password was sitting in the
-browser's localStorage, readable via F12
-
-**Found by a colleague (IT) via DevTools → Application → Local Storage in
-under a minute.** The original login design (documented below under
-"Account system") had no session/token: the browser stored the agent's
-literal password in `localStorage.agentAuth.password` and re-sent it as
-`X-Agent-Pass` on every single request (including the 6-second sidebar
-poll), so the server could re-verify it every time without a session
-store. That meant the password was sitting in the clear in the browser at
-all times — completely independent of how strong the server-side PBKDF2
-hash was. Anyone with DevTools access to an already-logged-in browser
-(shared computer, unlocked laptop, malicious extension, etc.) could read
-it directly; no cracking involved.
-
-**Fixed — replaced with signed session tokens:**
-- `POST /api/auth/login` now issues a signed token (HMAC-SHA256, see
-  `issueToken()`/`verifyToken()` in `functions/_shared/accounts.js`)
-  instead of the frontend keeping the password.
-- The browser stores **only the token** (`localStorage.agentAuth.token`)
-  and sends it as `X-Agent-Token` on every request — the password itself
-  never leaves the login form after that.
-- Every account record now has a `tokenVersion` counter, bumped on every
-  password change AND every lock/unlock. `verifyRequest()` rejects any
-  token whose version doesn't match the account's current one, so an
-  old token stops working the instant the password changes or the
-  account gets locked — same guarantee the old "re-send the password
-  every time" design had, without ever exposing the password itself.
-- Tokens expire after 12h regardless, on top of the existing 2h
-  client-side idle timeout.
-- Self-service password change (`/api/account/change-password`) now
-  returns a fresh token in the same response so the browser doesn't get
-  logged out immediately after successfully changing its own password.
-
-**Requires a NEW Cloudflare secret before this deploy will work:**
-`SESSION_TOKEN_SECRET` (any long random string — used only server-side to
-sign/verify tokens, never sent to the browser; not the same as any
-existing secret). Add it under Settings → Environment variables →
-Production, same as the other secrets, then deploy.
-
-**Deploy side-effect, expected and harmless:** every already-logged-in
-browser gets logged out on first request after this deploy (their old
-localStorage entry has no `token` field, only the old `password` field,
-which the new frontend code no longer sends) — everyone just logs in
-again normally, no data loss, no account changes needed.
-
-**Still pending from this, not yet done:** rotating the actual credentials
-(all agent account passwords, `TELEGRAM_BOT_TOKEN`,
-`GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY`, `TELEGRAM_WEBHOOK_SECRET`,
-`BRAND_EDIT_PASSWORD`) — the token fix stops the password from leaking
-via the browser going forward, but doesn't retroactively un-expose
-whatever a colleague may have already seen. This rotation was flagged
-mid-session but not yet confirmed done.
-
-## Multi-currency reuse — paused, reverted back to full INR
-
-The business owner briefly had all 13 Google Sheet IDs in
-`functions/_shared/routing.js` cleared out (`sheetId: ""`) to prep this
-codebase for a different currency market, then asked to **revert back to
-the real INR values and pause that work** — something needs changing
-first (not yet specified). All 13 values (5 main `BRANDS` entries + 8
-`PROMOTION_SHEET_CONFIG` entries) are back to their original production
-IDs; nothing about Sheet logging is disabled right now. If multi-currency
-work resumes later: the same 13 `sheetId` fields are what need clearing/
-replacing again, `functions/api/promo-search.js`'s sheet is shared across
-currencies and should stay untouched, and Telegram `chatId`/`topicId`
-reassignment is handled separately through the TG Group/Channel admin
-panel (KV-backed overrides, independent of what's hardcoded here).
+## PKR is live and has been heavily tested — read this before doing
+anything else
+
+This project is a **separate, independent deployment** for the PKR market —
+it does NOT share a GitHub repo, Cloudflare Pages project, KV namespace, R2
+bucket, or Telegram bot with the original INR production system (one
+deliberate, confirmed exception: Crickex's Telegram group is intentionally
+shared with INR, split by Topic — see "TG Group / Channel" section further
+down for why that's fine and not a mistake). It started as a fork of the
+INR codebase (same architecture, same modules, same feature set) with all
+INR-specific brand/routing/sheet data replaced with real PKR data.
+
+**Where things stand right now:**
+- **Live and deployed**: `https://pkrcsteam-tbc.pages.dev` (GitHub:
+  `HeyVIP-PKR/TBC`, Cloudflare Pages project `pkrcsteam-tbc`). Deploys are
+  green. R2 bucket `pkr-issuescreenshot` and KV namespace
+  `pkr-ticket-threads` (id `c8ca68f7781a4f1b88d0997af023aec7`) are both
+  live and wired into `wrangler.toml`. All Cloudflare secrets are set
+  (`TELEGRAM_BOT_TOKEN`, `GOOGLE_SERVICE_ACCOUNT_EMAIL`,
+  `GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY`, `BRAND_EDIT_PASSWORD`,
+  `TELEGRAM_WEBHOOK_SECRET`, `SESSION_TOKEN_SECRET`). Telegram webhook is
+  set and confirmed receiving replies. A standalone Cloudflare Worker
+  (`pkr-ticket-threads-refresher`, NOT part of this Pages
+  project/repo/zip — deployed separately via the Cloudflare dashboard's
+  own code editor, see its own README for how) refreshes the sidebar
+  cache every 10 minutes as a background health-check (see "Reliability &
+  performance" further down for why 10 minutes is fine and doesn't
+  affect how fast agents actually see new tickets).
+- **All 9 brands fully configured**: Crickex, Betjili, Mostplay, Jeetwin,
+  Sbj66, Heybaji, Superbaji, KV8, Darazplay — each has a real
+  `sheetId` in `routing.js`, real Telegram `chatId`/`topicId` for every
+  module (set through the TG Group/Channel admin panel, not hardcoded —
+  see that section), and a real logo. Google Sheets are shared with the
+  service account (`pkr-tbc@tonal-unity-503006-u6.iam.gserviceaccount.com`).
+- **Promotion Request fully configured**: 19 real brand+promotion
+  combinations across all 9 brands (see "Promotion Request module"
+  section further down for the full breakdown).
+- **Account system, security, and TG Reply Threads have all been through
+  multiple rounds of real fixes this session** — session-token auth
+  (replacing plaintext-password-in-localStorage), reworked auto-lock
+  logic (per direct business-owner feedback, twice), a Security Alerts
+  routing row, and a whole attachment/photo/video-viewing feature (with
+  its own dedicated incident write-up — a real Cloudflare KV quota
+  outage was hit, root-caused, and fixed). All of this is detailed in
+  the sections below — this top summary intentionally doesn't repeat
+  every detail, just orients a new conversation to "this is live,
+  working, and has real history," not "starting from scratch."
+- **Known open items** — see "Still pending" near the end of this
+  document for the current, accurate list. The single most urgent one:
+  the business owner subscribed to **R2 Paid** by mistake (doesn't help)
+  instead of **Workers Paid** (the subscription that actually removes
+  the Workers KV daily quota caps that have interrupted testing multiple
+  times) — not yet corrected as of this writing.
 
 **This version was rewritten from scratch** (not incrementally appended)
 to describe the system as it stands *right now* — it supersedes every
-earlier version of this document, including the incremental session-by-
-session notes that used to make up most of this file's length. If you
-need the history of exactly how something got to its current state,
-that's in the conversation transcript this doc came from, not here.
+earlier version of this document. If you need the history of exactly how
+something got to its current state, that's in the conversation
+transcript this doc came from (and in several dedicated `CHANGES.md`
+write-ups exported during this session — e.g.
+`master_attachment_and_quota_fix_export.zip` for the full attachment-
+viewing + KV-quota-incident story), not here.
 
 ## What this is
-A web form → Telegram bot + Google Sheets ticketing system for INR-market
-CS teams (BetVisa, Betjili, Crickex, Jeetway, Mostplay), plus a full
-two-way Telegram reply-tracking dashboard ("TG Reply Threads") with its
-own per-agent account system (login, office-based IP allowlists, role
-hierarchy), a Promo Code Search dashboard, and a live-editable Telegram
-routing admin page ("TG Group / Channel"). Deployed on Cloudflare Pages.
+A web form → Telegram bot + Google Sheets ticketing system for PKR-market
+CS teams (Crickex, Betjili, Mostplay, Jeetwin, Sbj66, Heybaji, Superbaji,
+KV8, Darazplay), plus a full two-way Telegram reply-tracking dashboard
+("TG Reply Threads") with its own per-agent account system (login,
+office-based IP allowlists, role hierarchy), a Promo Code Search
+dashboard, and a live-editable Telegram routing admin page ("TG Group /
+Channel"). Deployed on Cloudflare Pages.
 
-- **GitHub repo:** `HeyVIP-csteam/inrtg_control`
-- **Live URL:** `inrtg-control.pages.dev`
+- **GitHub repo:** `HeyVIP-PKR/TBC` — code uploaded, live
+- **Live URL:** `pkrcsteam-tbc.pages.dev`
 - **Deploy method:** GitHub web upload (drag the `public/` and `functions/`
   folders themselves into "Add file → Upload files", not their contents —
-  wrong drag depth has repeatedly caused duplicate/misplaced files)
+  wrong drag depth repeatedly caused duplicate/misplaced files early on,
+  and separately, editing a large file via GitHub's inline line-editor
+  instead of a full overwrite once caused old/new code to get
+  concatenated together and broke the site — see the KV-quota-incident
+  write-up further down. Always do a full-file overwrite for anything
+  beyond a one-line tweak.)
 - **Deployment note:** the project has a `wrangler.toml` committed to the
   repo. Once that file exists, Cloudflare treats it as the source of truth
   for **Production** bindings — the dashboard's "+ Add" button for
   Production gets disabled (Preview still works via dashboard). To add/change
   a binding, edit `wrangler.toml` and re-upload; Cloudflare auto-applies it
-  to Production on the next deploy.
+  to Production on the next deploy. `wrangler.toml`'s `bucket_name` and KV
+  `id` are filled in with the real PKR R2 bucket (`pkr-issuescreenshot`) /
+  KV namespace (`pkr-ticket-threads`, id
+  `c8ca68f7781a4f1b88d0997af023aec7`) — created under the `HeyVIP-PKR`
+  Cloudflare account, fully separate from the INR build's.
+
 
 ## Architecture
 - **Frontend:** static HTML/CSS/JS in `public/` — no build step
 - **Backend:** Cloudflare Pages Functions in `functions/`
 - **Google Sheets writes:** service account
-  `reward-form-writer@fifth-trainer-500806-e7.iam.gserviceaccount.com`
+  `pkr-tbc@tonal-unity-503006-u6.iam.gserviceaccount.com`
   (must be shared as Editor on every new Sheet used)
-- **File storage:** R2 bucket `inr-issuescreenshot`, bound as
+- **File storage:** R2 bucket `pkr-issuescreenshot`, bound as
   `SCREENSHOTS_BUCKET`, served back out via `/api/screenshot/<key>`
-- **KV storage:** Cloudflare KV namespace `inr-ticket-threads`, bound as
+- **KV storage:** Cloudflare KV namespace `pkr-ticket-threads`, bound as
   `THREADS_KV` — backs TG Reply Threads, the account system (accounts/
   offices), and the live TG Group/Channel routing overrides. All in one
   namespace, separated by key prefix (see each module's section below).
@@ -939,10 +118,9 @@ routing admin page ("TG Group / Channel"). Deployed on Cloudflare Pages.
   `TELEGRAM_WEBHOOK_SECRET` (self-chosen random string, verifies Telegram
   webhook calls — see "IMPORTANT: must be alphanumeric only, no
   spaces/symbols/non-ASCII" note under TG Reply Threads below),
-  `SESSION_TOKEN_SECRET` (**NEW, required** — any long random string,
-  signs/verifies the session tokens described in the "Security fix"
-  section at the top of this doc; login and every protected endpoint
-  will fail until this is set).
+  `SESSION_TOKEN_SECRET` (signs/verifies login session tokens — see
+  "Account system" below for the security fix this belongs to; login
+  fails outright without this secret set).
   **Not yet set, optional:** `SECURITY_ALERTS_CHAT_ID` and
   `SECURITY_ALERTS_TOPIC_ID` — see "Unrecognized-IP login alerts" under
   Account system below; the feature silently no-ops until these exist.
@@ -950,7 +128,7 @@ routing admin page ("TG Group / Channel"). Deployed on Cloudflare Pages.
 ## Key files
 | File | Purpose |
 |---|---|
-| `public/assets/schemas.js` | Brand list (order: Crickex, Betjili, Mostplay, BetVisa, Jeetway — see "Known issues" below for a mismatch with the server-side order) + every module's form fields |
+| `public/assets/schemas.js` | Brand list (PKR — order: Crickex, Betjili, Mostplay, Jeetwin, Sbj66, Heybaji, Superbaji, KV8, Darazplay) + every module's form fields — note Promotion Request's brand-specific amounts/options still reference old INR brand ids, see top section |
 | `public/assets/app.js` | Renders the submission form dynamically from schemas.js; every input/textarea has `autocomplete="off"` |
 | `public/assets/style.css` | All styling — dark starfield / light glass theme, Space Grotesk display font, gold accent, TG Reply Threads chat panel, TG Group/Channel panel, modal close-button styling |
 | `public/assets/theme.js` | Theme toggle (dark/light) + live clock |
@@ -962,8 +140,9 @@ routing admin page ("TG Group / Channel"). Deployed on Cloudflare Pages.
 | `public/promo.html` | Promo Code Search page |
 | `public/login.html` | Site-wide login page — the entry gate for the whole hub |
 | `public/assets/authguard.js` | Shared client-side auth guard on every gated page; redirects to login, exposes `window.AgentAuth` |
+| `public/accounts-admin.html` | Hidden admin page (not linked from nav) — create/edit/delete Offices and Accounts, has its own separate bootstrap login |
 | `functions/api/submit.js` | Submission handler — sends Telegram message, writes Sheets, creates a TG Reply Threads record, requires login. Checks a live KV routing override before falling back to the hardcoded default. Wrapped in a top-level try/catch safety net. |
-| `functions/_shared/routing.js` | Per-brand/module Telegram + Sheet config — the hardcoded DEFAULTS (brand key order: betvisa, betjili, crickex, jeetway, mostplay — see "Known issues") |
+| `functions/_shared/routing.js` | Per-brand/module Telegram + Sheet config — brand key order now matches schemas.js (crickex, betjili, mostplay, jeetwin, sbj66, heybaji, superbaji, kv8, darazplay); all `sheetId`/`chatId`/`topicId` currently placeholder, see top section |
 | `functions/_shared/routes.js` | KV-backed override layer for Telegram routing (chatId/topicId) — lets TG Group/Channel change routing live without a redeploy |
 | `functions/api/admin/routes.js` | `GET`/`POST` for the TG Group/Channel admin page — SuperAdmin-only for both read and write |
 | `functions/_shared/googleSheets.js` | Google Sheets API helpers |
@@ -1025,6 +204,97 @@ session's fix, just verified while investigating this).
 ---
 
 ## TG Reply Threads
+
+### 🆕 Incoming Telegram replies with a photo/file are ALSO now
+viewable (fixed this session, PKR — found while testing the outgoing
+fixes above)
+Everything above (this section and the next) only fixed attachments
+going OUT — sent by an agent from our own website (the reply box or the
+original ticket form). There's a completely separate, third path:
+someone replying **inside the Telegram group itself** with a photo/file.
+`functions/api/telegram-webhook.js`'s `handleUpdate()` used to just
+hardcode the literal text `"(attachment)"` for these — no `file_id`
+captured, no way to ever view it, regardless of any of the fixes above.
+Fixed the same way as the other two directions: now extracts the
+`file_id` from whichever of `msg.photo`/`msg.document`/`msg.video`/
+`msg.voice`/`msg.sticker` is present, stores it as `attachmentFileId` on
+the message record (same field name/shape the dashboard already knows
+how to render — `public/threads.html`'s message-bubble template doesn't
+care which direction a message came from, so **no frontend change was
+needed at all**, just this one backend file). Also swapped the fallback
+caption text from the literal `"(attachment)"` string to `"📎 <filename>"`
+when there's no caption, matching the wording used elsewhere.
+
+### 🆕 Attachments now load automatically, inline — no click needed
+(changed this session, PKR, after initial feedback on the click-to-view
+version below)
+The click-to-view button design (described in the next section) worked,
+but the business owner wanted photos/videos to just appear the moment a
+ticket is opened, not require clicking a button first. Changed
+`public/threads.html` so every attachment slot (ticket summary card +
+each reply bubble) auto-loads on render instead of waiting for a click —
+`loadInlineAttachments()`, called at the end of both `renderDetail()` and
+`updateThreadContent()`, scans for `.inline-attach-slot` placeholders and
+fills each with a real `<img>`/`<video>`/download-link element.
+
+The one thing this needed extra care for: the thread view re-renders
+from scratch every ~6s (polling), so a naive "fetch on every render"
+would spam Telegram's `getFile` API every poll for every visible
+attachment — added a page-level `attachmentCache` (`Map<fileId,
+Promise<{url,type}>>`) so a given fileId is only ever actually fetched
+once per page session; every subsequent render (or a lightbox click on
+the same image, for a fullscreen look) reuses the cached object URL
+instantly. `viewAttachment()` (the fullscreen lightbox — still there,
+now reachable by clicking an inline thumbnail) was updated to pull from
+this same cache instead of doing its own separate fetch.
+
+### 🆕 Reply attachments are now viewable from the dashboard (fixed
+this session, PKR — went through two design iterations, see below)
+An agent replying with a photo/file in the Threads panel used to only
+ever send it to Telegram — nothing about it was saved on our own side,
+so the sidebar just showed a permanent, unclickable "📎 attachment" label
+with no way to see it again without going and finding it in the Telegram
+group itself.
+
+**First attempt (superseded, not what shipped):** upload a copy to the
+same R2 bucket the original ticket-submission screenshots use. Discussed
+with the business owner, who preferred not to use any extra storage for
+this — so this approach was reverted before deploying.
+
+**What actually shipped:** zero storage, fully live/on-demand instead.
+`functions/api/threads/[id].js`'s `sendTelegramAttachment()` now also
+captures Telegram's own `file_id` from the `sendPhoto`/`sendDocument`
+response (previously discarded) and saves it as a new `attachmentFileId`
+field on the message record — nothing else. A new endpoint,
+`functions/api/attachment/[fileId].js`, resolves that file_id back into
+real bytes ONLY at the moment someone actually clicks to view it (via
+Telegram's `getFile` + file-download API, proxied through so
+`TELEGRAM_BOT_TOKEN` never reaches the browser — same reasoning as why
+R2 files go through `/api/screenshot/<key>` instead of a raw bucket URL).
+`public/threads.html` renders the attachment tag as a button that opens
+a lightbox modal (`viewAttachment()`), fetches the image live via
+`authFetch`, and displays it — non-image files (PDFs etc.) just trigger
+a normal download instead of a preview. Deliberately login-gated but
+NOT brand-scoped (any logged-in agent can view any attachment if they
+have its file_id — acceptable since file_ids are long opaque
+Telegram-issued strings, not guessable/enumerable, and only ever surface
+via thread data an agent could already see).
+
+Trade-offs of this approach, worth knowing:
+- Slightly slower to open than a stored copy would be (proxies through
+  Telegram live — typically well under a second, but not instant).
+- Relies on Telegram itself still being able to resolve the file_id —
+  generally reliable for as long as the source message/file exists on
+  Telegram's servers, but that's Telegram's behavior, not something this
+  code guarantees; a resolution failure surfaces as a clean error in the
+  lightbox rather than a broken image.
+- **Old messages sent before this fix still show the old, non-clickable
+  label** (now with a tooltip explaining why) — they never captured a
+  file_id in the first place, so there's nothing to look up. Only
+  replies sent after this fix have a working preview.
+- Uses zero R2/storage budget — the trade-off is a live Telegram round
+  trip on each view instead, which was the explicit point of choosing
+  this design.
 
 ### ✅ Root-caused and fixed this session — Telegram replies weren't
 syncing in at all ("must refresh, and even then some never show up")
@@ -1108,25 +378,92 @@ beyond the one reference tab. Unchanged this session.
 
 ## Account system
 
+### 🔒 Security fix — plaintext password in localStorage replaced with
+signed session tokens (2026-07-20)
+
+**Incident:** a coworker (IT) found the login password in plaintext via
+browser DevTools (F12 → Application → Local Storage) within about a
+minute of looking. Root cause: the original design (see the account
+locking section below, and the old DESIGN NOTE this replaced) stored the
+agent's actual password in `localStorage` and re-sent it on every
+request via `X-Agent-User`/`X-Agent-Pass` headers — this was independent
+of server-side hash strength; the password itself sat in the clear in
+the browser, readable by anyone with access to an already-logged-in
+device.
+
+**Fix — signed session tokens, ported from a same-day INR fix:**
+- Login now issues a signed token (HMAC-SHA256 over
+  `{username, tokenVersion, iat, exp}`, signed with a new Cloudflare
+  secret `SESSION_TOKEN_SECRET`) instead of the account handing back
+  anything password-shaped — see `issueToken()`/`verifyToken()` in
+  `functions/_shared/accounts.js`.
+- The browser stores ONLY this token (`localStorage`'s `agentAuth.token`,
+  never `.password` again) and sends it as `X-Agent-Token` on every
+  request instead of `X-Agent-User`/`X-Agent-Pass`.
+- Every account record gained a `tokenVersion` field, bumped by
+  `saveAccount()` on password change and by `setAccountLocked()` on both
+  lock AND unlock — `verifyRequest()` rejects any token whose embedded
+  version doesn't match the account's current one, so an old token
+  becomes worthless the instant a password changes or the account gets
+  locked/unlocked, same guarantee the old plaintext-resend design had.
+- Tokens hard-expire after 12h regardless (`TOKEN_TTL_MS`), independent
+  of the client-side 2h idle timeout already in `authguard.js`.
+- Self-service password change (`account/change-password.js`) issues a
+  fresh token in the same response, so changing your own password
+  doesn't immediately log you out (the change itself just bumped
+  `tokenVersion`, which would otherwise invalidate the very token the
+  request came in on).
+
+**Files touched** (ported file-for-file from an INR-side fix, diffed
+line-by-line against this PKR fork before merging — no PKR-specific
+divergence was lost): `functions/_shared/accounts.js`,
+`functions/api/auth/login.js`, `functions/api/account/change-password.js`,
+`public/assets/authguard.js`, `public/login.html`,
+`public/accounts-admin.html`, `public/index.html`, plus doc-comment-only
+touches (no logic change) in `functions/api/threads.js` and
+`functions/api/threads/[id].js`.
+
+**Before deploying this: add the new secret.** Cloudflare project →
+Settings → Environment variables → Production → add
+`SESSION_TOKEN_SECRET` (any long random string, type Secret). Without
+this, `issueToken()`/`verifyToken()` throw/fail closed rather than
+silently signing with a guessable key — meaning login will outright fail
+until this secret exists, not silently misbehave.
+
+**After deploying:** every already-logged-in browser gets logged out
+once (old `agentAuth.password` in localStorage doesn't map to anything
+this version reads) — expected, not a bug, no account data is affected,
+just log back in once.
+
+**What this fix does NOT cover** (still needs separate handling, a token
+fix can't substitute for it): the actual password the coworker already
+saw needs changing (same as any other exposed credential), and it's
+worth treating every other secret that could plausibly have been visible
+on that same device/session as exposed too and rotating it —
+`TELEGRAM_BOT_TOKEN`, `GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY`,
+`TELEGRAM_WEBHOOK_SECRET`, `BRAND_EDIT_PASSWORD`. None of those were
+touched by this fix; it only closes the specific plaintext-in-localStorage
+hole.
+
 ### 🆕 Account locking — manual + two auto-lock triggers (built this
 session)
 
 A `locked` boolean (plus `lockedAt`, `lockedReason`) now lives on every
 account record. A locked account is rejected everywhere — login
 (`api/auth/login.js`) AND every already-open browser session on every
-subsequent request (`verifyRequest()` in `_shared/accounts.js`, since
-this system has no session/token — see the design note at the top of
-that file — a browser that was logged in before the lock would otherwise
-keep working via its cached credentials). The locked check runs BEFORE
-the password hash in both places, which also saves real CPU time on
-every request against a known-locked account (see the PBKDF2/CPU-limit
-writeup above).
+subsequent request (`verifyRequest()` in `_shared/accounts.js` — since
+locking bumps `tokenVersion`, see the session-token security fix above,
+a browser holding a token issued before the lock stops working on its
+very next request even though the token itself hasn't expired). The
+locked check runs BEFORE the tokenVersion/signature checks in
+`verifyRequest()`, which also saves real CPU time on every request
+against a known-locked account (see the PBKDF2/CPU-limit writeup above,
+which is about login's own hash check, a separate cost from this).
 
 **Three ways an account gets locked:**
 1. **Manual** — SuperAdmin only (no delegation to Admin/Senior, unlike
    most account actions), via a 🔒/🔓 button: Home sidebar → Account
-   Management → Agent Profile. (Used to also be reachable via the now-
-   retired `/accounts-admin.html`.)
+   Management → Agent Profile, or the hidden `/accounts-admin.html`.
    `POST /api/admin/accounts { action: "lock"|"unlock", username }`.
 2. **Auto — 5 consecutive wrong passwords.** Counter in KV
    (`pwfail:<username>`), reset to 0 the instant a correct password comes
@@ -1253,110 +590,6 @@ this field) fall back to 100,000 automatically; new/reset passwords get
 10,000. Every account, old or new, keeps working exactly as before —
 nobody needs to reset anything because of this change.
 
-### ✅ Root-caused and fixed — "KV list() limit exceeded for the day"
-(a second, separate quota this session's earlier `list()`+metadata
-redesign missed)
-
-Same failure shape as the CPU/PBKDF2 saga above (sidebar randomly
-500ing), different root cause entirely, found via the actual error text
-this time: `Unexpected server error: KV list() limit exceeded for the
-day.` — a real Cloudflare-thrown error, not one of our own.
-
-**Root cause:** the `list()`+metadata redesign (see the top of this file
-and `_shared/threads.js`'s own header) fixed KV's write-contention limit
-by moving the sidebar off a single shared "index" key onto
-`THREADS_KV.list({ prefix: "thread:" })` — but Cloudflare's free plan
-caps `list()` calls at **1,000/day**, a completely separate and far
-stricter budget than the 100,000 reads/day one, and this wasn't checked
-at the time. The sidebar polls every 6 seconds; any single agent leaving
-the dashboard open for roughly two hours was enough to exhaust the
-entire day's list() budget on its own — this was never a "maybe," it was
-only a matter of when someone would notice.
-
-**Fixed in `functions/_shared/threads.js`:** a real `list()` scan now
-only runs at most once every 2 minutes — the result is cached in a
-single KV key (`thread-list-cache`, `LIST_CACHE_TTL_MS`) and every other
-`listThreads()` call in that window just reads that cache (a cheap
-`get()`, drawing from the much larger 100,000-reads/day budget instead).
-Caps real `list()` calls at ~720/day worst case even under continuous
-all-day polling — well under 1,000, and also keeps the cache-refresh
-writes well under the SEPARATE 1,000 writes/day budget shared with every
-ticket submit/reply/solve-toggle. If the real scan itself fails (e.g.
-the daily quota is already blown when this runs), it now falls back to
-whatever's cached — even hours-stale — rather than fail the request
-outright; it only throws if there's truly no cache to fall back to.
-
-**Trade-off, stated plainly:** a brand-new ticket, or a solved/reopened
-status change, can now take up to ~3 minutes to appear in someone else's
-sidebar. An already-open conversation is completely unaffected and stays
-fully real-time (it reads its own `thread:<id>` key directly by ID, never
-touches `list()` at all). Given the alternative was the whole sidebar
-hard-failing once the daily quota ran out, this is the same kind of
-trade already made earlier in this file (KV write-contention fix,
-PBKDF2/CPU fix) — favoring "usable but slightly delayed" over "breaks
-outright once a hidden limit is hit."
-
-**Known minor side-effect, not fixed:** deleting a ticket doesn't
-invalidate this cache, so a just-deleted ticket can still show in the
-sidebar for up to ~3 minutes (clicking it correctly shows "not found"
-rather than erroring). Not worth adding cache-invalidation-on-every-write
-
-### 🆕 Optional add-on — `cron-worker/`, a truly independent scheduled
-refresher (not deployed by default, see that folder's own README.md)
-
-Everything above (2-minute cache + 800/day hard cap) is a request-
-triggered fallback — some page request has to "notice" the cache is
-stale and do the refresh, which leaves a small (not a real risk given
-the daily cap, but not a mathematical zero) window where two agents'
-requests could both notice staleness in the same instant. `cron-worker/`
-is a genuine architectural fix for that: a completely separate Cloudflare
-Workers project (own `wrangler.toml`, own deployment, NOT part of this
-Pages project) bound to the same `THREADS_KV` namespace, with a real
-Cron Trigger firing every 2 minutes — Cloudflare guarantees a Cron
-Trigger run never overlaps with itself, so there is no possible race,
-matching the guarantee the business owner saw in a comparable Google
-Apps Script project (`ScriptApp.newTrigger(...).everyMinutes(1)`) and
-asked to match. Available on Cloudflare's Free plan (Cron Triggers
-aren't Paid-only — up to 3 per Worker on Free).
-
-Deploying this is **optional** — the main app works completely fine
-without it (falls back to the request-triggered mechanism above,
-already safe on its own). If deployed, it becomes the primary refresher
-in practice (keeps the cache fresh before any page request would ever
-notice staleness); if it's ever undeployed or breaks, the main app
-doesn't notice or depend on it in any way. See `cron-worker/README.md`
-for click-through dashboard deployment steps (no CLI/local tooling
-needed) — it's a genuinely different deployment flow from the main site
-(a Worker created directly in the Cloudflare dashboard, not something
-that goes through the GitHub-upload-to-Pages flow used for everything
-else in this project), so don't try to drag this folder into the same
-GitHub repo as the main site — it needs its own separate Worker.
-
-**✅ Deployed and confirmed working** (this session) — the business
-owner set this up end-to-end via the Cloudflare dashboard (click-through,
-no CLI), confirmed via the Worker's own Logs tab showing
-`Refreshed thread-list-cache: 54 threads.` firing automatically every 2
-minutes with zero manual interaction. Interval was changed from the
-initial 3 minutes to 2 minutes at the business owner's request, to more
-closely match the cadence of the Google Apps Script project used for
-comparison. **Note the tighter safety margin at 2 minutes:** this cron
-job alone now uses ~720 of the shared 800/day hard cap, leaving only
-~80/day of headroom for the main app's request-triggered fallback (see
-above) — should be plenty in practice since that fallback should rarely
-fire once this cron job is running consistently, but don't drop the
-interval below 2 minutes without also raising DAILY_SCAN_LIMIT (currently
-800, still safely under Cloudflare's real 1,000/day ceiling) — see that
-constant in both `functions/_shared/threads.js` and `cron-worker/worker.js`
-(must be changed in BOTH files together, since they share one counter).
-
-
-for, since that would mean writing to the shared cache key far more
-often — the exact pattern this whole fix exists to avoid.
-
-**If more `list()` calls are ever added anywhere else in this codebase,
-remember they all share this same 1,000/day account-wide budget** — this
-was the whole miss the first time around.
-
 ### Model
 - **Offices** — a name + a list of allowed IPs.
 - **Accounts** — username + password (PBKDF2, 100k iterations), one of
@@ -1371,37 +604,63 @@ was the whole miss the first time around.
   side endpoints independently 401 without valid credentials too, not
   just the page redirect.
 
-### Role hierarchy — Agent / Senior / Admin / SuperAdmin
-Each tier's authority is a **literal allow-list**, not a sliding "anything
-below my rank" comparison:
+### Role hierarchy — Owner / SuperAdmin / Admin / Senior / Agent
+(2026-07 redesign — added Owner above SuperAdmin.)
 
-| Capability | Agent | Senior | Admin | SuperAdmin |
-|---|---|---|---|---|
-| Reset own password | ✅ | ✅ | ✅ | ✅ |
-| Reset an Agent's password (assisted) | ❌ | ✅ | ✅ | ✅ |
-| Reset a Senior's password (assisted) | ❌ | ❌ | ✅ | ✅ |
-| Reset an Admin/SuperAdmin's password | ❌ | ❌ | ❌ | ✅ (anyone) |
-| Create an Agent account | ❌ | ✅ | ✅ | ✅ |
-| Create a Senior account | ❌ | ❌ | ✅ | ✅ |
-| Create an Admin/SuperAdmin account | ❌ | ❌ | ❌ | ✅ (any role) |
-| Delete an Agent account | ❌ | ❌ | ✅ | ✅ |
-| Delete a Senior account | ❌ | ❌ | ✅ | ✅ |
-| Delete an Admin/SuperAdmin account | ❌ | ❌ | ❌ | ✅ |
-| View Whitelist IP (Offices) | ❌ | ❌ | 👁️ view only | ✅ view + edit |
-| View / edit TG Group Channel routing | ❌ | ❌ | ❌ | ✅ only |
-| Lock / unlock an account (manual) | ❌ | ❌ | ❌ | ✅ only |
-| View Agent Profile table | ❌ | ❌ | ✅ view | ✅ view |
-| Edit Agent Profile fullName/PID | ❌ | ❌ | ✅ | ✅ |
-| Edit Agent Profile Role | ❌ | ❌ | ❌ | ✅ |
+Every tier's authority is now ONE rule, not a hand-maintained allow-list:
+**an actor may act on a target only if the actor's rank is STRICTLY
+GREATER than the target's rank.** Same rank can never manage same rank —
+this is what makes "SuperAdmin can't touch another SuperAdmin, only
+Owner can" fall out for free.
 
-`MANAGE_SCOPE` in `functions/api/admin/accounts.js`:
-`{ senior: ["agent"], admin: ["agent", "senior"] }` (superadmin bypasses
-the map entirely). SuperAdmin self-promotion bootstrap: while zero
-SuperAdmin accounts exist anywhere, any Admin-or-above account can
-promote ONLY its own account to `superadmin` (via Agent Profile's Edit
-Account in `index.html`, formerly `accounts-admin.html`'s Edit Account
-before that page was retired) — the instant one SuperAdmin exists, this
-path closes for good.
+| Capability | Agent | Senior | Admin | SuperAdmin | Owner |
+|---|---|---|---|---|---|
+| Reset own password | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Reset an Agent's password (assisted) | ❌ | ✅ | ✅ | ✅ | ✅ |
+| Reset a Senior's password (assisted) | ❌ | ❌ | ✅ | ✅ | ✅ |
+| Reset an Admin's password (assisted) | ❌ | ❌ | ❌ | ✅ | ✅ |
+| Reset a SuperAdmin's password (assisted) | ❌ | ❌ | ❌ | ❌ | ✅ |
+| Create an Agent account | ❌ | ✅ | ✅ | ✅ | ✅ |
+| Create a Senior account | ❌ | ❌ | ✅ | ✅ | ✅ |
+| Create an Admin account | ❌ | ❌ | ❌ | ✅ | ✅ |
+| Create a SuperAdmin account | ❌ | ❌ | ❌ | ❌ | ✅ |
+| Create an Owner account | ❌ | ❌ | ❌ | ❌ | ❌ (nobody — see below) |
+| Delete an Agent/Senior account | ❌ | ❌ | ✅ | ✅ | ✅ |
+| Delete an Admin account | ❌ | ❌ | ❌ | ✅ | ✅ |
+| Delete a SuperAdmin account | ❌ | ❌ | ❌ | ❌ | ✅ |
+| Lock / unlock an Agent/Senior/Admin account | ❌ | ❌ | ❌ | ✅ | ✅ |
+| Lock / unlock a SuperAdmin account | ❌ | ❌ | ❌ | ❌ | ✅ |
+| Edit role / office / brands / Topic Access of an Agent/Senior/Admin | ❌ | ❌ | ❌ | ✅ | ✅ |
+| Edit role / office / brands / Topic Access of a SuperAdmin | ❌ | ❌ | ❌ | ❌ | ✅ |
+| Log in from any IP (no office/whitelist needed) | ❌ | ❌ | ❌ | ❌ (changed — used to be ✅) | ✅ |
+| View Agent Profile table | ❌ | ❌ | ✅ view | ✅ view | ✅ view |
+| See that an Owner account exists at all | ❌ | ❌ | ❌ | ❌ | (n/a — only sees itself) |
+
+**Owner is not a role anyone can be promoted to, ever, through the app.**
+`saveAccount()` in `_shared/accounts.js` hard-refuses `role: "owner"` in
+any create/edit request regardless of the caller's rank
+(`ASSIGNABLE_ROLES` excludes it), and `functions/api/admin/accounts.js`
+rejects it explicitly too, before anything else runs. The only way an
+owner account exists is a **direct Cloudflare KV write**, outside the
+app entirely (`wrangler kv key put --namespace-id=<THREADS_KV id>
+"account:<username>" '<json>'` — ask Claude for the exact command +
+password-hash generation when setting this up).
+
+**Owner accounts never appear in ANY account listing** —
+`listAccounts()` filters them out at the source, so `GET
+/api/admin/accounts` never returns one, for any caller including
+SuperAdmin. A `save`/`delete`/`lock`/`unlock` request that names an
+*existing* owner account as its target (by username) gets back the
+exact same `404 "Account not found"` a nonexistent username would —
+never a `403` — so there's no way to distinguish "doesn't exist" from
+"exists but you can't touch it."
+
+SuperAdmin self-promotion bootstrap (unrelated to and unaffected by the
+Owner tier): while zero SuperAdmin accounts exist anywhere, any
+Admin-or-above account can promote ONLY its own account to `superadmin`
+(via `accounts-admin.html` or index.html's Account Management → Agent
+Profile) — the instant one SuperAdmin exists, this path closes for good.
+
 
 ### ✅ Office/IP rule — CHANGED this session: SuperAdmin is now the ONLY
 role exempt from needing an office
@@ -1426,24 +685,16 @@ SuperAdmin self-promotion path — no in-app recovery, only a direct
 Cloudflare KV edit. **Always assign an office to every non-SuperAdmin
 account — login will fail without one, not just be unrestricted.**
 
-### Bootstrap (first-time setup after a fresh deploy) — ⚠️ REMOVED, see below
-`accounts-admin.html` used to accept the existing `BRAND_EDIT_PASSWORD`
-secret as a one-time key (while zero admin-or-above accounts exist) to
-create the first admin account through the browser. **That file was
-retired** — its Offices/Accounts management was folded into `index.html`'s
-Account Management modal (now labeled "IP Access" instead of "Whitelist
-IP"), but the web-based `BRAND_EDIT_PASSWORD` bootstrap login flow itself
-was NOT ported over, since `index.html`'s entire UI sits behind
-`authguard.js` (nothing renders pre-login) and there was no need for it
-at the time of removal (an `owner`-role account already existed).
-**If a genuinely fresh deploy ever needs a first admin account again**,
-the only path now is the CLI script — `node create-owner-account.js
-<username> "<password>"` (see its header comment / `OWNER_ROLE_SETUP.md`)
-— which writes an `owner`-rank account directly into KV via `wrangler kv
-key put`, no web UI involved. There is currently no in-browser bootstrap
-path; re-adding one (or reviving a stripped-down version of the old
-`accounts-admin.html` login-only flow) would need to be a deliberate,
-separate piece of work if this ever becomes a real requirement again.
+### Bootstrap (first-time setup after a fresh deploy)
+`accounts-admin.html` accepts the existing `BRAND_EDIT_PASSWORD` secret
+as a one-time key (while zero admin-or-above accounts exist) to create
+the first admin account. Steps: deploy → go to `/accounts-admin.html`
+(bookmark it, not linked in nav) → "first-time setup" → enter
+`BRAND_EDIT_PASSWORD` → create an Office with real IPs → create the first
+admin account assigned to that office → promote it to SuperAdmin via Edit
+Account (while zero SuperAdmins exist) → create real accounts for every
+CS agent who uses ANY part of the hub (submitting tickets, promo search,
+or TG Reply Threads — all of it requires login now).
 
 ### Account Management (Home sidebar)
 Expandable sidebar entry with role-gated sub-items:
@@ -1511,7 +762,40 @@ Save, outlined Reset) instead of the original ✅/↩️ emoji icons. A divider
 + extra top spacing separates the module list from the explanatory
 footnote at the bottom.
 
-### ✅ Fixed this session — brand order mismatch
+### Confirmed — Crickex intentionally shares its Telegram group with INR
+Crickex's chatId (`-1004488354399`) is the same group used by the INR
+production deployment — confirmed with the business owner this is
+deliberate, not an accidental copy-paste: INR and PKR share one
+Telegram group for this brand, split apart by Topic ID (INR's topics are
+3/10/17/30/22/24 per module; PKR's Crickex topics are 3/10/17/22/24/26 —
+different topic numbers within the same group). Not a data-mixing risk
+the way the KV namespace / R2 bucket sharing would have been (see the
+top-of-file warning) — Telegram topics fully separate the message
+threads visually, it's a shared mailbox, not shared storage. No action
+needed; noted here so a future reader doesn't mistake this for the same
+kind of environment-mixing mistake that was avoided elsewhere (KV/R2/
+GitHub repo/Cloudflare project are all still fully separate from INR, per
+the top-of-file warning — only this one brand's Telegram group is
+intentionally shared).
+
+### 🆕 Security Alerts row (built this session, PKR)
+Below the 9-brand list (visually separated by a dashed divider) there's
+now a 10th, non-brand entry: **🔒 Security Alerts**. Clicking it shows a
+single chatId/topicId row (not 6 module rows) controlling where
+`functions/api/auth/login.js`'s two Telegram warnings go — unrecognized-
+IP login attempts (correct password, IP not on the account's office
+whitelist) and account auto-lock notices. Same Save/Reset UI, same KV
+layer underneath (reuses `_shared/routes.js` unchanged, via the reserved
+pseudo id pair `brandId: "_security"`, `moduleId: "alerts"` — not a real
+brand, can't collide with one). `resolveSecurityAlertsRoute()` in
+`login.js` checks this KV override first, falls back to the
+`SECURITY_ALERTS_CHAT_ID`/`SECURITY_ALERTS_TOPIC_ID` Cloudflare secrets
+(still unset for PKR — see "Still pending" below) if nothing's been saved
+through this panel yet. Point of this: changing where security alerts go
+no longer needs a Cloudflare secret edit + redeploy, same live-editable
+convenience as brand routing already had.
+
+
 The brand list in this modal followed `functions/_shared/routing.js`'s
 `BRANDS` object key order, which didn't match `public/assets/schemas.js`'s
 reordered array used everywhere else in the UI (form dropdowns, Home page
@@ -1683,24 +967,218 @@ of the current 6-second poll).
 
 ---
 
-## Still pending / needs input before it can be finished
+## Still pending / needs input before it can be finished (PKR)
 
-1. **Promo Code Search** — "Start On" column has no source data (always
-   "—"); "all 11 tabs share the same A–N layout" is unverified beyond one
-   reference tab.
-2. ~~**Brand logos**~~ — ✅ all 5 done this session (Crickex, Betjili,
-   Mostplay, BetVisa, Jeetway — see "Brand pill Link editor" section
-   below for how). Nothing pending here anymore.
-3. **`GET /api/screenshot/<key>` and `GET /api/brand-config`** — no login
-   gate, pre-existing, flagged for awareness only.
-4. **Live-tested end-to-end this session, after a long real-production
-   debugging round** — submit, Telegram reply sync (both directions),
-   solve/reopen-on-reply, sidebar updates, and the account/login path all
-   confirmed working against the real Cloudflare deployment (not just
-   syntax-checked). See the three root-caused-and-fixed writeups above
-   (KV index contention, PBKDF2 CPU limit, webhook secret format) for
-   what was actually broken and how each was found — this is no longer a
-   "reasoned through, not yet verified" item.
+1. **⚠️ Subscribe to Workers Paid — top priority, not yet done.** The
+   business owner subscribed to **R2 Paid** by mistake, thinking it would
+   fix the KV quota errors — it doesn't; R2 Paid only affects R2 storage,
+   completely separate from Workers KV's own daily limits. **Workers
+   Paid** ($5/month, a different subscription) is what actually removes
+   the `list()`/write/etc. daily caps on Workers KV. Testing has now been
+   interrupted multiple times by hitting these free-tier limits
+   (`KV put() limit exceeded for the day` — see the write-up above for
+   the full incident). Strongly recommended to just subscribe rather than
+   keep working around free-tier caps.
+2. **Rotate exposed credentials** — a coworker saw the login password in
+   plaintext before the session-token fix went in (that fix is deployed
+   and working now, per the auto-lock/login rework described above, but
+   it doesn't undo exposure that already happened). Still needs actual
+   rotation: the password itself, and out of caution
+   `TELEGRAM_BOT_TOKEN`/`GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY`/
+   `TELEGRAM_WEBHOOK_SECRET`/`BRAND_EDIT_PASSWORD` too, since they could
+   plausibly have been visible on the same device/session.
+3. **Not yet fully tested end-to-end across all 9 brands.** Individual
+   pieces have been tested successfully (submissions, Telegram delivery,
+   Sheet writes, TG Reply Threads sync, attachment viewing, Promotion
+   Request) but mostly on Crickex/Sbj66/a couple others — worth a
+   deliberate pass confirming every brand's chatId/topicId/sheetId
+   actually works, not just the ones tested so far.
+4. **Promo Code Search** — same unresolved items as the INR build this was
+   forked from, never revisited: "Start On" column has no source data
+   (always "—"); "all 11 tabs share the same A–N layout" is unverified
+   beyond one reference tab; also worth confirming the existing
+   `"Retention Team (PKR)"` tab is the one this dashboard should search.
+5. **`GET /api/screenshot/<key>` and `GET /api/brand-config`** — no login
+   gate, pre-existing from the INR build, flagged for awareness only,
+   never addressed.
+6. **Optional, not requested yet**: videos currently send to Telegram via
+   `sendDocument` (shows as a downloadable file in Telegram's own UI, not
+   a native inline video player) — works fine for viewing in OUR OWN
+   dashboard (fixed this session), just not "native-looking" on the
+   Telegram side. Would need a `type.startsWith("video/")` branch calling
+   `sendVideo` instead, in both `submit.js` and `threads/[id].js`, if
+   ever wanted.
+
+**Done so far** (moved here from the old checklist so this section stays
+an accurate snapshot, not a stale plan): GitHub repo created and code
+uploaded (`HeyVIP-PKR/TBC`); Cloudflare Pages project deployed and live
+(`pkrcsteam-tbc.pages.dev`, deploys green); R2 bucket
+(`pkr-issuescreenshot`) and KV namespace (`pkr-ticket-threads`, id
+`c8ca68f7781a4f1b88d0997af023aec7`) created and wired into
+`wrangler.toml`; Cloudflare secrets set (`TELEGRAM_BOT_TOKEN`,
+`GOOGLE_SERVICE_ACCOUNT_EMAIL`, `GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY`,
+`BRAND_EDIT_PASSWORD`, `TELEGRAM_WEBHOOK_SECRET`); Google Cloud service
+account created (`pkr-tbc@tonal-unity-503006-u6.iam.gserviceaccount.com`);
+first superadmin account bootstrapped and login confirmed working;
+Telegram webhook set (`setWebhook` returned `ok:true`); TG Group/Channel
+admin panel confirmed showing all 9 PKR brands correctly. Various
+INR→PKR content swaps done: topbar/title wordmarks, `CURRENCY_LABEL`
+(→"PKR" suffix on brand names in Telegram messages), QA module's
+`default` template gained a Brand/Platform row, Aadhar/Pan Card fields
+relabeled to CNIC Card Number. KV `list()` daily-quota fix ported
+(2-minute server cache + 800/day hard cap in `threads.js`, sidebar
+polling split to 6s/30s in `threads.html`).
+
+**Also done since the paragraph above** (this project has had a LOT of
+follow-up work — summarizing chronologically so nothing gets lost):
+9 brands' real `chatId`/`topicId` filled into the TG Group/Channel panel
+and real `sheetId`s filled into `routing.js` for all 9 brands (Google
+Sheets shared with the service account); Promotion Request fully
+configured — 19 confirmed brand+promotion combinations across all 9
+brands with real fixed/tiered amounts, `PROMOTION_ROWS_PKR` Telegram
+template, cross-checked by script for consistency (see "Promotion
+Request module" section further down); Risk Issue's `Remark` row and
+Account Issue's `Username` row each got a `skipIfEmpty`-style fix so they
+stop printing placeholder junk when unused; a "🔒 Security Alerts" row
+was added to the TG Group/Channel panel (KV-override based, same pattern
+as brand routing, falls back to `SECURITY_ALERTS_CHAT_ID`/
+`SECURITY_ALERTS_TOPIC_ID` env vars); login's auto-lock logic was
+reworked twice per direct business-owner feedback — "no office assigned"
+no longer shares the same lock-counter as genuine security events (but
+still alerts), and wrong-password + unrecognized-IP failures were merged
+into ONE combined 5-in-an-hour counter (previously two separate,
+inconsistent triggers); the home page's unread-ticket badge was fixed
+(was silently failing on an unauthenticated `fetch()` call, a leftover
+from the session-token migration); all 9 brand logos were added.
+
+**Attachment/photo/video viewing — a whole feature built this session,
+in stages, fully documented with its own exported changelog** (see
+`master_attachment_and_quota_fix_export.zip` in this conversation's
+outputs for the complete blow-by-blow — worth reading in full if picking
+this back up, it went through several design iterations): agents can now
+see photos/videos/files directly in the TG Reply Threads dashboard —
+both what THEY send (from the reply box, or attached to the original
+ticket form) and what comes back the OTHER direction (someone replying
+with a photo directly inside the Telegram group itself). Deliberately
+built with ZERO extra storage (business owner's explicit call, after an
+R2-based first draft was tried and reverted) — Telegram's own `file_id`
+is captured at send time, and a new endpoint
+(`functions/api/attachment/[fileId].js`) resolves it back into real
+bytes live, on demand, proxied through so the bot token never reaches
+the browser. Went from "click a button to view" to "loads automatically
+the instant a ticket opens" per business-owner feedback, with a
+page-level cache (`attachmentCache` in `threads.html`) so the 6-second
+poll doesn't re-fetch the same image over and over. Two real bugs were
+found and fixed along the way: (1) the "is this an image?" check only
+looked at browser-reported MIME type, which is sometimes wrong/empty for
+re-uploaded files — fixed with a filename-extension fallback
+(`looksLikeImage()`), applied on both the send side and, separately, on
+the `/api/attachment/[fileId].js` retrieval side (which needed the
+ORIGINAL filename passed as `?name=` to guess correctly, since
+Telegram's own internal file path for "document"-type uploads often
+doesn't carry a usable extension).
+
+**A real Cloudflare KV quota incident, root-caused and fixed this
+session** — worth understanding fully before touching this area again.
+Testing hit `"KV put() limit exceeded for the day"` (a genuinely
+different, independent quota from the `list()`-call quota fixed
+earlier). Root cause: the standalone `cron-worker` (the one that
+refreshes the sidebar cache on a schedule, deployed separately from this
+Pages project) writes to KV twice on every single run regardless of
+whether anything changed — at its original 2-minute interval, that's
+720 × 2 = 1,440 writes/day from the cron job ALONE, already over the
+free tier's 1,000/day cap, before counting a single real ticket
+submission/reply/solve-toggle. This was a genuine miscalculation when
+the cron job was first built — only the `list()`-call budget was checked
+at the time, not the separate write budget. Fixed in two parts: (1) the
+cron interval was raised to 10 minutes (`cron-worker/wrangler.toml`,
+`LIST_CACHE_TTL_MS` in `threads.js` — both must stay in sync) as an
+immediate stopgap, cutting the cron's own writes to ~288/day; (2) the
+REAL fix — a new `patchListCache()` function in `_shared/threads.js`
+that surgically updates the cached sidebar list the INSTANT a ticket is
+created/replied-to/solved/deleted, completely decoupling "how fast does
+MY OWN action show up" from "how often does the background cache do a
+full re-scan." This was necessary because the business owner correctly
+pushed back hard on "a new ticket can take up to 10 minutes to appear"
+being genuinely unacceptable for a live CS team — lowering the cron
+interval alone was the wrong fix for that complaint; instant-patching on
+every real action was the right one, and it scales with actual usage
+instead of a fixed background cost.
+
+**A deployment-process lesson learned the hard way, not a code bug**: at
+one point, editing a large file directly in GitHub's web line-editor
+(instead of a full-file "Add file → Upload files" overwrite) resulted in
+old and new code getting concatenated together — e.g. a duplicate
+`const contentType =` declaration — which is a hard JavaScript syntax
+error, and broke every endpoint importing that file (500 errors
+site-wide) until caught and fixed. Lesson: for any file with substantial
+structural changes (not a one-line tweak), always do a full-file
+overwrite via upload, never GitHub's inline editor.
+
+**Billing mix-up, not yet resolved**: the business owner subscribed to
+**R2 Paid** (thinking it was the fix for the KV quota errors) — R2 Paid
+only affects R2 storage quotas and has NO effect on Workers KV's
+separate daily limits. **Workers Paid** (a different subscription,
+$5/month) is what actually removes the KV `list()`/write/etc. daily caps
+— this has NOT been subscribed to yet as of this writing. Given how many
+times testing has now been interrupted by hitting these free-tier caps,
+subscribing to Workers Paid is a strong recommendation, not just a
+nice-to-have — see "Still pending" below.
+
+1. **Deploy the standalone `cron-worker`** — a separate Cloudflare Workers
+   project (not part of this Pages project/zip), ported from the INR
+   build's `list()`-quota fix. Refreshes the TG Reply Threads sidebar
+   cache every 2 minutes on its own schedule instead of relying on a page
+   request to notice the cache is stale. `wrangler.toml` inside it is
+   already pointed at PKR's real KV namespace
+   (`c8ca68f7781a4f1b88d0997af023aec7`) — see its own `README.md` for the
+   one-time web-UI deploy steps (new Worker, paste in `worker.js`, bind
+   `THREADS_KV`, add a `*/2 * * * *` Cron Trigger). Not deploying this
+   isn't a functional blocker — `threads.js`'s own request-triggered
+   fallback (2-minute throttle + 800/day hard cap) keeps the sidebar
+   working either way — but leaving it undeployed means the sidebar
+   relies on that fallback alone rather than the cleaner, gap-free
+   dedicated schedule.
+2. **For each of the 9 brands, get real Telegram chatId/topicId and fill
+   them into the TG Group/Channel admin panel** (`index.html` → Account
+   Management → TG Group Channel — changes apply immediately, no redeploy
+   needed, so `routing.js`'s own DEFAULT values can stay blank). None of
+   the 9 brands have real values set yet — one attempted chatId turned
+   out to belong to the INR production group by mistake and was correctly
+   NOT used. Get chatId via the bot's `getUpdates` API after posting in
+   each group/topic (see `routing.js` file header for the exact method).
+3. **For each brand that needs sheet logging, create/duplicate a Google
+   Sheet, share it with the service account email
+   (`pkr-tbc@tonal-unity-503006-u6.iam.gserviceaccount.com`, Editor
+   access), and fill its `sheetId` into `routing.js`.** All 9 brands now
+   have a real `sheetId` filled into `routing.js` (done this session).
+   **Not yet confirmed:** whether all 9 sheets have actually been shared
+   with the service account email yet, and whether each sheet's tab names
+   exactly match what the code expects (`QA OTP & Domain`, `Account
+   Issue`, `Risk Issue`, `Genie Issues`, `Daily Report` — see
+   `SHEET_LAYOUT` in `routing.js`) — worth a real end-to-end test
+   submission on at least one brand (e.g. Crickex) before assuming the
+   rest are correct too.
+4. ~~**Promotion Request module**~~ — ✅ fully configured this session, 19
+   brand+promotion combinations, all confirmed with real business data
+   (see top section for details). Not yet live-tested against a real
+   submission though — worth including in the end-to-end test pass
+   mentioned in item 3 above once at least one brand's Telegram routing
+   is also live.
+5. ~~**Brand logos**~~ — ✅ done this session, all 9 brands have real
+   logo files now (see top section). Nothing pending here anymore.
+6. **Promo Code Search** — same unresolved items as the INR build this was
+   forked from: "Start On" column has no source data (always "—"); "all 11
+   tabs share the same A–N layout" is unverified beyond one reference tab;
+   also worth confirming with the business owner that the existing
+   `"Retention Team (PKR)"` tab is the one this dashboard should search.
+7. **`GET /api/screenshot/<key>` and `GET /api/brand-config`** — no login
+   gate, pre-existing from the INR build, flagged for awareness only.
+8. **Not yet live-tested end-to-end** — login works, but submit → Telegram
+   → sheet logging → reply sync hasn't been tested against real data yet
+   since no brand has real chatId/sheetId filled in. Worth a full pass
+   once at least one brand (e.g. Crickex) has real values, before rolling
+   out to agents.
 
 ## Recurring non-code gotcha (still true)
 GitHub web upload can cause duplicate files or misplaced content if the
@@ -1775,4 +1253,206 @@ later:**
   visual. Interpreted as wanting stronger depth/parallax instead, which
   is what the mouse-parallax + shading layers already provide.
 
+
+## Deposit Issue module — built this session, current state
+
+A brand-new module, built from scratch across a very long session. It's
+a search + inline-edit tool against **other departments' own Google
+Sheets** (not this project's own R2/KV-backed tickets) — a department
+hands you a Sheet, you configure it once, agents search and update
+specific columns on it directly from the hub.
+
+**Where it lives:** home page → "Deposit Issue" card → `/deposit-issue.html`.
+Backend: `functions/api/deposit-issue/search.js`, `update.js`,
+`sheet-links.js`. Shared: `functions/_shared/googleOAuth.js`,
+`functions/_shared/depositSheets.js`. Admin panel:
+`functions/api/admin/deposit-sheets.js` + a "Deposit Sheet Link" section
+in `public/index.html`'s Account Management.
+
+### Auth model — deliberately NOT the service account
+
+Every other module in this hub (submit.js, googleSheets.js, etc.) writes
+to Sheets via the `pkr-tbc@tonal-unity-503006-u6.iam.gserviceaccount.com`
+service account, which only works if the Sheet owner explicitly shares it
+with that email. Deposit Issue's Sheets are **owned by other
+departments** who won't do that. Instead it uses real **OAuth 2.0**
+against a real Google account (`bjpkr2024@gmail.com`) that already has
+Editor access — the site "acts as" that person. Credentials
+(`GOOGLE_OAUTH_CLIENT_ID`, `GOOGLE_OAUTH_CLIENT_SECRET`,
+`GOOGLE_OAUTH_REFRESH_TOKEN`) are set as Cloudflare secrets (Production +
+Preview), confirmed working, confirmed long-lived (had to explicitly flip
+the Google Cloud OAuth consent screen from "Testing" to "In production" —
+Testing-mode refresh tokens silently expire after 7 days, which bit us
+once before the fix).
+
+### What's actually built and working
+
+- **Search**: matches Transaction ID, Reference, Username, or Agent
+  Number, comma-separated multi-search, per-brand (not global — "All
+  Brands" was deliberately turned into a non-searching Sheet-link
+  directory instead, see "Scaling" below for why).
+- **Edit panel**: writes CS PIC / Player Contact No / Status CS /
+  Correct UID (columns P–S) back to the exact row. "Clear All — Update
+  Sheet" does a confirmed one-click wipe+write of all 4. Edit panel
+  auto-resets on every new search and its height auto-syncs to match the
+  first result card.
+- **Per-row deep link**: the brand+tab pill on each result card is a
+  clickable link straight to that row/tab in Google Sheets (uses the
+  tab's real `gid`, not just the spreadsheet ID).
+- **Image viewer**: reuses `threads.html`'s `.attach-lightbox` lightbox
+  CSS. Resolves the actual file type via MIME sniffing AND (as a
+  last-resort fallback for old rows with no usable filename/MIME
+  metadata) raw magic-byte sniffing of the file's first bytes — this
+  matters because these Sheets/links predate the current code and often
+  have missing/wrong metadata.
+- **Color coding**: Status PG and Payment Status use an explicit,
+  business-meaning-based color map (not keyword guessing) covering every
+  real dropdown value the business gave us; Transaction Error (no fixed
+  value list given) uses a deterministic hash-to-color fallback instead.
+- **Per-brand access control**: uses the exact same `canSeeBrand()`
+  check as submit.js. Enforced on BOTH ends — the brand dropdown itself
+  is filtered client-side via the existing
+  `window.AgentAuth.filterAllowedBrands()` helper (unauthorized brands
+  never appear as an option), and server-side in search.js/update.js as
+  defense in depth (an agent can't point an update at a brand's sheetId
+  they don't have access to, even if they somehow knew it).
+- **"Deposit Sheet Link" admin page** (Account Management): same
+  brand-sidebar UI pattern as "TG Group / Channel". Per brand: Sheet
+  URL/ID (auto-extracts the ID from a full URL, trailing `?gid=`/`#`
+  params and all) + tab name(s) (comma-separated if data spans multiple
+  tabs — e.g. Crickex's real data is split across `CX PKR` AND `Call
+  List`). Changes take effect on the next search, no redeploy. A
+  tab-name mismatch surfaces as an inline warning banner on the search
+  page listing the Sheet's actual tab names (this is what caught the
+  original "no results" bug — the configured tab name didn't match).
+- **Deposit Backup — config only, no search page yet**: same admin panel
+  also has "This Month" (editable) / "Last Month" (read-only) rows per
+  brand, plus a "Transfer" button that atomically rolls This Month into
+  Last Month (discarding the old Last Month) so the new month's link can
+  be pasted in. This is pure prep — there is no actual Deposit Backup
+  search page built. Home page shows a grayed-out "Coming soon" card for
+  it (💻 icon, no link).
+- **Only Crickex has real data configured right now** — Sheet ID
+  `1HByPuZMuuYZL9S5fPPGjb8RAmCwNVgKXvuLgVBbVM-E`, tabs `CX PKR, Call
+  List`. This is baked in as `search.js`/`update.js`'s hardcoded
+  fallback default AND is what shows in the admin panel as Crickex's
+  "default" row. The other 8 brands are unconfigured placeholders
+  (empty until someone pastes a link in) — the business owner is
+  actively onboarding them, expects to reach "close to 100" Sheets
+  total eventually (see "Scaling" below).
+
+### Scaling — flagged, partially addressed, needs revisiting
+
+The business owner explicitly said they may end up connecting **close
+to 100 separate Sheets** (one per brand/department, onboarded over the
+next ~2 weeks and beyond). Two real scaling problems were identified:
+
+1. **"All Brands" search doesn't scale** — searching every configured
+   brand's Sheet in one request means a sequential Sheets API round-trip
+   per brand; at ~100 brands this would blow past Cloudflare's
+   per-request sub-request cap and be very slow regardless. **Fixed by
+   removing "All Brands" as a search mode entirely** — it's now a
+   Sheet-link directory (see above), and a specific brand must be picked
+   to search. This fully sidesteps the problem rather than optimizing
+   around it.
+2. **No caching layer** — every search hits the Google Sheets API live,
+   every time. Fine at the current ~1-9 configured brands. Discussed at
+   length with the business owner: **deliberately left as pending/not
+   built** — they confirmed they're not at the scale where it's needed
+   yet, but flagged that once they're up around 30–40+ configured
+   Sheets, a background-refreshed cache (same architecture as this
+   project's own existing "S10-style" Deposit Backup caching pattern —
+   a separate Cloudflare Worker on a Cron Trigger, writing into KV,
+   searches read the cache instead of hitting Sheets live) should be
+   built proactively, not reactively. **This has NOT been started.** If
+   a new conversation is picking this up: check with the business owner
+   how many brands are actually configured now before deciding whether
+   this is now urgent.
+
+### Fixed this session (real bugs, not hypothetical)
+
+- A JS syntax error (bad nested-quote escaping in the image-lightbox
+  code) silently broke the ENTIRE page's JS — nothing worked (brand
+  filter, search button, all dead) until caught and fixed. Also
+  accidentally deleted a function declaration line during the same edit,
+  causing a second, separate syntax error. Both confirmed fixed via
+  `node --check` on the extracted inline `<script>` — this is now the
+  standard verification step before shipping any HTML file with inline
+  JS in this project, not just for Deposit Issue.
+- Edit panel wasn't resetting between searches (fixed — see above).
+- Tab-mismatch warning banner used to get silently overwritten by the
+  results render when there WERE some results (only survived on a
+  fully-empty result set) — now always shows.
+- `GET /api/admin/deposit-sheets` was fetching each brand's Deposit
+  Backup config sequentially (9 round-trips, one at a time) instead of
+  in parallel — made the admin modal noticeably slow to open. Fixed with
+  `Promise.all`, matching the pattern the Deposit Issue sheets fetch
+  already used.
+- A `z-index` on the brand-filter dropdown was set higher than the
+  sticky page header's, so scrolling could make it visually paint over
+  the header. Root cause was actually simpler than first diagnosed
+  (first fix attempt — lowering the z-index — didn't fully fix it): the
+  page's main content wrapper (`.dep-shell`) had **zero top padding**,
+  so content could sit flush against the sticky header with no breathing
+  room at all once scrolled. Fixed by adding top padding, not further
+  z-index tweaking.
+- Old ticket attachments downloaded as e.g. `ticket-attachment-1` with
+  **no file extension** (a placeholder name used whenever the original
+  filename was never captured), so the OS had no idea which app to open
+  them with — looked like "corrupted" downloads but the bytes were
+  always fine. Fixed in `threads.html` with a two-layer fix: (1) infer
+  the extension from the actual detected MIME type when the filename has
+  none, (2) for older rows where even the MIME type is generic/unknown,
+  fall back to raw magic-byte sniffing of the file's own header bytes
+  (`%PDF`, JPEG/PNG/GIF/WEBP/ZIP signatures) — this is a general fix,
+  not Deposit-Issue-specific, and also benefits the existing TG Reply
+  Threads attachment viewer.
+
+### Home page visual polish — currently reverted back to original sizing
+
+The three (now four, with the Deposit Backup placeholder) tool-cards on
+the home page went through several rounds of resizing (small → medium
+→ large → back down) and a full icon redesign (emoji → custom SVG →
+back to emoji) based on live back-and-forth feedback. **Current state:
+back to the ORIGINAL sizing** (480px container / 520px card grid / 36px
+icons / 14.5px title / 11.5px description — i.e. the values from before
+any of this session's resizing started), but keeping two things the
+business owner explicitly wanted kept from the redesign exploration:
+a bottom-right arrow icon on each card, and a per-card colored hover glow
+(each card's border/shadow glows in its own `--tool-accent` color on
+hover, instead of all cards using the same generic gold hover color).
+Icon backgrounds were explicitly stripped back to plain (no colored
+square behind the emoji) per direct request.
+
+Known cosmetic non-issue, don't re-litigate: the 💳 (Deposit Issue) emoji
+renders as a thin monochrome glyph instead of the full-color credit-card
+image on at least one tested browser/OS combination. Confirmed this is
+OS/browser emoji-font rendering, not a CSS centering bug (the icon
+container IS correctly centered via flexbox) — was offered a custom-SVG
+fix, which was tried and then explicitly reverted back to real emoji per
+request ("我要那种emoji的，不要这种假的" / "I want the real emoji, not
+this fake one"). If this comes up again: it's an accepted, known
+limitation of using real emoji characters, not a bug to keep fixing.
+
+### User-facing documentation
+
+Two finished, standalone hand-off documents were written for the CS team
+(not this dev-facing status doc) — a plain usage guide covering brand
+selection, searching, reading results, editing, permissions, and the
+admin-side Sheet Link/Backup rotation workflow. Exists in both Chinese
+(`Deposit-Issue-使用说明.md`) and English (`Deposit-Issue-User-Guide.md`)
+— NOT included in this project zip (they were delivered as separate
+chat attachments, not part of the deployed site), so regenerate them
+from this section if they're needed again and the originals weren't
+kept.
+
+### Still pending for Deposit Issue specifically
+
+- Deposit Backup's actual search page (only the Sheet-link admin config
+  exists so far).
+- The caching/scaling work described above, once brand count grows.
+- 8 of 9 brands still need their real Sheet links added via the Deposit
+  Sheet Link admin page as the business owner gets access to each
+  department's Sheet — this is expected to happen gradually over the
+  next couple of weeks, not a code task.
 

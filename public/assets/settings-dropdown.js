@@ -1,9 +1,10 @@
 /**
- * Portal-based custom dropdown — open/close + positioning logic.
- * Pair with settings-dropdown.css. Framework-agnostic vanilla JS.
+ * Portal-based custom dropdown — open/close + positioning logic, used by
+ * the Settings admin panel's status picker and role multi-select. Pair
+ * with settings-dropdown.css. Framework-agnostic vanilla JS.
  *
- * Expected markup per dropdown instance (build these strings yourself,
- * or see settings-admin-panel.js for a working example):
+ * Expected markup per dropdown instance (built in index.html's
+ * renderFeatureStatus()):
  *
  *   <div class="fs-dropdown" data-field="status" data-value="active">
  *     <button type="button" class="fs-dropdown-trigger">Active</button>
@@ -15,26 +16,11 @@
  *     </div>
  *   </div>
  *
- * HOW TO WIRE IT UP (see initFsDropdowns() at the bottom for the full
- * pattern used against a container you re-render, e.g. on every save):
- *
- *   1. Call linkFsDropdownMenus(container) once after building/inserting
- *      the HTML — this is REQUIRED. It stamps `menu._dd = dd` on every
- *      dropdown's menu element so option click handlers can find their
- *      way back to the wrapper even once the menu has been portaled out
- *      to <body> and is no longer a DOM descendant of it. Skipping this
- *      step is the single most common way to "silently break" this
- *      component — an option click handler that does
- *      `opt.closest(".fs-dropdown")` instead of using the stamped
- *      reference will find null the moment the dropdown is open, throw,
- *      and LOOK like clicking simply does nothing.
- *   2. Attach a click listener to each `.fs-dropdown-trigger` that calls
- *      toggleFsDropdown(dd, trigger).
- *   3. Attach click listeners to each `.fs-dropdown-option` — read the
- *      wrapper via `opt.closest(".fs-dropdown-menu")._dd`, NOT
- *      `opt.closest(".fs-dropdown")` (see point 1).
- *   4. Call closeAllFsDropdowns() from a document-level click listener
- *      (for "click outside closes it") and optionally on scroll/resize.
+ * linkFsDropdownMenus() stamps `menu._dd = dd` on every dropdown's menu
+ * element so option click handlers can find their way back to the
+ * wrapper even once the menu has been portaled out to <body> and is no
+ * longer a DOM descendant of it — reading it via `opt.closest(".fs-dropdown")`
+ * instead would find null the moment the dropdown is open.
  */
 
 function linkFsDropdownMenus(container) {
@@ -61,13 +47,11 @@ function openFsDropdown(dd, trigger) {
   menu.style.display = "block";
   menu.style.width = `${rect.width}px`;
   menu.style.left = `${rect.left}px`;
-  // Flip upward only if it would otherwise run off the bottom of the
-  // actual browser viewport.
   const menuHeight = menu.scrollHeight || 160;
   const openUpward = rect.bottom + menuHeight + 8 > window.innerHeight && rect.top - menuHeight - 8 > 0;
   menu.style.top = openUpward ? "" : `${rect.bottom + 4}px`;
   menu.style.bottom = openUpward ? `${window.innerHeight - rect.top + 4}px` : "";
-  document.body.appendChild(menu); // <-- the actual "escape the clipping container" step
+  document.body.appendChild(menu); // escape any scrolling ancestor's clipping
   dd.classList.add("open");
 }
 
@@ -80,18 +64,17 @@ function closeAllFsDropdowns() {
   document.querySelectorAll(".fs-dropdown.open").forEach((dd) => closeFsDropdown(dd));
 }
 
-// Call this once when a screen/modal that uses these dropdowns is
-// destroyed/hidden (e.g. modal close button) — a menu left open when
-// its row gets wiped out by a re-render would otherwise strand its
-// portaled-to-<body> element forever.
+// Call when the modal that hosts these dropdowns closes — a menu left
+// open when its row gets wiped out by a re-render would otherwise
+// strand its portaled-to-<body> element forever.
 function cleanupOrphanedFsDropdownMenus() {
   document.querySelectorAll("body > .fs-dropdown-menu").forEach((m) => m.remove());
 }
 
 /**
- * Full wiring example against a re-rendered container (e.g. a modal
- * body you replace via innerHTML on every save). Call this at the end
- * of whatever function builds your rows' HTML.
+ * Full wiring against a re-rendered container (the Settings modal body,
+ * replaced via innerHTML on every save/reset). Call at the end of
+ * renderFeatureStatus().
  */
 function initFsDropdowns(container, { onStatusChange, onRoleToggle } = {}) {
   linkFsDropdownMenus(container);
@@ -99,16 +82,26 @@ function initFsDropdowns(container, { onStatusChange, onRoleToggle } = {}) {
   container.querySelectorAll(".fs-dropdown-trigger").forEach((trigger) => {
     trigger.addEventListener("click", (e) => {
       e.stopPropagation();
-      toggleFsDropdown(trigger.closest(".fs-dropdown"), trigger);
+      // Checked at click time, not at bind time — a trigger can start
+      // disabled (e.g. the roles picker while status is "active") and
+      // later become enabled via onStatusChange's live toggle, without
+      // this listener ever being re-attached. Skipping the bind step
+      // for a then-disabled trigger was the bug: switching status would
+      // flip `trigger.disabled` back to false, but the click handler
+      // was never there to begin with, so the dropdown just silently
+      // never opened.
+      if (trigger.disabled) return;
+      const dd = trigger.closest(".fs-dropdown");
+      if (dd.classList.contains("fs-dropdown-na")) return;
+      toggleFsDropdown(dd, trigger);
     });
   });
 
-  // Single-select behavior (e.g. a "status" field: Active / Maintenance
-  // / Coming soon) — picking an option replaces the previous value and
-  // closes the menu.
+  // Single-select (status: Active / Maintenance / Coming soon) — picking
+  // an option replaces the previous value and closes the menu.
   container.querySelectorAll('.fs-dropdown[data-field="status"] .fs-dropdown-option').forEach((opt) => {
     opt.addEventListener("click", () => {
-      const dd = opt.closest(".fs-dropdown-menu")._dd; // see the header note on why NOT .closest(".fs-dropdown")
+      const dd = opt.closest(".fs-dropdown-menu")._dd;
       dd.dataset.value = opt.dataset.value;
       dd.querySelector(".fs-dropdown-trigger").textContent = opt.querySelector("span").textContent;
       opt.closest(".fs-dropdown-menu").querySelectorAll(".fs-dropdown-option").forEach((o) => o.classList.toggle("selected", o === opt));
@@ -117,8 +110,8 @@ function initFsDropdowns(container, { onStatusChange, onRoleToggle } = {}) {
     });
   });
 
-  // Real multi-select behavior (e.g. "which roles can bypass this") —
-  // each option toggles independently and the menu stays open.
+  // Multi-select (which roles can bypass this item) — each option
+  // toggles independently and the menu stays open.
   container.querySelectorAll('.fs-dropdown[data-field="roles"] .fs-dropdown-option').forEach((opt) => {
     opt.addEventListener("click", (e) => {
       e.stopPropagation();
@@ -135,10 +128,6 @@ function initFsDropdowns(container, { onStatusChange, onRoleToggle } = {}) {
 
 document.addEventListener("click", closeAllFsDropdowns);
 document.addEventListener("scroll", (e) => {
-  // Ignore scroll events bubbling from inside an open dropdown menu
-  // itself; anything else (the row list scrolling, the window, etc.)
-  // invalidates the portaled menu's fixed coordinates, so just close it
-  // — repositioning live isn't worth tracking.
   if (e.target.closest && e.target.closest(".fs-dropdown")) return;
   closeAllFsDropdowns();
 }, true);

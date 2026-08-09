@@ -29,12 +29,9 @@ async function handleGet({ request, env }) {
   const account = await verifyRequest(request, env);
   if (!account) return json({ ok: false, error: "Login required." }, 401);
 
-  // Maintenance/Coming-soon toggle (Settings admin panel) — see
-  // _shared/featureStatus.js. Gated here (the page-load data endpoint),
-  // same pattern as submit.js.
   const featureStatus = await getFeatureStatus(env, "tg_reply_threads");
   if (featureStatus.status !== "active" && !accountCanBypass(account, featureStatus.bypassRoles)) {
-    return json({ ok: false, error: "Currently unavailable." }, 403);
+    return json({ ok: false, error: featureStatus.status === "coming_soon" ? "TG Reply Threads isn't available yet." : "TG Reply Threads is currently under maintenance." }, 403);
   }
 
   const q = new URL(request.url).searchParams.get("q") || "";

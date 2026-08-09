@@ -1,19 +1,17 @@
 /**
- * GET /api/feature-status  -> { ok, items: { <itemId>: { status, blocked } } }
+ * GET /api/feature-status  -> { ok: true, items: { [itemId]: { status, blocked } } }
  *
- * Any logged-in account can call this (not gated behind the "settings"
- * Account Management section — every agent needs to know what's grayed
- * out on their own Home page, not just whoever manages the toggle). Only
- * `status` and `blocked` go to the browser — `bypassRoles` itself stays
- * server-side; `blocked` is this specific caller's own bypass check
- * already resolved server-side (see accountCanBypass() in
- * _shared/featureStatus.js), so the client never needs to duplicate the
- * ROLE_RANK comparison itself.
+ * Read-only, any logged-in agent. `status` is "active" | "maintenance" |
+ * "coming_soon" (used to render the breathing-light badge); `blocked` is
+ * already resolved against THIS account's role (accountCanBypass), so
+ * the frontend never needs to know the bypass-role list itself — a
+ * SuperAdmin/Owner testing a "Maintenance" item sees the badge but
+ * `blocked: false`, so their own click still goes through.
  *
- * Used by: index.html (sidebar modules + TG Reply Threads/Promo Code
- * Search/Deposit Issue/Deposit Backup cards), app.js (form.html, so a
- * direct/bookmarked URL to a blocked module still gets stopped),
- * threads.html, promo.html, deposit-issue.html, deposit-backup.html.
+ * This is UX only — every gated endpoint (submit.js, threads.js,
+ * promo-search.js, deposit-issue/*, deposit-backup/*) independently
+ * re-checks getFeatureStatus()/accountCanBypass() server-side, so
+ * skipping this endpoint and hitting an API directly gains nothing.
  */
 import { verifyRequest } from "../_shared/accounts.js";
 import { getAllFeatureStatuses, accountCanBypass } from "../_shared/featureStatus.js";
@@ -27,13 +25,14 @@ export async function onRequestGet(context) {
 }
 
 async function handleGet({ request, env }) {
+  if (!env.THREADS_KV) return json({ ok: true, items: {} });
   const account = await verifyRequest(request, env);
   if (!account) return json({ ok: false, error: "Login required." }, 401);
 
-  const statuses = await getAllFeatureStatuses(env);
+  const all = await getAllFeatureStatuses(env);
   const items = {};
-  for (const [id, s] of Object.entries(statuses)) {
-    items[id] = {
+  for (const [itemId, s] of Object.entries(all)) {
+    items[itemId] = {
       status: s.status,
       blocked: s.status !== "active" && !accountCanBypass(account, s.bypassRoles),
     };

@@ -69,8 +69,8 @@
  *     lock-counted.
  * Once locked, the account can't log in (or use any already-open browser
  * session — see verifyRequest() in _shared/accounts.js) until a
- * SuperAdmin manually unlocks it (Agent Profile on the Home sidebar).
- * A separate Telegram alert fires the moment an
+ * SuperAdmin manually unlocks it (accounts-admin.html, or Agent Profile
+ * on the Home sidebar). A separate Telegram alert fires the moment an
  * account gets auto-locked, distinct from the per-attempt IP-warning
  * message above.
  *
@@ -86,7 +86,6 @@
 import { getAccount, verifyPassword, officeIpCheckPasses, getOffice, requestIP, setAccountLocked, issueToken } from "../../_shared/accounts.js";
 import { sendTelegramMessage } from "../../_shared/telegram.js";
 import { getRouteOverride } from "../../_shared/routes.js";
-import { isIpBlocked, recordPendingIpAttempt } from "../../_shared/ipAccess.js";
 
 // Reserved pseudo brand/module id pair — NOT a real brand — used so the
 // "TG Group / Channel" admin page (functions/api/admin/routes.js) can
@@ -124,15 +123,6 @@ async function handleLogin({ request, env, waitUntil }) {
   const username = (body.username || "").trim();
   const password = body.password || "";
   if (!username || !password) return json({ ok: false, error: "Username and password are required." }, 400);
-
-  // Checked before ANY password work (even before looking up the
-  // account) — a blocked IP is rejected outright regardless of whose
-  // credentials it's trying, and this is the cheapest possible check to
-  // run first (no KV read for the account, no PBKDF2 hash).
-  const earlyIp = requestIP(request) || "unknown";
-  if (await isIpBlocked(env, earlyIp)) {
-    return json({ ok: false, error: `This IP address (${earlyIp}) has been blocked.` }, 403);
-  }
 
   const badCreds = () => json({ ok: false, error: "Wrong username or password." }, 401);
 
@@ -180,22 +170,14 @@ async function handleLogin({ request, env, waitUntil }) {
     // broken login flow (notifyLoginFailure swallows its own errors).
     if (waitUntil) waitUntil(notifyLoginFailure(env, { account, ip, request, reasonTitle: "Abnormal IP Address" }));
 
-    const office = await getOffice(env, account.officeId);
-    const officeName = office?.name || "your office";
-    // Feeds the IP Access approval queue (Account Management → IP
-    // Access → Pending) so a SuperAdmin/Admin can Approve straight from
-    // the dashboard instead of having to manually retype the IP into
-    // the office's allowed list. Same fire-and-forget reasoning as the
-    // Telegram alert above — this must never add latency or turn a
-    // KV hiccup into a broken login response.
-    if (waitUntil) waitUntil(recordPendingIpAttempt(env, { ip, officeId: account.officeId, officeName, username: account.username }));
-
     const { locked, count } = await recordLoginFailure(env, account.username, { kind: "unrecognized IP", ip });
     if (locked && waitUntil) {
       waitUntil(notifyAccountLocked(env, { account, reason: `${count} failed login attempts within the last hour` }));
     }
 
-    return json({ ok: false, error: `Your IP address (${ip}) isn't on the approved list for ${officeName}. Ask an admin to whitelist it under Account Management → IP Access.` }, 401);
+    const office = await getOffice(env, account.officeId);
+    const officeName = office?.name || "your office";
+    return json({ ok: false, error: `Your IP address (${ip}) isn't on the approved list for ${officeName}. Ask an admin to whitelist it under Account Management → Whitelist IP.` }, 401);
   }
 
   // Fully successful login (right password AND office/IP check passed) —
@@ -207,7 +189,7 @@ async function handleLogin({ request, env, waitUntil }) {
   return json({
     ok: true,
     token,
-    account: { username: account.username, role: account.role, allowedBrands: account.allowedBrands, allowedModules: account.allowedModules, officeId: account.officeId, allowedAdminSections: account.allowedAdminSections, adminSectionEditAccess: account.adminSectionEditAccess, canGrantAdminAccess: account.canGrantAdminAccess },
+    account: { username: account.username, role: account.role, allowedBrands: account.allowedBrands, allowedModules: account.allowedModules, officeId: account.officeId, allowedAdminSections: account.allowedAdminSections, adminSectionEditAccess: account.adminSectionEditAccess, canManageAdminAccess: account.canManageAdminAccess },
   });
 }
 
@@ -255,7 +237,7 @@ async function notifyAccountLocked(env, { account, reason }) {
       `📋 Reason: ${escapeHtml(reason)}`,
       `🕒 Colombo Time: ${formatInZone(new Date(), "Asia/Colombo")} (GMT+5:30)`,
       ``,
-      `🔑 This account can no longer log in (or use any already-open session) until a SuperAdmin unlocks it under Account Management → Agent Profile.`,
+      `🔑 This account can no longer log in (or use any already-open session) until a SuperAdmin unlocks it under Account Management → Agent Profile, or accounts-admin.html.`,
     ];
     const route = await resolveSecurityAlertsRoute(env);
     await sendTelegramMessage(env, {

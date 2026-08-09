@@ -28,11 +28,9 @@
  * functions/_shared/accounts.js) — only the token is ever stored here,
  * never the password.
  *
- * Deliberately NOT included on /login.html itself (redirect loop).
- * (Formerly also excluded from /accounts-admin.html, which had its own
- * separate admin+bootstrap login flow — that page was retired and its
- * Offices/Accounts management folded into index.html's Account
- * Management modal; see accounts.js.)
+ * Deliberately NOT included on /login.html itself (redirect loop) or
+ * /accounts-admin.html (that page has its own separate admin+bootstrap
+ * login flow — see accounts.js).
  */
 (function () {
   const AUTH_KEY = "agentAuth";
@@ -125,13 +123,12 @@
       const allowed = new Set(a.allowedBrands || []);
       return (brands || []).filter(function (b) { return allowed.has(b.name); });
     },
-    // Same idea, for Topic Access (which module cards this agent is
-    // allowed to see) — used on the Home page sidebar so a restricted
-    // agent never even sees a topic they can't touch, not just gets
-    // rejected by the server after clicking it. `allowedModules === "all"`
-    // (the default — see accounts.js saveAccount()) or missing entirely
-    // (not logged in yet, or an account saved before this field existed)
-    // returns the full list unfiltered.
+    // Same idea as filterAllowedBrands above, for Topics (window.MODULES)
+    // instead of brands — used by index.html's sidebar and app.js's
+    // direct-URL guard. `!a.allowedModules` (not just `!== "all"`) also
+    // treats a missing field as unrestricted — matches canSeeModule()'s
+    // server-side default in _shared/accounts.js for accounts saved
+    // before this feature existed.
     filterAllowedModules: function (modules) {
       const a = getAuth();
       if (!a || !a.allowedModules || a.allowedModules === "all") return modules;

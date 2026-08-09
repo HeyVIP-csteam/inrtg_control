@@ -12,8 +12,12 @@ const BRANDS = [
   { id: "crickex", name: "Crickex" },
   { id: "betjili", name: "Betjili" },
   { id: "mostplay", name: "Mostplay" },
-  { id: "betvisa", name: "BetVisa" },
-  { id: "jeetway", name: "Jeetway" },
+  { id: "jeetwin", name: "Jeetwin" },
+  { id: "sbj66", name: "Sbj66" },
+  { id: "heybaji", name: "Heybaji" },
+  { id: "superbaji", name: "Superbaji" },
+  { id: "kv8", name: "KV8" },
+  { id: "darazplay", name: "Darazplay" },
 ];
 
 // Every module gets the same attachment slot (screenshots/PDFs, shown as a
@@ -85,7 +89,6 @@ const MODULES = [
           "Add Mobile Number Verify",
           "Add Number Remove",
           "Registration Number Inputted Wrong",
-          "Customer Number Change",
           "Gmail Verification",
           "Gmail Remove",
           "Customer Email Change / Inactive / Lost",
@@ -98,14 +101,14 @@ const MODULES = [
       { key: "uid", label: "UID", type: "text", required: true, placeholder: "Player UID...",
         showIf: { field: "issueType", oneOf: [
           "Register Number Verification", "Add Mobile Number Verify", "Add Number Remove",
-          "Registration Number Inputted Wrong", "Customer Number Change", "Gmail Verification", "Gmail Remove",
+          "Registration Number Inputted Wrong", "Gmail Verification", "Gmail Remove",
           "Customer Email Change / Inactive / Lost", "Forgot Password", "KYC Issues",
           "Update Information",
         ] },
       },
       { key: "registerNumber", label: "Register Number", type: "text", required: false, placeholder: "Register number...",
         showIf: { field: "issueType", oneOf: [
-          "Register Number Verification", "Add Mobile Number Verify", "Add Number Remove", "Customer Number Change",
+          "Register Number Verification", "Add Mobile Number Verify", "Add Number Remove",
           "Gmail Verification", "Gmail Remove", "Customer Email Change / Inactive / Lost",
           "Forgot Password", "Forget Username & Gmail", "KYC Issues",
         ] },
@@ -117,7 +120,7 @@ const MODULES = [
         key: "addNumber", label: "Add Number", type: "text", required: false, placeholder: "Number to add...",
         showIf: { field: "issueType", oneOf: ["Add Mobile Number Verify"] },
       },
-      { key: "nid", label: "Aadhar-Pan Card Number", type: "text", required: false, placeholder: "Aadhar or Pan card number...",
+      { key: "nid", label: "CNIC Card Number", type: "text", required: false, placeholder: "CNIC card number...",
         showIf: { field: "issueType", oneOf: ["Add Mobile Number Verify"] },
       },
       { key: "removeNumber", label: "Remove Number", type: "text", required: false,
@@ -138,12 +141,6 @@ const MODULES = [
       { key: "updateNewGmail", label: "Update New Gmail", type: "text", required: false,
         showIf: { field: "issueType", oneOf: ["Customer Email Change / Inactive / Lost"] },
       },
-      { key: "previousNumber", label: "Previous Number (Remove)", type: "text", required: false, placeholder: "Number being removed...",
-        showIf: { field: "issueType", oneOf: ["Customer Number Change"] },
-      },
-      { key: "updateNewNumber", label: "Update New Number", type: "text", required: false, placeholder: "New number...",
-        showIf: { field: "issueType", oneOf: ["Customer Number Change"] },
-      },
       {
         key: "messageType", label: "Message Type", type: "select", required: false,
         options: ["OTP Limit Exceeded", "Number & Email Not Verified"],
@@ -155,14 +152,9 @@ const MODULES = [
       { key: "fullName", label: "Full Name", type: "text", required: false,
         showIf: { field: "issueType", oneOf: ["KYC Issues"] },
       },
-      { key: "aadharPan", label: "Aadhar / Pan Card Number", type: "text", required: false,
+      { key: "aadharPan", label: "CNIC Card Number", type: "text", required: false,
         showIf: { field: "issueType", oneOf: ["Register Number Verification", "Add Number Remove", "KYC Issues"] },
       },
-      // -- Update Information: two-level cascade (Request dropdown, then
-      // one of 3 field groups). showIf supports an array (AND logic), so
-      // each child field's condition is [issueType===Update Information,
-      // updateInfoType===<its option>]. All 6 child fields stay optional —
-      // agents aren't forced to fill both halves of a pair.
       {
         key: "updateInfoType", label: "Request", type: "select", required: true,
         options: ["Change Name", "Change Birth Date", "Update (Real Name & Birth of Date)"],
@@ -198,7 +190,6 @@ const MODULES = [
     icon: "💸",
     accent: "#4ADE80",
     description: "Select brand and issue type",
-    reporterLabel: "PIC",
     attachments: DEFAULT_ATTACHMENTS,
     fields: [
       {
@@ -213,10 +204,9 @@ const MODULES = [
           "Withdraw Follow Up",
         ],
       },
-      // "username" (not "uid" like most other modules) is this module's
-      // own identifier field, by design — not a naming mismatch to fix.
       { key: "username", label: "Username", type: "text", required: true, placeholder: "Player username..." },
       { key: "tid", label: "TID", type: "text", required: true, placeholder: "Transaction ID..." },
+      // -- Withdraw Amount Received Less -- (exclusive to this type)
       { key: "submittedAmount", label: "Submitted Amount (Rs.)", type: "number", required: true, placeholder: "0.00",
         showIf: { field: "issueType", oneOf: ["Withdraw Amount Received Less"] },
       },
@@ -300,37 +290,17 @@ const MODULES = [
         showIf: { field: "issueType", oneOf: ["KYC Issues"] },
       },
       {
-        key: "aadharPan", label: "Aadhar / Pan Card Number", type: "text", required: false,
+        key: "aadharPan", label: "CNIC Card Number", type: "text", required: false,
         placeholder: "Type the number, or upload a screenshot below instead",
         showIf: { field: "issueType", oneOf: ["KYC Issues"] },
       },
       {
         key: "remark", label: "Remark", type: "textarea", required: false,
-        showIf: { field: "issueType", oneOf: ["Bonus Auto Force", "Bonus Manual Force", "Return To Main", "Account Suspend / Inactive", "Bonus Cancel Related Issue", "Verify Bank Detail"] },
+        showIf: { field: "issueType", oneOf: ["Bonus Auto Force", "Bonus Manual Force", "Return To Main", "Account Suspend / Inactive", "Bonus Cancel Related Issue"] },
       },
       {
         key: "issueDescription", label: "Issue Description", type: "textarea", required: false,
-        showIf: { field: "issueType", oneOf: ["Others Bonus Related Issue", "VIP Level Update Issue", "KYC Issues", "Remove Bank Account", "Others Issues"] },
-      },
-      {
-        key: "bankAccountNo", label: "Account NO", type: "text", required: true,
-        showIf: { field: "issueType", oneOf: ["Verify Bank Detail"] },
-      },
-      {
-        key: "bankAccountHolderName", label: "Account Holder Name", type: "text", required: true,
-        showIf: { field: "issueType", oneOf: ["Verify Bank Detail"] },
-      },
-      {
-        key: "bankIfscCode", label: "IFSC Code", type: "text", required: true,
-        showIf: { field: "issueType", oneOf: ["Verify Bank Detail"] },
-      },
-      {
-        key: "bankBranch", label: "Branch", type: "text", required: true,
-        showIf: { field: "issueType", oneOf: ["Verify Bank Detail"] },
-      },
-      {
-        key: "bankName", label: "Bank Name", type: "text", required: true,
-        showIf: { field: "issueType", oneOf: ["Verify Bank Detail"] },
+        showIf: { field: "issueType", oneOf: ["Others Bonus Related Issue", "VIP Level Update Issue", "KYC Issues", "Remove Bank Account", "Verify Bank Detail", "Others Issues"] },
       },
     ],
   },
@@ -343,13 +313,35 @@ const MODULES = [
     description: "Bonus request",
     reporterLabel: "Processed by",
     attachments: DEFAULT_ATTACHMENTS,
-    // Brand+Promotion combos with a single fixed amount (no Tier/Deposits
-    // selector needed) — Amount auto-locks to this the moment both are
-    // picked. Keyed by "<brandId>|<promotion value>".
+    // Brand+Promotion combos with a single fixed amount (no Tier/Deposits/
+    // Rank selector needed) — Amount auto-locks to this the moment both
+    // Brand and Promotion are picked. Keyed by "<brandId>|<promotion value>".
+    // Confirmed with the business owner this session (screenshot of the
+    // real reference Google Sheet + a full brand-by-brand rules list) —
+    // see PROMOTION_SHEET_CONFIG in functions/_shared/routing.js for the
+    // matching per-combo Sheet/tab this writes into.
+    //
+    // Not every combo below is a flat number — 3 of them (Betjili/Mostplay
+    // Birthday Bonus, Jeetwin Birthday Bonus, Darazplay Birthday Bonus)
+    // are tiered instead, handled by the "deposits"/"tier"/"playerRank"
+    // select fields further down (each has its own per-brand amount table
+    // and auto-fills Amount the same way once picked).
     fixedAmounts: {
       "crickex|Birthday Bonus": 1000,
-      "betjili|Review Bonus": 150,
+      "betjili|Facebook Review Free Bonus": 200,
+      "betjili|Rs 500 Free Cash On App Download-PKR": 500,
       "mostplay|Facebook Review Free Bonus": 200,
+      "mostplay|Download & Claim": 200,
+      "jeetwin|Download JeetWin APP & Claim Cash": 300,
+      "heybaji|Birthday Bonus": 1000,
+      "heybaji|Download HeyBaji APP & Claim Cash": 299,
+      "superbaji|Birthday Bonus": 2000,
+      "superbaji|Download SuperBaji APP & Claim Cash": 200,
+      "sbj66|Birthday Bonus": 2000,
+      "sbj66|Download SBJ66 APP & Claim Cash": 199,
+      "kv8|Birthday Bonus": 1500,
+      "kv8|Download KV8 APP & Claim 199 Cash": 199,
+      "darazplay|Rs.200 Download DarazPlay App": 200,
     },
     fields: [
       {
@@ -358,63 +350,40 @@ const MODULES = [
         // Brands/promotions not listed here yet just show no options until added.
         optionsByBrand: {
           crickex: ["Birthday Bonus"],
-          betjili: ["Birthday Bonus", "Review Bonus"],
-          mostplay: ["Birthday Bonus", "Facebook Review Free Bonus"],
-          betvisa: ["Birthday Bonus"],
-          jeetway: ["Birthday Bonus", "Review Bonus"],
+          betjili: ["Birthday Bonus", "Facebook Review Free Bonus", "Rs 500 Free Cash On App Download-PKR"],
+          mostplay: ["Birthday Bonus", "Facebook Review Free Bonus", "Download & Claim"],
+          jeetwin: ["Birthday Bonus", "Download JeetWin APP & Claim Cash"],
+          heybaji: ["Birthday Bonus", "Download HeyBaji APP & Claim Cash"],
+          superbaji: ["Birthday Bonus", "Download SuperBaji APP & Claim Cash"],
+          sbj66: ["Birthday Bonus", "Download SBJ66 APP & Claim Cash"],
+          kv8: ["Birthday Bonus", "Download KV8 APP & Claim 199 Cash"],
+          darazplay: ["Birthday Bonus", "Rs.200 Download DarazPlay App"],
         },
       },
       { key: "date", label: "Date", type: "date", required: true, defaultToday: true },
       { key: "username", label: "Username", type: "text", required: true, placeholder: "Player username..." },
       {
-        key: "tid", label: "TID", type: "text", required: true, placeholder: "e.g. BVXXXBB1020",
+        key: "tid", label: "TID", type: "text", required: true, placeholder: "e.g. CXPKRBD0029",
         generate: true, // shows a button that fetches the next TID from the sheet
       },
       {
-        key: "nid", label: "NID No", type: "text", required: false,
-        showIf: { field: "promotion", oneOf: ["Birthday Bonus"] },
-      },
-      {
-        key: "tier", label: "Tier Level", type: "select", required: false,
-        showIf: [
-          { field: "promotion", oneOf: ["Birthday Bonus"] },
-          { field: "brand", oneOf: ["betvisa", "jeetway"] },
-        ],
-        // Selecting a tier auto-fills + locks the Amount field below.
-        autoFillsInto: "amount",
-        optionsByBrand: {
-          betvisa: [
-            { value: "Bronze", amount: 300 },
-            { value: "Silver", amount: 1000 },
-            { value: "Gold", amount: 2000 },
-            { value: "Platinum", amount: 3000 },
-            { value: "Diamond", amount: 4000 },
-            { value: "Legend", amount: 5000 },
-          ],
-          jeetway: [
-            { value: "Silver", amount: 1000 },
-            { value: "Gold", amount: 2000 },
-            { value: "Platinum", amount: 3000 },
-            { value: "Diamond", amount: 4000 },
-            { value: "Legend", amount: 5000 },
-          ],
-        },
-      },
-      {
+        // Betjili's and Mostplay's Birthday Bonus both use a "Number of
+        // Deposits" tier, but with two DIFFERENT amount tables — same
+        // field, brand-specific options (optionsByBrand), same pattern
+        // "promotion" itself uses above.
         key: "deposits", label: "Number of Deposits", type: "select", required: false,
         showIf: [
           { field: "promotion", oneOf: ["Birthday Bonus"] },
           { field: "brand", oneOf: ["betjili", "mostplay"] },
         ],
-        // Selecting a deposit count auto-fills + locks the Amount field below.
         autoFillsInto: "amount",
         optionsByBrand: {
           betjili: [
-            { value: "10 Deposits", amount: 1000 },
-            { value: "20 Deposits", amount: 2000 },
-            { value: "30 Deposits", amount: 3000 },
-            { value: "40 Deposits", amount: 4000 },
-            { value: "50 Deposits", amount: 5000 },
+            { value: "10 Deposits", amount: 3000 },
+            { value: "20 Deposits", amount: 6000 },
+            { value: "30 Deposits", amount: 9000 },
+            { value: "40 Deposits", amount: 12000 },
+            { value: "50 Deposits", amount: 15000 },
           ],
           mostplay: [
             { value: "10 Deposits", amount: 1000 },
@@ -422,6 +391,40 @@ const MODULES = [
             { value: "30 Deposits", amount: 2000 },
           ],
         },
+      },
+      {
+        // Jeetwin-only tier selector for its Birthday Bonus.
+        key: "tier", label: "Tier Level", type: "select", required: false,
+        showIf: [
+          { field: "promotion", oneOf: ["Birthday Bonus"] },
+          { field: "brand", oneOf: ["jeetwin"] },
+        ],
+        autoFillsInto: "amount",
+        options: [
+          { value: "Bronze", amount: 1000 },
+          { value: "Silver", amount: 1000 },
+          { value: "Gold", amount: 2000 },
+          { value: "Platinum", amount: 3000 },
+          { value: "Diamond", amount: 4000 },
+          { value: "Legend", amount: 5000 },
+        ],
+      },
+      {
+        // Darazplay-only rank selector for its Birthday Bonus — same
+        // auto-fill mechanism as Tier Level/Number of Deposits above,
+        // just a different field name matching what Darazplay actually
+        // calls these tiers.
+        key: "playerRank", label: "Player Rank", type: "select", required: false,
+        showIf: [
+          { field: "promotion", oneOf: ["Birthday Bonus"] },
+          { field: "brand", oneOf: ["darazplay"] },
+        ],
+        autoFillsInto: "amount",
+        options: [
+          { value: "Beginner/Player", amount: 1000 },
+          { value: "Pro-Player/Expert/Master", amount: 1500 },
+          { value: "Above Grand master", amount: 2500 },
+        ],
       },
       { key: "amount", label: "Amount", type: "number", required: true, placeholder: "e.g. 200.00" },
     ],

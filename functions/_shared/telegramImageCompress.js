@@ -1,114 +1,113 @@
 /**
- * Compresses a photo's raw bytes down under Telegram's real upload limit,
- * ONLY when it's actually over that limit — everything under the
- * threshold passes through untouched, at full original quality.
+ * telegramImageCompress.js  (SERVER-ONLY)
  *
- * Why this exists: sendPhoto / sendMediaGroup reject any single photo
- * over 10MB with a plain Telegram API error ("Bad Request: photo must be
- * smaller than 10MB" or similar), which otherwise surfaces to the agent
- * as a bare, non-actionable submission failure — see
- * telegram-photo-limit-fix.md for the original report. This never
- * touches videos or non-image documents; those don't go through here at
- * all (see the call sites in submit.js / forward.js / threads/[id].js,
- * which only route actual "photo"-kind attachments through this
- * function).
+ * Fixes the "整组消失" (whole album silently disappears) bug: Telegram's
+ * sendPhoto/sendMediaGroup reject ANY photo over 10MB, and a rejected
+ * sendMediaGroup fails ALL-OR-NOTHING (one oversized photo in a 3-photo
+ * album kills the other two as well, not just the big one). The old
+ * behavior let that rejection happen and then silently degraded the
+ * whole ticket to a bare text message — see telegram-photo-limit-fix.md
+ * for the full incident writeup this module resolves.
  *
- * Uses @cf-wasm/photon (a WASM build of the Rust `photon` image library)
- * because it runs directly in the Cloudflare Pages Functions runtime —
- * no native deps (Sharp, node-canvas, etc.) that Workers can't run.
+ * Strategy: compress BEFORE handing bytes to Telegram, not after Telegram
+ * already said no. Only the copy sent to Telegram is touched — the
+ * original bytes uploaded to R2 (see _shared/r2.js) are never passed
+ * through this function, so the archived screenshot keeps full quality.
  *
- * Threshold is 9.3MB, not 10MB — deliberate headroom, not the real
- * limit, since Telegram's own limit check happens on the exact
- * multipart-encoded bytes we send, and this project's own base64 ->
- * bytes round trip plus Telegram's own reported "must be smaller than"
- * wording has never been byte-for-byte pinned down. Cutting it close to
- * exactly 10MB risked the fix itself still failing right at the edge.
+ * Uses @cf-wasm/photon — a Rust (photon-rs) image library compiled to
+ * WASM, chosen specifically because it runs in the Cloudflare
+ * Workers/Pages runtime without any Node APIs (Sharp/Canvas need Node
+ * and don't work here). Must be declared in package.json so Cloudflare
+ * Pages' build step runs `npm install` and bundles it.
  */
+import { PhotonImage, resize, SamplingFilter } from "@cf-wasm/photon/workerd";
 
-const TELEGRAM_PHOTO_LIMIT_BYTES = 9.3 * 1024 * 1024;
+// Telegram's real limit is 10MB for sendPhoto / each item in
+// sendMediaGroup. Target a bit under that so re-encoding overhead,
+// EXIF, etc. can't push a "just barely under" result back over on
+// Telegram's side.
+const TELEGRAM_PHOTO_LIMIT_BYTES = 10 * 1024 * 1024;
+const TARGET_BYTES = 9.3 * 1024 * 1024;
 
-// Each round tries a smaller JPEG quality first (cheap, no visible
-// resizing) before also shrinking resolution — most oversized screenshots
-// only need quality knocked down a little, so jumping straight to
-// resizing would blur images that didn't need it. Resolution only comes
-// into play once quality alone has stopped helping (rounds 4-6), each one
-// shrinking by another ×0.75 on top of the last. Six rounds total is a
-// hard ceiling — if a photo is still over the limit after all six, it's
-// sent as-is rather than looping indefinitely (see the fallback below).
-const COMPRESSION_STEPS = [
-  { quality: 85, scale: 1 },
-  { quality: 70, scale: 1 },
-  { quality: 55, scale: 1 },
-  { quality: 50, scale: 0.75 },
-  { quality: 50, scale: 0.5625 }, // 0.75^2
-  { quality: 50, scale: 0.421875 }, // 0.75^3
-];
+// Each round (after the first) shrinks resolution by this factor and
+// drops to the next quality step below. Six rounds takes even a huge
+// original (e.g. a 4000px-wide 20MB+ screenshot) down to a fraction of
+// its starting linear size, which is always enough in practice — if it
+// somehow still isn't, the caller gets back the smallest bytes this
+// managed to produce rather than nothing at all.
+const MAX_ROUNDS = 6;
+const RESIZE_FACTOR = 0.75;
+const QUALITY_STEPS = [85, 75, 65, 55, 45, 40];
 
 /**
- * @param {Uint8Array} bytes - raw image bytes (already decoded from the
- *   incoming base64 dataUrl — this function never touches the dataUrl
- *   string itself)
- * @param {string} mimeType - the attachment's declared type, e.g. "image/png"
- * @returns {Promise<{ bytes: Uint8Array, type: string, compressed: boolean }>}
- *   `compressed` is only true when this function actually re-encoded the
- *   image — callers that care (logging, etc.) can check it, but nothing
- *   downstream needs to branch on it: the returned bytes/type are always
- *   safe to send to Telegram either way.
+ * Compresses one image's bytes down under Telegram's photo size limit,
+ * if (and only if) it's currently over the target. Never throws — on
+ * any WASM/decoding failure this logs and returns the ORIGINAL bytes
+ * unchanged, so a compression bug degrades back to the old "Telegram
+ * might reject this" behavior instead of blocking the send entirely.
+ *
+ * @param {Uint8Array} bytes
+ * @param {{ type?: string, name?: string }} meta
+ * @returns {Promise<{ bytes: Uint8Array, type: string, name: string, wasCompressed: boolean }>}
  */
-export async function compressImageForTelegram(bytes, mimeType) {
-  if (!bytes || bytes.byteLength <= TELEGRAM_PHOTO_LIMIT_BYTES) {
-    return { bytes, type: mimeType, compressed: false };
+export async function compressImageForTelegram(bytes, { type, name } = {}) {
+  const originalType = type || "application/octet-stream";
+  const originalName = name || "photo.jpg";
+
+  if (!bytes || !bytes.byteLength || bytes.byteLength <= TARGET_BYTES) {
+    return { bytes, type: originalType, name: originalName, wasCompressed: false };
   }
 
   let inputImage = null;
+  let workingImage = null;
   try {
-    // Imported lazily (not at module top level) so that any environment
-    // where this module gets loaded but photo compression never actually
-    // runs (i.e. every attachment stays under the threshold) never pays
-    // for initializing the WASM module at all.
-    const { PhotonImage, resize, SamplingFilter } = await import("@cf-wasm/photon/workerd");
-
     inputImage = PhotonImage.new_from_byteslice(bytes);
-    const width = inputImage.get_width();
-    const height = inputImage.get_height();
+    let width = inputImage.get_width();
+    let height = inputImage.get_height();
+    let best = bytes;
 
-    let outputBytes = null;
-    for (const step of COMPRESSION_STEPS) {
-      let working = inputImage;
-      let isResized = false;
-      if (step.scale < 1) {
-        const w = Math.max(1, Math.round(width * step.scale));
-        const h = Math.max(1, Math.round(height * step.scale));
-        // Always resizes from the original full-resolution image, not
-        // from the previous round's already-shrunk output — resizing
-        // down from a smaller image each round would compound blur for
-        // no size benefit over resizing from the original at the same
-        // target dimensions.
-        working = resize(inputImage, w, h, SamplingFilter.Lanczos3);
-        isResized = true;
+    for (let round = 0; round < MAX_ROUNDS; round++) {
+      const quality = QUALITY_STEPS[Math.min(round, QUALITY_STEPS.length - 1)];
+
+      if (round === 0) {
+        // First pass: just re-encode at the original resolution with a
+        // lower JPEG quality — for a lot of oversized PNG/HEIC-derived
+        // screenshots this alone is enough, and it keeps the image
+        // looking identical if it is.
+        best = inputImage.get_bytes_jpeg(quality);
+      } else {
+        width = Math.max(1, Math.round(width * RESIZE_FACTOR));
+        height = Math.max(1, Math.round(height * RESIZE_FACTOR));
+        const resized = resize(inputImage, width, height, SamplingFilter.Lanczos3);
+        if (workingImage) workingImage.free();
+        workingImage = resized;
+        best = workingImage.get_bytes_jpeg(quality);
       }
-      outputBytes = working.get_bytes_jpeg(step.quality);
-      if (isResized) working.free();
-      if (outputBytes.byteLength <= TELEGRAM_PHOTO_LIMIT_BYTES) break;
+
+      if (best.byteLength <= TARGET_BYTES) break;
     }
 
-    // Still over the limit after all six rounds (an extreme source
-    // image) — send the smallest version this got to rather than the
-    // untouched original, since it's strictly closer to fitting even if
-    // it doesn't quite make it. Telegram's own error, if it still
-    // rejects it, is at least now the true failure mode rather than one
-    // this function silently pretended not to have a fix for.
-    return { bytes: outputBytes, type: "image/jpeg", compressed: true };
+    return {
+      bytes: best,
+      // Always re-encoded as JPEG (get_bytes_jpeg), so the extension/MIME
+      // type sent to Telegram has to match what the bytes actually are.
+      type: "image/jpeg",
+      name: renameToJpeg(originalName),
+      wasCompressed: true,
+    };
   } catch (e) {
-    // Compression itself is a nice-to-have, not something that should
-    // ever block a send — if @cf-wasm/photon throws (corrupt image,
-    // format it can't decode, unexpected WASM error), fall straight back
-    // to the original bytes. Telegram will either accept them anyway
-    // (this function's own threshold has headroom) or return its usual
-    // "too large" error, same as before this fix existed — never worse.
-    console.error("telegramImageCompress: compression failed, sending original bytes instead:", e && e.message || e);
-    return { bytes, type: mimeType, compressed: false };
+    console.error(`[telegramImageCompress] compression failed for "${originalName}" (${bytes.byteLength} bytes) — sending original bytes as-is: ${(e && e.message) || e}`);
+    return { bytes, type: originalType, name: originalName, wasCompressed: false };
   } finally {
-    if (inputImage) inputImage.free();
+    // WASM-backed objects — must be freed explicitly, GC won't do it.
+    if (workingImage) { try { workingImage.free(); } catch { /* already freed */ } }
+    if (inputImage) { try { inputImage.free(); } catch { /* already freed */ } }
   }
 }
+
+function renameToJpeg(name) {
+  const base = (name || "photo").replace(/\.[^./\\]+$/, "");
+  return `${base}.jpg`;
+}
+
+export { TELEGRAM_PHOTO_LIMIT_BYTES, TARGET_BYTES };

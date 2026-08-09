@@ -1,22 +1,28 @@
 /**
  * /api/admin/feature-status  ("Settings" admin page)
  *
- *   GET  -> { ok, items: [{ id, emoji, name, status, bypassRoles }] }
- *     Gated by the "settings" Account Management Access section — same
- *     view/edit model as tgRoutes/whitelistIp (see canSeeAdminSection()/
- *     canEditAdminSection() in _shared/accounts.js).
+ * Same "one row per controllable item" shape as /api/admin/routes (TG
+ * Group/Channel) and /api/admin/deposit-sheets — gated by the "settings"
+ * Account Management Access section (superadmin-only by default, same
+ * tier as tgRoutes/depositSheets — see defaultSectionsForRank() in
+ * _shared/accounts.js).
  *
- *   POST { action:"save", itemId, status, bypassRoles } -> maintenance/
- *     coming_soon. Requires Can-Edit on "settings".
- *   POST { action:"reset", itemId } -> back to Active. Same gate.
+ *   GET
+ *     -> { ok: true, items: [{id,emoji,name}],
+ *          statuses: { [itemId]: { status, bypassRoles } } }
+ *     Requires canSeeAdminSection(..., "settings").
  *
- * See _shared/featureStatus.js for the KV layer and the enforcement
- * points (submit.js, threads.js, promo-search.js, deposit-issue/*,
- * deposit-backup/*, and the client-side blocking in index.html/app.js/
- * threads.html/promo.html/deposit-issue.html/deposit-backup.html).
+ *   POST { action:"save", itemId, status, bypassRoles } -> store an
+ *     override in THREADS_KV. Takes effect on the very next request for
+ *     that item — no redeploy needed. Requires
+ *     canEditAdminSection(..., "settings").
+ *
+ *   POST { action:"reset", itemId } -> delete the override, reverting
+ *     that item back to "Active" (the default, nothing blocked).
+ *     Requires canEditAdminSection(..., "settings").
  */
 import { authenticateStaff, ROLE_RANK, canSeeAdminSection, canEditAdminSection } from "../../_shared/accounts.js";
-import { FEATURE_STATUS_ITEMS, getAllFeatureStatuses, saveFeatureStatus, resetFeatureStatus } from "../../_shared/featureStatus.js";
+import { FEATURE_STATUS_ITEMS, VALID_BYPASS_ROLES, getAllFeatureStatuses, saveFeatureStatus, resetFeatureStatus } from "../../_shared/featureStatus.js";
 
 export async function onRequestGet(context) {
   try {
@@ -30,11 +36,12 @@ async function handleGet({ request, env }) {
   if (!env.THREADS_KV) return json({ ok: false, error: "THREADS_KV is not bound yet." }, 500);
   const auth = await authenticateStaff(request, env, ROLE_RANK.senior);
   if (!auth.ok) return json({ ok: false, error: "Not authorized." }, 401);
-  if (!canSeeAdminSection(auth.account, "settings")) return json({ ok: false, error: "You don't have access to Settings." }, 403);
+  if (!canSeeAdminSection(auth.account, "settings")) {
+    return json({ ok: false, error: "You don't have access to Settings." }, 403);
+  }
 
   const statuses = await getAllFeatureStatuses(env);
-  const items = FEATURE_STATUS_ITEMS.map((i) => ({ ...i, ...statuses[i.id] }));
-  return json({ ok: true, items });
+  return json({ ok: true, items: FEATURE_STATUS_ITEMS, statuses, validBypassRoles: VALID_BYPASS_ROLES });
 }
 
 export async function onRequestPost(context) {
@@ -49,7 +56,9 @@ async function handlePost({ request, env }) {
   if (!env.THREADS_KV) return json({ ok: false, error: "THREADS_KV is not bound yet." }, 500);
   const auth = await authenticateStaff(request, env, ROLE_RANK.senior);
   if (!auth.ok) return json({ ok: false, error: "Not authorized." }, 401);
-  if (!canEditAdminSection(auth.account, "settings")) return json({ ok: false, error: "You don't have Can-Edit access to Settings." }, 403);
+  if (!canEditAdminSection(auth.account, "settings")) {
+    return json({ ok: false, error: "You don't have Can-Edit access to Settings." }, 403);
+  }
 
   let body;
   try {
@@ -58,7 +67,7 @@ async function handlePost({ request, env }) {
     return json({ ok: false, error: "Invalid JSON body." }, 400);
   }
 
-  const { itemId } = body || {};
+  const itemId = body.itemId;
   if (!FEATURE_STATUS_ITEMS.some((i) => i.id === itemId)) {
     return json({ ok: false, error: `Unknown item "${itemId}".` }, 400);
   }
@@ -66,7 +75,7 @@ async function handlePost({ request, env }) {
   if (body.action === "save") {
     try {
       const saved = await saveFeatureStatus(env, itemId, { status: body.status, bypassRoles: body.bypassRoles });
-      return json({ ok: true, item: saved });
+      return json({ ok: true, itemId, status: saved });
     } catch (e) {
       return json({ ok: false, error: String(e.message || e) }, 400);
     }
@@ -74,7 +83,7 @@ async function handlePost({ request, env }) {
 
   if (body.action === "reset") {
     await resetFeatureStatus(env, itemId);
-    return json({ ok: true, item: { status: "active", bypassRoles: ["superadmin", "owner"] } });
+    return json({ ok: true, itemId, status: { status: "active", bypassRoles: ["superadmin", "owner"] } });
   }
 
   return json({ ok: false, error: `Unknown action "${body.action}".` }, 400);

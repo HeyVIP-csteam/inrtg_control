@@ -1,48 +1,78 @@
-/**
- * POST /api/deposit-issue/search
- *
- * Live search across one brand's (or, with no `brand`, every brand the
- * account can see) Deposit Issue Google Sheet. Modeled on
- * promo-search.js's tab-resolution/caching pattern (batchGetValues +
- * getSheetTabs, so a mistyped/renamed tab 400s only that one lookup, not
- * the whole request) plus submit.js's brand-permission gate.
- *
- * Every brand starts fully unconfigured — until a link is saved for it
- * through the "Deposit Sheet Link" admin page (Account Management →
- * Deposit Sheet Link), searching that brand returns "not configured"
- * rather than guessing or reading the wrong sheet. There is no
- * hardcoded default sheet for any brand.
- *
- * "All Brands" (no `brand` in the request) fans the search out across
- * every visible brand's sheet in one request. With 5 brands today this
- * is well within Cloudflare's subrequest budget — revisit (e.g. make
- * "All Brands" directory-only, like the sheet-links.js endpoint) if this
- * project ever grows toward dozens of brands.
- */
-import { verifyRequest, canSeeBrand } from "../../_shared/accounts.js";
-import { BRANDS } from "../../_shared/routing.js";
-import { getDepositSheetOverride, DEPOSIT_HIDDEN_BRANDS } from "../../_shared/depositSheets.js";
-import { batchGetValues, getSheetTabs } from "../../_shared/googleSheets.js";
 import { getAccessToken } from "../../_shared/googleOAuth.js";
-import { ISSUE_COLUMNS as cols } from "../../_shared/depositColumns.js";
+import { verifyRequest, canSeeBrand } from "../../_shared/accounts.js";
+import { PKR_BRANDS, getDepositSheetOverride } from "../../_shared/depositSheets.js";
 import { getFeatureStatus, accountCanBypass } from "../../_shared/featureStatus.js";
 
-// Must match MODULE_SLOT in functions/api/admin/deposit-sheets.js and
-// functions/api/deposit-issue/{update,sheet-links}.js.
+// Stable identifier for this module's slot in the "Deposit Sheet Link"
+// admin page — must match MODULE_SLOT in functions/api/admin/deposit-sheets.js.
 const MODULE_SLOT = "depositIssue";
 
-// Column layout is the SAME for every brand's Deposit Issue sheet — see
-// depositColumns.js. (Deposit Backup uses a different layout, also
-// per-module not per-brand — don't confuse the two.)
+/**
+ * ══════════════════════════════════════════════════════════════════
+ *  HARDCODED DEFAULT — only used for Crickex, and only if nothing's
+ *  been saved for Crickex through the "Deposit Sheet Link" admin page
+ *  yet. Every other brand has NO hardcoded fallback: until someone
+ *  saves a link for that brand in the admin page, searching that brand
+ *  returns "not configured" rather than guessing.
+ * ══════════════════════════════════════════════════════════════════
+ */
+const DEFAULT_CRICKEX = { sheetId: "1HByPuZMuuYZL9S5fPPGjb8RAmCwNVgKXvuLgVBbVM-E", tabNames: ["CX PKR"] };
+
+// Resolves the { sheetId, tabNames } to use for ONE brand: live KV
+// override if one exists, else the hardcoded Crickex default, else null
+// ("not configured yet" — every non-Crickex brand until it's set up).
+async function resolveBrandSheet(env, brandId) {
+  const override = await getDepositSheetOverride(env, MODULE_SLOT, brandId);
+  if (override) return { sheetId: override.sheetId, tabNames: override.tabNames };
+  if (brandId === "crickex") return DEFAULT_CRICKEX;
+  return null;
+}
+
+// Column layout confirmed from the real sheet (row 1 = headers, data
+// starts row 2). If a department ever reorders columns, update here.
+// (Assumes every brand's sheet uses this same layout — true for Crickex
+// today; revisit if a future brand's sheet turns out to differ.)
+const COLS = {
+  transactionId: "A",
+  requestTime: "B",
+  channel: "C",
+  agentNumber: "D",
+  username: "E",
+  date: "F",
+  imageLink: "G",
+  transactionError: "H",
+  statusPG: "I",
+  cartId: "J",
+  reference: "K",
+  cashOutNumber: "L",
+  amount: "M",
+  supportPIC: "N",
+  pg: "O",
+  csPIC: "P",
+  playerContactNo: "Q",
+  statusCS: "R",
+  correctUid: "S",
+  playersCartId: "T",
+  paymentStatus: "U",
+  pytPsd: "V",
+  remark: "W",
+};
+const LAST_COL = "W"; // must match the last key in COLS above
 const MAX_RESULTS = 500; // global cap across ALL brands searched in one request
 
+// Same normalization promo-search.js uses — folds invisible differences
+// (double spaces, stray whitespace, fullwidth punctuation) so a tab name
+// that LOOKS identical to the human eye still matches.
 function normalizeTabName(name) {
   return String(name).normalize("NFKC").replace(/\s+/g, " ").trim().toLowerCase();
 }
 
-// Sortable epoch-ms timestamp built from Date (col A) + Time (col B).
-// Unparseable/missing dates sort to the very bottom (return 0) rather
-// than throwing or being dropped.
+// Sortable epoch-ms timestamp built from Date (col F) + Request Time
+// (col B) — results are sorted newest first before being returned (see
+// bottom of handleSearch), instead of staying grouped by
+// brand/tab/sheet-row order. Rows with an unparseable/missing date sort
+// to the very bottom (return 0 — effectively "1970") rather than
+// throwing or being dropped.
 function sortTimestamp(dateRaw, timeRaw) {
   const dm = String(dateRaw || "").trim().match(/^(\d{4})-(\d{2})-(\d{2})$/);
   if (!dm) return 0;
@@ -54,66 +84,48 @@ function sortTimestamp(dateRaw, timeRaw) {
   return Number.isNaN(ts) ? 0 : ts;
 }
 
-// Date (col A, "YYYY-MM-DD") + Time (col B, "H:MM:SS") combined into a
-// single day-first display string, matching the rest of the hub's
-// convention.
-function formatRequestDateTime(dateRaw, timeRaw) {
-  let d = String(dateRaw || "").trim();
-  const m = d.match(/^(\d{4})-(\d{2})-(\d{2})$/);
-  if (m) d = `${m[3]}/${m[2]}/${m[1]}`;
-  const t = String(timeRaw || "").trim();
-  return d && t ? `${d} ${t}` : d || t;
-}
-
-// Real tab titles/gids rarely change — cache per Worker isolate for a
+// Sheet's real tab titles rarely change — cache per Worker isolate for a
 // few minutes instead of re-fetching metadata on every search. Keyed by
-// sheetId since "All Brands" mode may query several different sheets in
-// one request.
-const tabCache = new Map(); // sheetId -> { tabs: [{title, gid}], expiresAt }
+// sheetId (a Map, since "All Brands" mode may query several different
+// sheets in one request). Now also carries each tab's `gid` (its
+// internal numeric sheetId — different from the spreadsheet's own ID),
+// needed to build a direct link straight to that specific tab in Google
+// Sheets: https://docs.google.com/spreadsheets/d/<sheetId>/edit#gid=<gid>
+const tabTitleCache = new Map(); // sheetId -> { tabs: [{title, gid}], expiresAt }
 const TAB_CACHE_MS = 5 * 60 * 1000;
 
-async function resolveExistingTabs(env, sheetId, token) {
+async function resolveExistingTabs(accessToken, sheetId) {
   const now = Date.now();
-  const cached = tabCache.get(sheetId);
+  const cached = tabTitleCache.get(sheetId);
   if (cached && cached.expiresAt > now) return cached.tabs;
-  const tabs = await getSheetTabs(env, sheetId, token);
-  tabCache.set(sheetId, { tabs, expiresAt: now + TAB_CACHE_MS });
+  const url = `https://sheets.googleapis.com/v4/spreadsheets/${sheetId}?fields=sheets.properties(title,sheetId)`;
+  const res = await fetch(url, { headers: { Authorization: `Bearer ${accessToken}` } });
+  const data = await res.json();
+  if (!res.ok) throw new Error(`Could not read sheet tab list: ${data.error?.message || res.status}`);
+  const tabs = (data.sheets || []).map((s) => ({ title: s.properties.title, gid: s.properties.sheetId }));
+  tabTitleCache.set(sheetId, { tabs, expiresAt: now + TAB_CACHE_MS });
   return tabs;
-}
-
-function colIndex(letter) {
-  let n = 0;
-  for (let i = 0; i < letter.length; i++) n = n * 26 + (letter.charCodeAt(i) - 64);
-  return n - 1;
 }
 
 export async function onRequestPost(context) {
   try {
     return await handleSearch(context);
   } catch (e) {
-    return json({ ok: false, error: `Search failed: ${String((e && e.message) || e)}` }, 500);
+    return json({ ok: false, error: `Search failed: ${String(e && e.message || e)}` }, 500);
   }
 }
 
 async function handleSearch({ request, env }) {
+  // Same gate every other protected endpoint uses (see submit.js) — requires
+  // a valid X-Agent-Token from a logged-in, non-locked account whose office
+  // IP still matches. The frontend's authguard.js/authFetch() already
+  // attaches this header automatically.
   const account = await verifyRequest(request, env);
   if (!account) return json({ ok: false, error: "Login required." }, 401);
 
-  // Maintenance/Coming-soon toggle (Settings admin panel) — see
-  // _shared/featureStatus.js.
   const featureStatus = await getFeatureStatus(env, "deposit_issue");
   if (featureStatus.status !== "active" && !accountCanBypass(account, featureStatus.bypassRoles)) {
-    return json({ ok: false, error: "Currently unavailable." }, 403);
-  }
-
-  if (!env.GOOGLE_OAUTH_CLIENT_ID || !env.GOOGLE_OAUTH_CLIENT_SECRET || !env.GOOGLE_OAUTH_REFRESH_TOKEN) {
-    return json({ ok: false, error: "Server is missing Google OAuth credentials." }, 500);
-  }
-  let token;
-  try {
-    token = await getAccessToken(env);
-  } catch (e) {
-    return json({ ok: false, error: `Google OAuth error: ${String((e && e.message) || e)}` }, 502);
+    return json({ ok: false, error: featureStatus.status === "coming_soon" ? "Deposit Issue isn't available yet." : "Deposit Issue is currently under maintenance." }, 403);
   }
 
   let body;
@@ -123,50 +135,55 @@ async function handleSearch({ request, env }) {
     return json({ ok: false, error: "Invalid JSON body." }, 400);
   }
 
-  const raw = ((body && body.query) || "").trim();
+  const raw = (body && body.query || "").trim();
   if (!raw) return json({ ok: false, error: "Missing query." }, 400);
-  const requestedBrand = ((body && body.brand) || "").trim(); // "" = All Brands
+  const requestedBrand = (body && body.brand || "").trim(); // "" = All Brands
 
+  // Same comma/newline-separated multi-query parsing as the rest of the hub.
   const queries = raw.split(/[\n,]+/).map((q) => q.trim()).filter(Boolean).map((q) => q.toLowerCase());
   if (!queries.length) return json({ ok: false, error: "No valid search terms." }, 400);
 
-  const allBrandIds = Object.keys(BRANDS).filter((id) => !DEPOSIT_HIDDEN_BRANDS.includes(id));
+  // Figure out which brand(s) to actually search, and resolve each one's
+  // { sheetId, tabNames } up front. Brand-level permission (same
+  // canSeeBrand() used by submit.js) is enforced here — an agent scoped
+  // to only Crickex, for example, can't search or see any other brand's
+  // Deposit Issue data, same as every other module in the hub.
   if (requestedBrand) {
-    if (!BRANDS[requestedBrand] || DEPOSIT_HIDDEN_BRANDS.includes(requestedBrand)) {
-      return json({ ok: false, error: `Unknown brand "${requestedBrand}".` }, 400);
-    }
-    if (!canSeeBrand(account, BRANDS[requestedBrand].name)) {
-      return json({ ok: false, error: "You don't have access to this brand." }, 403);
-    }
+    const brandMeta = PKR_BRANDS.find((b) => b.id === requestedBrand);
+    if (!brandMeta) return json({ ok: false, error: `Unknown brand "${requestedBrand}".` }, 400);
+    if (!canSeeBrand(account, brandMeta.name)) return json({ ok: false, error: "You don't have access to this brand." }, 403);
   }
-  const brandIdsToSearch = (requestedBrand ? [requestedBrand] : allBrandIds)
-    .filter((id) => canSeeBrand(account, BRANDS[id].name));
+  const brandsToSearch = (requestedBrand ? PKR_BRANDS.filter((b) => b.id === requestedBrand) : PKR_BRANDS)
+    .filter((b) => canSeeBrand(account, b.name));
 
   const targets = []; // { brandId, brandName, sheetId, tabNames }
   const unconfiguredBrands = [];
-  for (const brandId of brandIdsToSearch) {
-    const override = await getDepositSheetOverride(env, MODULE_SLOT, brandId);
-    if (override) targets.push({ brandId, brandName: BRANDS[brandId].name, sheetId: override.sheetId, tabNames: override.tabNames });
-    else unconfiguredBrands.push(BRANDS[brandId].name);
+  for (const b of brandsToSearch) {
+    const sheet = await resolveBrandSheet(env, b.id);
+    if (sheet) targets.push({ brandId: b.id, brandName: b.name, sheetId: sheet.sheetId, tabNames: sheet.tabNames });
+    else unconfiguredBrands.push(b.name);
   }
 
+  // Specifically asked for one brand, and it has no Sheet linked yet —
+  // tell the frontend plainly instead of returning a confusing "0 results".
   if (requestedBrand && !targets.length) {
     return json({ ok: true, results: [], notConfigured: true, brand: requestedBrand });
   }
 
+  const accessToken = await getAccessToken(env);
   const results = [];
-  const tabWarnings = []; // [{ brand, missingTabs, actualSheetTabs, error? }]
+  const tabWarnings = []; // [{ brand, missingTabs, actualSheetTabs }] — only for sheets with a mismatch
 
   for (const target of targets) {
     if (results.length >= MAX_RESULTS) break;
 
-    // cols is the module-level ISSUE_COLUMNS constant — same for every brand
-
     let realTabs;
     try {
-      realTabs = await resolveExistingTabs(env, target.sheetId, token);
+      realTabs = await resolveExistingTabs(accessToken, target.sheetId);
     } catch (e) {
-      tabWarnings.push({ brand: target.brandName, missingTabs: target.tabNames, actualSheetTabs: [], error: String((e && e.message) || e) });
+      // One brand's sheet being unreachable shouldn't kill results from
+      // the others — record it as a warning and keep going.
+      tabWarnings.push({ brand: target.brandName, missingTabs: target.tabNames, actualSheetTabs: [], error: String(e.message || e) });
       continue;
     }
     const realByNormalized = new Map(realTabs.map((t) => [normalizeTabName(t.title), t]));
@@ -178,78 +195,74 @@ async function handleSearch({ request, env }) {
       else missingTabs.push(configured);
     }
     if (missingTabs.length) tabWarnings.push({ brand: target.brandName, missingTabs, actualSheetTabs: realTabs.map((t) => t.title) });
-    if (!tabsToQuery.length) continue;
 
-    // One batchGet per sheet (covers every configured tab on it) instead
-    // of one fetch per tab — fewer subrequests, matters once "All
-    // Brands" mode is fanning out across several sheets in one request.
-    let valueRanges;
-    try {
-      const ranges = tabsToQuery.map(({ title }) => `'${title.replace(/'/g, "''")}'!A2:${cols.lastCol}`);
-      valueRanges = await batchGetValues(env, target.sheetId, ranges, token);
-    } catch (e) {
-      tabWarnings.push({ brand: target.brandName, missingTabs: [], actualSheetTabs: [], error: `Sheets API error reading "${target.brandName}": ${String((e && e.message) || e)}` });
-      continue;
-    }
-
-    tabsToQuery.forEach(({ title: tab, gid }, tabI) => {
-      if (results.length >= MAX_RESULTS) return;
-      const rows = (valueRanges[tabI] && valueRanges[tabI].values) || [];
+    for (const { title: tab, gid } of tabsToQuery) {
+      if (results.length >= MAX_RESULTS) break;
+      const range = `'${tab.replace(/'/g, "''")}'!A2:${LAST_COL}`;
+      const url = `https://sheets.googleapis.com/v4/spreadsheets/${target.sheetId}/values/${encodeURIComponent(range)}`;
+      const res = await fetch(url, { headers: { Authorization: `Bearer ${accessToken}` } });
+      const data = await res.json();
+      if (!res.ok) {
+        tabWarnings.push({ brand: target.brandName, missingTabs: [], actualSheetTabs: [], error: `Sheets API error reading "${tab}": ${data.error?.message || res.status}` });
+        continue;
+      }
+      const rows = data.values || [];
       rows.forEach((row, i) => {
         if (results.length >= MAX_RESULTS) return;
-        // A field this brand's profile doesn't define (e.g. Cart ID for
-        // a BetVisa-style sheet) safely returns "" instead of reading
-        // the wrong column or throwing.
-        const get = (colLetter) => (colLetter ? row[colIndex(colLetter)] || "" : "");
-        const pgTid = get(cols.pgTid);
-        const utr = get(cols.utr);
-        const username = get(cols.username);
-        const orderId = get(cols.orderId);
-        // Match if ANY query is a substring of PG TID, UTR, Username, or Order ID.
-        const haystack = (pgTid + " " + utr + " " + username + " " + orderId).toLowerCase();
-        if (!queries.some((q) => haystack.includes(q))) return;
+        const get = (colLetter) => row[colIndex(colLetter)] || "";
+        const transactionId = get(COLS.transactionId);
+        const reference = get(COLS.reference);
+        const username = get(COLS.username);
+        const agentNumber = get(COLS.agentNumber);
+        // Match if ANY query is a substring of Transaction ID, Reference,
+        // Username, or Agent Number.
+        const haystack = (transactionId + " " + reference + " " + username + " " + agentNumber).toLowerCase();
+        const isMatch = queries.some((q) => haystack.includes(q));
+        if (!isMatch) return;
 
-        const rowIndex = i + 2; // header is row 1
+        const rowIndex = i + 2; // actual row number in the sheet (header is row 1)
         results.push({
-          _sortTs: sortTimestamp(get(cols.date), get(cols.time)),
+          _sortTs: sortTimestamp(get(COLS.date), get(COLS.requestTime)),
           brand: target.brandId,
           brandName: target.brandName,
+          sheetName: target.brandName,
           tabName: tab,
           sheetId: target.sheetId,
           rowIndex,
+          // Direct link to this exact row, in this exact tab — Google
+          // Sheets understands #gid=<tab> + range=<cell> in the URL and
+          // will jump straight there, scroll included.
           sheetUrl: `https://docs.google.com/spreadsheets/d/${target.sheetId}/edit#gid=${gid}&range=A${rowIndex}`,
-          transaction: pgTid,
-          requestTime: formatRequestDateTime(get(cols.date), get(cols.time)),
-          username,
-          pg: get(cols.pg),
-          utr,
-          slip: get(cols.slip),
-          pgStaffName: get(cols.pgStaffName),
-          slipAmount: get(cols.slipAmount),
-          status: get(cols.status),
-          followUpTimes: get(cols.followUpTimes),
-          chatIds: get(cols.chatIds),
-          agentUpi: get(cols.agentUpi),
-          pgRemarks: get(cols.pgRemarks),
-          csRemarks: get(cols.csRemarks),
-          paymentStatus: get(cols.paymentStatus),
-          orderId,
-          picName: get(cols.picName),
-          cartId: get(cols.cartId),
-          amount: get(cols.amount),
-          statusFinal: get(cols.statusFinal),
-          upi: get(cols.upi),
-          remarkPic: get(cols.remarkPic),
-          memo: get(cols.memo),
-          condition: get(cols.condition),
+          transaction: transactionId,
+          requestTime: get(COLS.requestTime),
+          channel: get(COLS.channel),
+          agentNumber: get(COLS.agentNumber),
+          username: get(COLS.username),
+          date: get(COLS.date),
+          imageLink: get(COLS.imageLink),
+          transactionError: get(COLS.transactionError),
+          statusPG: get(COLS.statusPG),
+          cartId: get(COLS.cartId),
+          reference,
+          cashOutNumber: get(COLS.cashOutNumber),
+          amount: get(COLS.amount),
+          supportPIC: get(COLS.supportPIC),
+          pg: get(COLS.pg),
+          csPIC: get(COLS.csPIC),
+          playerContactNo: get(COLS.playerContactNo),
+          statusCS: get(COLS.statusCS),
+          correctUid: get(COLS.correctUid),
+          playersCartId: get(COLS.playersCartId),
+          paymentStatus: get(COLS.paymentStatus),
         });
       });
-    });
+    }
   }
 
   // Newest first — matters most in "All Brands" mode, where results from
-  // several different brands would otherwise stay grouped by brand/tab
-  // order instead of interleaved by actual transaction time.
+  // several different brands' sheets would otherwise stay grouped by
+  // which brand/sheet they came from instead of being interleaved by
+  // actual transaction time.
   results.sort((a, b) => b._sortTs - a._sortTs);
   results.forEach((r) => { delete r._sortTs; });
 
@@ -257,10 +270,20 @@ async function handleSearch({ request, env }) {
     ok: true,
     results,
     tabWarnings: tabWarnings.length ? tabWarnings : undefined,
+    // Brands with no Sheet linked at all yet — only surfaced in "All
+    // Brands" mode, as a gentle heads-up, not an error (perfectly normal
+    // while you're still onboarding the other 8 brands).
     unconfiguredBrands: !requestedBrand && unconfiguredBrands.length ? unconfiguredBrands : undefined,
   });
 }
 
+// Converts a column letter like "P" to a 0-based array index (15).
+function colIndex(letter) {
+  let n = 0;
+  for (let i = 0; i < letter.length; i++) n = n * 26 + (letter.charCodeAt(i) - 64);
+  return n - 1;
+}
+
 function json(obj, status = 200) {
-  return new Response(JSON.stringify(obj), { status, headers: { "Content-Type": "application/json", "Cache-Control": "no-store" } });
+  return new Response(JSON.stringify(obj), { status, headers: { "Content-Type": "application/json" } });
 }
