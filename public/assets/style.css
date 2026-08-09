@@ -333,12 +333,12 @@ a { color: inherit; text-decoration: none; }
   display: flex;
   position: fixed; inset: 0; z-index: 50;
   background: rgba(10, 12, 25, 0.55);
-  align-items: center; justify-content: center;
+  align-items: flex-start; justify-content: center;
   opacity: 0;
   pointer-events: none;
   transition: opacity 0.18s ease;
   overflow-y: auto;
-  padding: 24px 12px;
+  padding: 40px 12px;
 }
 .edit-modal-backdrop.is-open { opacity: 1; pointer-events: auto; }
 .edit-modal {
