@@ -834,25 +834,52 @@ body.hub-page .topbar { flex-shrink: 0; }
 /* #spaMount (spa-shell.js's SPA mount point) lives INSIDE .hub-main as a
    sibling of .inner, so the persistent sidebar stays visible while a
    routed view (threads/promo/deposit-issue/deposit-backup/announcements)
-   is mounted — see spa-shell.js's comment on #spaMount for why. But
-   .hub-main's own padding/max-width/centering was designed around
-   .inner's narrow home card-grid, not a full app-shell layout like
-   threads-shell (sidebar + chat panel) that expects to use the whole
-   available box.
-   Removing that padding via NEGATIVE MARGIN on the child (the obvious
-   fix) doesn't actually work now that .hub-main scrolls its own
-   overflow (see the fixed-viewport rules above) — a negative top/left
-   margin tries to pull content above/left of the scroll container's
-   origin, which a scroll container can't show (scrollTop/scrollLeft
-   can't go negative), so the top of the mounted view would just be
-   silently clipped instead of visible. Using :has() on the PARENT to
-   drop its own padding to 0 when it contains an active .spa-mounted
-   child sidesteps that entirely — same visual result, no clipping. */
-.hub-main:has(> #spaMount.spa-mounted) { padding: 0; }
+   is mounted — see spa-shell.js's comment on #spaMount for why.
+
+   Two different kinds of mounted content, two different treatments:
+   - promo.html / deposit-issue.html / deposit-backup.html already carry
+     their OWN max-width:1500px + padding (see their injected <style>
+     blocks) — they're padded, centered card layouts, same spirit as
+     .inner's home cards, so they're left to sit inside .hub-main's
+     normal padding/centering untouched.
+   - threads.html / announcements.html are real sidebar+panel app-shells
+     that were built assuming they own the ENTIRE viewport below a
+     single topbar — cramming them into .hub-main's padded 480px-ish
+     column would squeeze them badly. These get .spa-fullbleed (added by
+     spa-shell.js per-route, see ROUTES.fullBleed there).
+
+   For .spa-fullbleed specifically: removing .hub-main's padding via
+   NEGATIVE MARGIN on the child (the obvious fix) doesn't work now that
+   .hub-main scrolls its own overflow (see the fixed-viewport rules
+   above) — a negative top/left margin tries to pull content above/left
+   of the scroll container's origin, which a scroll container can't show
+   (scrollTop/scrollLeft can't go negative), so the top of the mounted
+   view would just be silently clipped. Using :has() on the PARENT to
+   drop its own padding AND overflow to 0/hidden when it contains an
+   active .spa-fullbleed child sidesteps that. It ALSO fixes a real
+   "two scrollbars" bug: threads-shell/ann-shell's OWN height rules
+   (`calc(100vh - 61px)` / `100%`) assume they own the full viewport, so
+   left as .hub-main's overflow-y:auto scrolling child, you got BOTH
+   .hub-main's own scrollbar (because the mounted shell is taller than
+   .hub-main's actual available box) AND the mounted shell's own
+   internal scroll panes — two scrollbars fighting each other. Turning
+   .hub-main's overflow off for fullbleed views, and making
+   #spaMount.spa-fullbleed + the mounted shell fill 100% of the
+   now-unpadded box instead of assuming their own 100vh, leaves exactly
+   ONE scroll mechanism: the mounted shell's own internal panes — same
+   as how threads.html/announcements.html scroll when visited standalone. */
+.hub-main:has(> #spaMount.spa-fullbleed) { padding: 0; overflow: hidden; }
 #spaMount.spa-mounted {
   width: 100%;
   align-self: stretch;
   text-align: left;
+}
+#spaMount.spa-fullbleed { height: 100%; }
+#spaMount.spa-fullbleed .threads-shell,
+#spaMount.spa-fullbleed .ann-shell {
+  height: 100%;
+  flex: 1;
+  min-height: 0;
 }
 .status-badge-corner {
   display: inline-flex;

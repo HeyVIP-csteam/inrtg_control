@@ -42,8 +42,16 @@
       // No .threads-topline (its own "← Back to Home" pill) — the
       // persistent sidebar's Home link already covers that, and having
       // both was redundant.
+      // fullBleed: a real sidebar+panel app-shell that wants ALL of
+      // .hub-main's box, not the padded/centered card-column treatment
+      // — see the .spa-fullbleed CSS rules for what this toggles.
+      fullBleed: true,
     },
     promo: {
+      // .promo-shell already brings its OWN max-width:1500px + padding
+      // (see its injected <style> block) — it's a padded, centered card
+      // layout, not a full-bleed app-shell, so it keeps .hub-main's
+      // normal padding around it instead of stripping it.
       url: "/promo.html",
       select: ".promo-shell",
     },
@@ -58,6 +66,25 @@
     announcements: {
       url: "/announcements.html",
       select: "#annShell",
+      fullBleed: true,
+    },
+    // "form" is different from the other 5 — one file (form.html) shared
+    // by every ISSUE SUBMISSION sidebar item, parameterized by a
+    // `module` query param that form.html's OWN app.js reads via
+    // `new URLSearchParams(location.search).get("module")`. That means:
+    //  - the fetched HTML *structure* is identical regardless of module
+    //    (safe to cache once, unlike a per-module fetch)
+    //  - app.js itself isn't inline in the body like the other 5 pages'
+    //    scripts — it's a separate <script src> file NOT already loaded
+    //    by index.html — so `paramScript` below tells mount() to fetch
+    //    ITS text once and re-run it via new Function() on every visit
+    //    AND every module switch (a real `<script src>` tag, once
+    //    inserted, won't re-run just because the query string changed).
+    form: {
+      url: "/form.html",
+      select: ".form-page",
+      paramScript: "app.js",
+      hasModuleParam: true,
     },
   };
 
@@ -67,6 +94,7 @@
   const viewIntervals = {};
   Object.keys(ROUTES).forEach((k) => (viewIntervals[k] = []));
   let currentView = "home";
+  let currentModule = null;
   let capturingFor = null;
 
   // Pitfall #2: a routed page's own setInterval() polling (threads.html's
@@ -128,16 +156,17 @@
     });
   }
 
-  async function mount(view, { pushUrl = true } = {}) {
+  async function mount(view, { pushUrl = true, module = null } = {}) {
     clearViewIntervals(currentView);
     currentView = view;
+    currentModule = module;
     const homeEl = document.getElementById(HOME_ID);
     const mountEl = document.getElementById(MOUNT_ID);
 
     if (view === "home" || !ROUTES[view]) {
       currentView = "home";
       mountEl.style.display = "none";
-      mountEl.classList.remove("spa-mounted");
+      mountEl.classList.remove("spa-mounted", "spa-fullbleed");
       mountEl.innerHTML = "";
       homeEl.style.display = "";
       if (pushUrl) history.pushState({ view: "home" }, "", SHELL_PATH);
@@ -148,25 +177,33 @@
     mountEl.style.display = "flex";
     mountEl.style.flexDirection = "column";
     mountEl.classList.add("spa-mounted");
+    const cfg = ROUTES[view];
+    mountEl.classList.toggle("spa-fullbleed", !!cfg.fullBleed);
     mountEl.innerHTML = '<div class="spa-loading" style="padding:40px; text-align:center; color:var(--ink-soft);">Loading…</div>';
 
-    const cfg = ROUTES[view];
     const docPromise = getDoc(view);
     // Pitfall #5: non-blocking, third-party "nice to have" scripts.
     (cfg.extScripts || []).forEach((src) => loadExternalScriptOnce(src).catch(() => {}));
     const doc = await docPromise;
 
-    // Only proceed if this is still the view the user wants — a fast
-    // double-click between two routes shouldn't render the first fetch's
-    // result after the second one already started.
-    if (currentView !== view) return;
+    // Only proceed if this is still the view/module the user wants — a
+    // fast double-click between two routes (or two modules) shouldn't
+    // render the first fetch's result after a second one already started.
+    if (currentView !== view || currentModule !== module) return;
 
     // Pitfall #7: pushState only ever changes the shell's own path +
     // query string, never a real standalone file path — so a refresh
     // reloads index.html (which restores the view from the query string
     // below), instead of the browser asking the server for a static file
-    // that would show up with no shell around it at all.
-    if (pushUrl) history.pushState({ view }, "", `${SHELL_PATH}?view=${view}`);
+    // that would show up with no shell around it at all. `module` rides
+    // along in the SAME query string — form.html's own app.js (see
+    // paramScript below) reads it straight from the real
+    // `location.search`, so it has to actually be there before that
+    // script runs, not passed as a JS variable.
+    if (pushUrl) {
+      const qs = cfg.hasModuleParam && module ? `view=${view}&module=${module}` : `view=${view}`;
+      history.pushState({ view, module }, "", `${SHELL_PATH}?${qs}`);
+    }
 
     injectPageStyles(view, doc);
 
@@ -192,11 +229,37 @@
       doc.querySelectorAll("script:not([src])").forEach((s) => {
         if (s.textContent.trim()) new Function(s.textContent)();
       });
+      // paramScript: form.html's app.js is an external <script src>, not
+      // inline — normally that'd go through loadExternalScriptOnce() and
+      // just sit there loaded, but app.js's whole job is a one-shot IIFE
+      // that reads location.search ONCE at execution time. A real
+      // <script src> tag only ever runs once per insertion, so switching
+      // modules (still "form" view, different ?module=) would leave the
+      // OLD module's form on screen forever without this — fetch its
+      // source text once (cached) and re-run it via new Function() every
+      // single time, exactly like an inline script, specifically so a
+      // module switch actually re-executes it against the new
+      // location.search that was just pushState'd above.
+      if (cfg.paramScript) {
+        const text = await getParamScriptText(doc, cfg.paramScript);
+        if (text && currentView === view && currentModule === module) new Function(text)();
+      }
     } catch (err) {
       console.error(`[spa-shell] ${view} script error:`, err);
     } finally {
       capturingFor = null;
     }
+  }
+
+  const paramScriptCache = new Map();
+  async function getParamScriptText(doc, filename) {
+    if (paramScriptCache.has(filename)) return paramScriptCache.get(filename);
+    const scriptEl = Array.from(doc.querySelectorAll("script[src]")).find((s) => s.getAttribute("src").includes(`/${filename}`));
+    if (!scriptEl) return null;
+    const res = await fetch(scriptEl.getAttribute("src"));
+    const text = await res.text();
+    paramScriptCache.set(filename, text);
+    return text;
   }
 
   // Pitfall #4: pageTransition.js's wireFadeLinks() already listens for
@@ -213,8 +276,13 @@
     e.preventDefault();
     e.stopImmediatePropagation();
     const view = el.dataset.route;
-    if (view === currentView) return; // already there — no-op, not a re-mount
-    mount(view).catch((err) => console.error("[spa-shell] mount failed:", err));
+    const module = el.dataset.module || null;
+    // Same-view same-module clicks are true no-ops; same-view but a
+    // DIFFERENT module (e.g. QA -> Account Issue, both "form") must
+    // still re-mount — this is exactly the module-switch case
+    // paramScript exists for.
+    if (view === currentView && module === currentModule) return;
+    mount(view, { module }).catch((err) => console.error("[spa-shell] mount failed:", err));
   }, { capture: true });
 
   // "Home" sidebar link (href="/") and any other href="/" link should
@@ -230,14 +298,16 @@
   }, { capture: true });
 
   window.addEventListener("popstate", (e) => {
-    mount((e.state && e.state.view) || "home", { pushUrl: false });
+    mount((e.state && e.state.view) || "home", { pushUrl: false, module: (e.state && e.state.module) || null });
   });
 
   // Pitfall #7 companion: on a fresh load (including a refresh after
-  // navigating to /?view=xxx), restore whichever view the query string
-  // says, instead of always landing back on home.
+  // navigating to /?view=xxx or /?view=form&module=xxx), restore
+  // whichever view (and module) the query string says, instead of
+  // always landing back on home.
   document.addEventListener("DOMContentLoaded", () => {
-    const view = new URLSearchParams(location.search).get("view");
-    if (view && ROUTES[view]) mount(view, { pushUrl: false });
+    const params = new URLSearchParams(location.search);
+    const view = params.get("view");
+    if (view && ROUTES[view]) mount(view, { pushUrl: false, module: params.get("module") });
   });
 })();

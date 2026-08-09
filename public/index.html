@@ -74,7 +74,7 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
 <link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;600&display=swap" onload="this.onload=null;this.rel='stylesheet'" />
 <noscript><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;600&display=swap" /></noscript>
-<link rel="stylesheet" href="/assets/style.css?v=85731f55" />
+<link rel="stylesheet" href="/assets/style.css?v=9b49ea95" />
 <link rel="stylesheet" href="/assets/maintenance-breathing-light.css?v=b3446084" />
 <link rel="stylesheet" href="/assets/settings-dropdown.css?v=ff5b816c" />
 <script src="/assets/theme.js?v=5b27e630"></script>
@@ -435,6 +435,8 @@
     visibleModules.forEach((m) => {
       const a = document.createElement("a");
       a.href = `/form.html?module=${m.id}`;
+      a.dataset.route = "form";
+      a.dataset.module = m.id;
       a.className = "sidebar-item";
       a.dataset.featureItem = m.id;
       a.style.setProperty("--item-accent", m.accent);
@@ -1839,6 +1841,6 @@
       setTimeout(closeAcctModal, 700);
     }
   </script>
-  <script src="/assets/spa-shell.js?v=6af2f04e"></script>
+  <script src="/assets/spa-shell.js?v=8bb4dc00"></script>
 </body>
 </html>
