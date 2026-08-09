@@ -785,6 +785,23 @@ a { color: inherit; text-decoration: none; }
   text-align: center;
 }
 .hub-main .inner { max-width: 480px; }
+/* #spaMount (spa-shell.js's SPA mount point) lives INSIDE .hub-main as a
+   sibling of .inner, so the persistent sidebar stays visible while a
+   routed view (threads/promo/deposit-issue/deposit-backup/announcements)
+   is mounted — see spa-shell.js's comment on #spaMount for why. But
+   .hub-main's own padding/max-width/centering was designed around
+   .inner's narrow home card-grid, not a full app-shell layout like
+   threads-shell (sidebar + chat panel) that expects to use the whole
+   available box. .spa-mounted (added/removed by spa-shell.js on
+   route/home) cancels that padding via negative margins and lets the
+   mounted content use the full width, instead of getting squeezed into
+   a 480px-max-width centered column. */
+#spaMount.spa-mounted {
+  width: 100%;
+  align-self: stretch;
+  text-align: left;
+  margin: -54px -40px -36px;
+}
 .status-badge-corner {
   display: inline-flex;
   margin-top: 14px;

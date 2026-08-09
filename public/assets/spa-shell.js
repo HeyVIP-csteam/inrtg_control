@@ -32,7 +32,7 @@
   const ROUTES = {
     threads: {
       url: "/threads.html",
-      select: ["#attachLightbox", "#threadsShell"],
+      select: [".threads-topline", "#attachLightbox", "#threadsShell"],
       // Emoji rendering is nice-to-have — threads.html's own code only
       // calls it defensively (`if (window.twemoji) ...`), so this is
       // exactly the "fire and forget" case from pitfall #5.
@@ -40,19 +40,19 @@
     },
     promo: {
       url: "/promo.html",
-      select: ".promo-shell",
+      select: [".threads-topline", ".promo-shell"],
     },
     depositIssue: {
       url: "/deposit-issue.html",
-      select: ["#imgLightbox", ".dep-shell"],
+      select: [".threads-topline", "#imgLightbox", ".dep-shell"],
     },
     depositBackup: {
       url: "/deposit-backup.html",
-      select: ["#imgLightbox", ".dep-shell"],
+      select: [".threads-topline", "#imgLightbox", ".dep-shell"],
     },
     announcements: {
       url: "/announcements.html",
-      select: "#annShell",
+      select: [".ann-page-backrow", "#annShell"],
     },
   };
 
@@ -109,6 +109,7 @@
     if (view === "home" || !ROUTES[view]) {
       currentView = "home";
       mountEl.style.display = "none";
+      mountEl.classList.remove("spa-mounted");
       mountEl.innerHTML = "";
       homeEl.style.display = "";
       if (pushUrl) history.pushState({ view: "home" }, "", SHELL_PATH);
@@ -118,6 +119,7 @@
     homeEl.style.display = "none";
     mountEl.style.display = "flex";
     mountEl.style.flexDirection = "column";
+    mountEl.classList.add("spa-mounted");
     mountEl.innerHTML = '<div class="spa-loading" style="padding:40px; text-align:center; color:var(--ink-soft);">Loading…</div>';
 
     const cfg = ROUTES[view];
