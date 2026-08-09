@@ -74,7 +74,7 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
 <link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;600&display=swap" onload="this.onload=null;this.rel='stylesheet'" />
 <noscript><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;600&display=swap" /></noscript>
-<link rel="stylesheet" href="/assets/style.css?v=54bcd004" />
+<link rel="stylesheet" href="/assets/style.css?v=4b779d48" />
 <link rel="stylesheet" href="/assets/maintenance-breathing-light.css?v=b3446084" />
 <link rel="stylesheet" href="/assets/settings-dropdown.css?v=ff5b816c" />
 <script src="/assets/theme.js?v=5b27e630"></script>
@@ -135,6 +135,18 @@
           <option value="admin">Admin</option>
           <option value="superadmin">SuperAdmin</option>
         </select>
+        <!-- IP Access only — sits in the header row next to the ✕ close
+             button (per business request) instead of as a full-width row
+             above the tables. Static/persistent nodes (NOT rebuilt by
+             ip-access-panel.js's render()), so their click listeners are
+             wired ONCE by ip-access-panel.js — see wireHeaderButtonsOnce
+             there; re-querying/re-binding these on every render() would
+             stack duplicate listeners since, unlike the dashboard body,
+             these nodes never get thrown away and recreated. -->
+        <div class="ipa-header-actions" id="ipaHeaderActions" style="display:none;">
+          <button type="button" class="btn-submit ipa-ghost-btn" id="ipaManageOfficesBtn">+ Manage offices</button>
+          <button type="button" class="btn-submit ipa-ghost-btn" id="ipaRecordBtn">🕘 Record</button>
+        </div>
       </div>
       <div id="acctModalBody"></div>
       <p class="edit-modal-note" id="acctModalNote"></p>
@@ -268,7 +280,7 @@
   <script src="/assets/announcement-banner.js?v=4881665d"></script>
   <script src="/assets/settings-dropdown.js?v=437d2f61"></script>
   <script src="/assets/settings-admin-panel.js?v=53569c6b"></script>
-  <script src="/assets/ip-access-panel.js?v=aa8c1fea"></script>
+  <script src="/assets/ip-access-panel.js?v=1e5601f2"></script>
   <script>
     window.initThemeToggle();
     window.initClock();
@@ -679,6 +691,7 @@
       const searchEl = document.getElementById("acctProfileSearch");
       searchEl.style.display = mode === "profile" ? "" : "none";
       if (mode === "profile") searchEl.value = "";
+      document.getElementById("ipaHeaderActions").style.display = mode === "whitelist" ? "flex" : "none";
 
       if (mode === "create") {
         acctTitle.textContent = "Create Account";

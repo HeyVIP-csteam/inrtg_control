@@ -14,7 +14,13 @@
  *   - IP addresses render in a fixed green + monospace style.
  *   - Each table paginates independently (10/20/30 per page).
  *   - "Manage offices" and "Record" are separate stacked popups, not
- *     inline accordions.
+ *     inline accordions. They live as static buttons in the modal's
+ *     header row (next to ✕), not inside this file's own innerHTML —
+ *     see wireHeaderButtonsOnce below for why that matters.
+ *   - The 4 stat cards are click-to-filter, not just numbers: Total IPs
+ *     shows Approved+Blocked ("the settled ones"), Approved/Pending/
+ *     Blocked each show just that one table. Pending is NEVER part of
+ *     the default view — it only appears once its own card is clicked.
  *   - "Add IP manually" / "Block an IP" are collapsible, auto-collapse
  *     after a successful submit, and accept comma-separated batches
  *     submitted ONE AT A TIME (not Promise.all — concurrent writes to
@@ -24,8 +30,17 @@
   const COLS = "1.1fr 1.3fr 1.2fr 1.1fr 1fr"; // shared across all 3 tables
   const pageState = {}; // { [category]: { page, size } }
 
+  // Which table section(s) are currently shown below the stat cards.
+  // "total" (default) means "the settled ones" — Approved + Blocked
+  // together, matching the hint text below the stat cards. Clicking a
+  // specific card narrows to just that one category; Pending in
+  // particular has NO table visible until its own card is clicked (it's
+  // deliberately not part of "total" — see the hint text).
+  let activeView = "total"; // "total" | "pending" | "approved" | "blocked"
+
   let ctx = null; // { authFetch, canEdit, escapeHtml }
   let data = null; // last GET /api/admin/ip-access response
+  let headerWired = false; // see wireHeaderButtonsOnce
 
   async function fetchDashboard() {
     const res = await ctx.authFetch("/api/admin/ip-access");
@@ -44,6 +59,7 @@
     }
     ["pending", "approved", "blocked"].forEach((cat) => { if (!pageState[cat]) pageState[cat] = { page: 1, size: 10 }; });
     render(bodyEl);
+    wireHeaderButtonsOnce();
   };
 
   // Called by index.html after an office is saved/deleted in the
@@ -62,17 +78,22 @@
 
   function render(bodyEl) {
     const { stats } = data;
+    // Pending gets a breathing/pulsing card the moment there's at least
+    // one request waiting — 0 pending is the calm, ordinary state, 1+ is
+    // "someone needs a decision", same visual language as the maintenance
+    // "breathing light" badge elsewhere in the app (see
+    // maintenance-breathing-light.css's fs-breathe keyframe — ipa-pulse
+    // below is its own copy tuned for a whole card instead of a small
+    // pill, but deliberately the same 1.8s timing so it doesn't feel like
+    // a different, ad-hoc animation next to that one).
+    const pendingAlert = stats.pending > 0 ? " ipa-pending-alert" : "";
     bodyEl.innerHTML = `
       <div class="ipa-dashboard">
         <div class="ipa-stat-cards">
-          <div class="ipa-stat-card"><div class="ipa-stat-label">Total IPs</div><div class="ipa-stat-value">${stats.totalIPs}</div></div>
-          <div class="ipa-stat-card"><div class="ipa-stat-label">Approved</div><div class="ipa-stat-value ipa-stat-approved">${stats.approved}</div></div>
-          <div class="ipa-stat-card"><div class="ipa-stat-label">Pending</div><div class="ipa-stat-value ipa-stat-pending">${stats.pending}</div></div>
-          <div class="ipa-stat-card"><div class="ipa-stat-label">Blocked</div><div class="ipa-stat-value ipa-stat-blocked">${stats.blocked}</div></div>
-        </div>
-        <div class="ipa-top-actions">
-          <button type="button" class="btn-submit ipa-ghost-btn" id="ipaManageOfficesBtn">+ Manage offices</button>
-          <button type="button" class="btn-submit ipa-ghost-btn" id="ipaRecordBtn">🕘 Record</button>
+          <div class="ipa-stat-card${activeView === "total" ? " ipa-stat-card-active" : ""}" data-ipa-view="total"><div class="ipa-stat-label">Total IPs</div><div class="ipa-stat-value">${stats.totalIPs}</div></div>
+          <div class="ipa-stat-card${activeView === "approved" ? " ipa-stat-card-active" : ""}" data-ipa-view="approved"><div class="ipa-stat-label">Approved</div><div class="ipa-stat-value ipa-stat-approved">${stats.approved}</div></div>
+          <div class="ipa-stat-card${activeView === "pending" ? " ipa-stat-card-active" : ""}${pendingAlert}" data-ipa-view="pending"><div class="ipa-stat-label">Pending</div><div class="ipa-stat-value ipa-stat-pending">${stats.pending}</div></div>
+          <div class="ipa-stat-card${activeView === "blocked" ? " ipa-stat-card-active" : ""}" data-ipa-view="blocked"><div class="ipa-stat-label">Blocked</div><div class="ipa-stat-value ipa-stat-blocked">${stats.blocked}</div></div>
         </div>
         ${ctx.canEdit ? `
         <div class="ipa-collapsible" id="ipaAddWrap">
@@ -108,11 +129,21 @@
           </div>
         </div>
         <p class="ipa-form-hint ipa-settled-hint">Approved and blocked IPs — the settled ones. Pending has its own card.</p>` : ""}
-        ${renderTableSection("pending", "Pending", data.pending)}
-        ${renderTableSection("approved", "Approved", data.approved)}
-        ${renderTableSection("blocked", "Blocked", data.blocked)}
+        ${sectionsFor(activeView).map((cat) => renderTableSection(cat, catLabel(cat), data[cat])).join("")}
       </div>`;
     wireStaticControls(bodyEl);
+  }
+
+  // "total" (the default) is deliberately Approved + Blocked, NOT
+  // Pending — matches the hint text above ("Pending has its own card")
+  // and means opening the panel never surprises anyone with a pending
+  // queue they didn't ask to see. Every other view is exactly one table.
+  function sectionsFor(view) {
+    if (view === "total") return ["approved", "blocked"];
+    return [view];
+  }
+  function catLabel(cat) {
+    return cat === "pending" ? "Pending" : cat === "approved" ? "Approved" : "Blocked";
   }
 
   function officeOptions() {
@@ -147,8 +178,8 @@
         <div class="ipa-row" style="grid-template-columns:${COLS};">
           <div>${ipCell(r.ip)}</div>
           <div>${ctx.escapeHtml(r.officeName || "—")}</div>
-          <div>${ctx.escapeHtml(r.source || "—")}</div>
-          <div>${ctx.escapeHtml(r.addedBy || "—")}${r.addedAt ? ` · ${fmtTime(r.addedAt)}` : ""}</div>
+          <div title="${ctx.escapeHtml(r.source || "")}">${ctx.escapeHtml(r.addedBy || "—")}</div>
+          <div>${fmtTime(r.addedAt)}</div>
           <div class="ipa-row-actions">
             ${ctx.canEdit ? `<button type="button" class="row-btn" data-ipa-remove="${ctx.escapeHtml(r.officeId)}|${ctx.escapeHtml(r.ip)}">Remove</button>` : ""}
           </div>
@@ -169,7 +200,7 @@
 
   function headerFor(cat) {
     if (cat === "pending") return ["IP", "Office", "Attempts", "Requested by", "Actions"];
-    if (cat === "approved") return ["IP", "Office", "Source", "Added by", "Actions"];
+    if (cat === "approved") return ["IP", "Office", "Added by", "Date", "Actions"];
     return ["IP", "Reason", "Blocked by", "Blocked at", "Actions"];
   }
 
@@ -205,16 +236,32 @@
       </div>`;
   }
 
-  function wireStaticControls(bodyEl) {
-    bodyEl.querySelector("#ipaManageOfficesBtn")?.addEventListener("click", async () => {
+  // "+ Manage offices" / "🕘 Record" now live as static nodes in
+  // index.html's modal header row (next to the ✕ close button), not
+  // inside bodyEl's innerHTML — so unlike everything else wired in
+  // wireStaticControls (which runs every render() pass, safe because
+  // bodyEl's contents are thrown away and rebuilt each time), these two
+  // must only ever be bound ONCE per page load, or every re-render would
+  // stack another duplicate listener on the same persistent node and a
+  // single click would fire the handler multiple times.
+  function wireHeaderButtonsOnce() {
+    if (headerWired) return;
+    headerWired = true;
+    document.getElementById("ipaManageOfficesBtn")?.addEventListener("click", async () => {
       if (window.ipaLoadOfficePicker) await window.ipaLoadOfficePicker();
       document.getElementById("ipaOfficeBackdrop").classList.add("is-open");
     });
-
-    bodyEl.querySelector("#ipaRecordBtn")?.addEventListener("click", () => {
+    document.getElementById("ipaRecordBtn")?.addEventListener("click", () => {
       renderRecordPopup();
       document.getElementById("ipaRecordBackdrop").classList.add("is-open");
     });
+  }
+
+  function wireStaticControls(bodyEl) {
+    bodyEl.querySelectorAll("[data-ipa-view]").forEach((card) => card.addEventListener("click", () => {
+      activeView = card.dataset.ipaView;
+      render(bodyEl);
+    }));
 
     wireCollapsible(bodyEl, "ipaAddHeader", "ipaAddBody");
     wireCollapsible(bodyEl, "ipaBlockHeader", "ipaBlockBody");

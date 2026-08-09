@@ -43,7 +43,7 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
 <link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;600&display=swap" onload="this.onload=null;this.rel='stylesheet'" />
 <noscript><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;600&display=swap" /></noscript>
-<link rel="stylesheet" href="/assets/style.css?v=54bcd004" />
+<link rel="stylesheet" href="/assets/style.css?v=4b779d48" />
 <script src="/assets/theme.js?v=5b27e630"></script>
 <script src="/assets/starfield.js?v=b6e92821" defer></script>
 <script src="/assets/authguard.js?v=9dba9c0c"></script>
@@ -394,6 +394,18 @@
     // Every field that can change how renderItem() below looks/behaves
     // needs to be in here — a missed field means "data changed but the
     // row silently doesn't update" (fingerprint stays the same).
+    //
+    // Deliberately EXCLUDES checkedThreadIds.has(t.id): whether a row is
+    // checked changes constantly (every click, and especially Select
+    // All/None which flips it for every row in the section at once) but
+    // never changes the row's *structure* — only a class and a checkbox's
+    // `.checked` property. If it were part of the fingerprint, toggling
+    // Select All on a large list (hundreds+ rows) would invalidate every
+    // row's fingerprint simultaneously and force a full remove+recreate+
+    // re-bind-listeners pass across all of them in one synchronous tick —
+    // a real, user-visible freeze, not just "diffing overhead". Checked
+    // state is synced separately in reconcileSection via syncCheckedState,
+    // which is cheap enough to run unconditionally on every row every pass.
     function itemRenderKey(t) {
       const unread = Math.max(0, (t.replyCount || 0) - getSeenCount(t.id));
       return [
@@ -401,8 +413,19 @@
         t.accent, t.icon, unread,
         t.id === selectedId,            // selected/open row
         selectMode,                     // bulk-select mode toggles the row's whole markup
-        checkedThreadIds.has(t.id),     // checked in bulk-select mode
       ].join("|");
+    }
+
+    // Cheap, structure-preserving sync of just the checked visual state —
+    // no element creation, no innerHTML, no listener rebinding. Safe to
+    // call on every row every reconcile pass (reused or freshly built).
+    function syncCheckedState(entry, t) {
+      const isChecked = checkedThreadIds.has(t.id);
+      entry.el.classList.toggle("checked", isChecked);
+      if (selectMode) {
+        const cb = entry.el.querySelector(".thread-item-checkbox");
+        if (cb && cb.checked !== isChecked) cb.checked = isChecked;
+      }
     }
 
     // Syncs one section container (activeList/solvedList) to match `items`.
@@ -430,6 +453,7 @@
           renderedItemEls.set(item.id, entry);
           touchedEls.push(entry.el);
         }
+        syncCheckedState(entry, item);
         // Wanted position: right after the previously-placed node. If it's
         // already there, insertBefore is a no-op; if not (new row, or the
         // row moved sections/order), it actually relocates the existing

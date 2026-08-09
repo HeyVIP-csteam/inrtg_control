@@ -1089,6 +1089,21 @@ body.hub-page .topbar { flex-shrink: 0; }
   cursor: pointer;
   background: var(--sidebar-item-bg);
   transition: background 0.15s ease;
+  /* Solved Chat History can grow into the thousands, and every row is a
+     real DOM node all the time (collapsing the section only hides it via
+     `display: none` on the parent — see .threads-section.collapsed above
+     — the rows themselves are still there). content-visibility lets the
+     browser skip layout/paint for rows currently scrolled out of view
+     instead of doing that work for the whole list on every frame — this
+     is what actually smooths out scrolling on a long list, independent
+     of how few/many rows get rebuilt by the JS-side diffing above.
+     contain-intrinsic-size is a size *estimate* used only to reserve
+     scrollbar space before an off-screen row's real layout is known —
+     ~50px matches this row's icon height (26px) + vertical padding
+     (9px×2) + the 6px .thread-list gap; being slightly off just means a
+     tiny, self-correcting scrollbar jump, not a layout bug. */
+  content-visibility: auto;
+  contain-intrinsic-size: 0 50px;
 }
 .thread-item:hover { background: var(--sidebar-item-hover); }
 .thread-item.selected { background: var(--sidebar-item-hover); border-left-color: var(--thread-accent, var(--accent-gold)); }
@@ -1911,8 +1926,13 @@ body.announcements-page .ann-shell { flex: 1; min-height: 0; }
 }
 .ipa-stat-card {
   background: var(--field-bg); border: 1px solid var(--border); border-radius: 12px;
-  padding: 14px 16px;
+  padding: 14px 16px; cursor: pointer; transition: border-color 0.15s ease, background 0.15s ease;
 }
+.ipa-stat-card:hover { border-color: var(--accent-gold); }
+/* Which card's table(s) are currently shown below — see activeView in
+   ip-access-panel.js. Left border instead of full-card recolor so it
+   reads as "selected filter", not "this number is now a warning". */
+.ipa-stat-card-active { border-color: var(--accent-gold); background: var(--sidebar-item-hover); box-shadow: inset 3px 0 0 var(--accent-gold); }
 .ipa-stat-label { font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--ink-soft); margin-bottom: 6px; }
 .ipa-stat-value { font-size: 24px; font-weight: 700; font-family: var(--font-display); color: var(--ink); }
 .ipa-stat-approved { color: #16a34a; }
@@ -1921,7 +1941,28 @@ body.announcements-page .ann-shell { flex: 1; min-height: 0; }
 [data-theme="dark"] .ipa-stat-pending { color: #f3c463; }
 .ipa-stat-blocked { color: #e0577a; }
 
-.ipa-top-actions { display: flex; gap: 10px; margin-bottom: 14px; }
+/* Pending "breathing light" — only while there's actually something
+   waiting (pending > 0). 0 pending stays the plain, calm card style
+   above; this is purely additive on top of it. Same 1.8s timing as
+   maintenance-breathing-light.css's fs-breathe so it reads as the same
+   "needs attention" language used elsewhere in the app, not a one-off. */
+.ipa-pending-alert { animation: ipa-pulse 1.8s ease-in-out infinite; }
+@keyframes ipa-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(217, 119, 6, 0.35); border-color: #d97706; }
+  50% { box-shadow: 0 0 0 5px rgba(217, 119, 6, 0); border-color: #f3c463; }
+}
+[data-theme="dark"] .ipa-pending-alert { animation-name: ipa-pulse-dark; }
+@keyframes ipa-pulse-dark {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(243, 196, 99, 0.4); border-color: #f3c463; }
+  50% { box-shadow: 0 0 0 5px rgba(243, 196, 99, 0); border-color: #f3c463; }
+}
+
+/* Relocated into .edit-modal-header-row, next to the ✕ close button
+   (was a full-width row above the tables). Smaller than the dashboard's
+   other buttons on purpose — this is header chrome now, not a primary
+   action competing with the stat cards for attention. */
+.ipa-header-actions { display: flex; gap: 8px; }
+.ipa-header-actions .ipa-ghost-btn { padding: 6px 12px; font-size: 12px; width: auto; }
 .ipa-ghost-btn {
   background: var(--field-bg); color: var(--ink); box-shadow: none;
   border: 1px solid var(--border);
@@ -1973,6 +2014,16 @@ body.announcements-page .ann-shell { flex: 1; min-height: 0; }
   color: var(--ink-soft); font-weight: 700; background: var(--field-bg);
 }
 .ipa-row > div:last-child, .ipa-row-head > div:last-child { text-align: right; }
+/* Column divider lines. Not on the last column — it's the right-aligned
+   Actions column, a line right before it just crowds the row-btn text. */
+.ipa-row > div:not(:last-child), .ipa-row-head > div:not(:last-child) {
+  border-right: 1px solid var(--border); padding-right: 10px;
+}
+@media (max-width: 720px) {
+  /* Stacked single-column layout below — a right border here would just
+     be a stray line under each field, not a column separator anymore. */
+  .ipa-row > div:not(:last-child), .ipa-row-head > div:not(:last-child) { border-right: none; padding-right: 0; }
+}
 .ipa-row-actions { display: flex; gap: 8px; justify-content: flex-end; }
 .ipa-row-actions .row-btn, .ipa-table .row-btn {
   background: none; border: none;
