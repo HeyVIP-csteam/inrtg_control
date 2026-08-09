@@ -74,7 +74,7 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
 <link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;600&display=swap" onload="this.onload=null;this.rel='stylesheet'" />
 <noscript><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;600&display=swap" /></noscript>
-<link rel="stylesheet" href="/assets/style.css?v=16a7f7f6" />
+<link rel="stylesheet" href="/assets/style.css?v=85731f55" />
 <link rel="stylesheet" href="/assets/maintenance-breathing-light.css?v=b3446084" />
 <link rel="stylesheet" href="/assets/settings-dropdown.css?v=ff5b816c" />
 <script src="/assets/theme.js?v=5b27e630"></script>
@@ -83,7 +83,7 @@
 <script src="/assets/authguard.js?v=9dba9c0c"></script>
 <script src="/assets/pageTransition.js?v=1966b947"></script>
 </head>
-<body class="page-transition-in">
+<body class="page-transition-in hub-page">
   <header class="topbar">
     <div class="topbar-left">
       <img src="/assets/img/logo.webp" alt="HeyVIP" class="logo-img" />
@@ -95,10 +95,6 @@
       <span class="agent-whoami" id="agentWhoami"></span>
     </div>
   </header>
-
-  <nav class="brand-row" id="brandRow"><div class="brand-row-track" id="brandRowTrack"></div></nav>
-
-  <div id="announcementBanner"></div>
 
   <div class="edit-modal-backdrop" id="editModalBackdrop">
     <div class="edit-modal">
@@ -135,8 +131,38 @@
       <p class="edit-modal-note" id="acctModalNote"></p>
       <div class="edit-modal-actions" id="acctModalActions">
         <button type="button" class="btn-submit" id="acctModalSave">Save</button>
-        <button type="button" class="btn-submit" id="acctModalDeleteOffice" style="display:none; background:var(--field-bg); color:#e0577a; box-shadow:none;">Delete Office</button>
       </div>
+    </div>
+  </div>
+
+  <!-- IP Access "Manage offices" popup — stacked ON TOP of #acctModalBackdrop
+       (higher z-index, see style.css), not nested inside it. A sibling
+       overlay, not a child of the main modal, so closeAcctModal() has to
+       close it explicitly too (see that function) — closing a parent
+       doesn't automatically take a sibling down with it. -->
+  <div class="edit-modal-backdrop" id="ipaOfficeBackdrop">
+    <div class="edit-modal">
+      <button type="button" class="modal-close-btn" id="ipaOfficeClose" title="Close" aria-label="Close">✕</button>
+      <p class="edit-modal-title">Manage offices</p>
+      <div class="field"><label>Office</label><select id="ipa_office_picker"><option value="">+ New Office</option></select></div>
+      <div class="field"><label>Office name</label><input type="text" id="ipa_office_name" autocomplete="off" /></div>
+      <div class="field"><label>Allowed IPs (one per line)</label><textarea id="ipa_office_ips" rows="4" placeholder="203.0.113.10" autocomplete="off"></textarea></div>
+      <p class="edit-modal-note" id="ipaOfficeNote"></p>
+      <div class="edit-modal-actions">
+        <button type="button" class="btn-submit" id="ipaOfficeSaveBtn">Save</button>
+        <button type="button" class="btn-submit" id="ipaOfficeDeleteBtn" style="display:none; background:var(--field-bg); color:#e0577a; box-shadow:none;">Delete Office</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- IP Access "Record" popup — full audit log, deliberately unfiltered
+       (always shows everything regardless of which card is selected in
+       the dashboard behind it — see ip-access-panel.js). -->
+  <div class="edit-modal-backdrop" id="ipaRecordBackdrop">
+    <div class="edit-modal wide">
+      <button type="button" class="modal-close-btn" id="ipaRecordClose" title="Close" aria-label="Close">✕</button>
+      <p class="edit-modal-title">IP Access — Record</p>
+      <div id="ipaRecordBody"></div>
     </div>
   </div>
 
@@ -173,9 +199,12 @@
         </div>
       </div>
     </aside>
-    <main class="hub-main">
-      <div class="inner" id="viewHome">
-        <div class="tool-cards">
+    <div class="hub-right-col">
+      <nav class="brand-row" id="brandRow"><div class="brand-row-track" id="brandRowTrack"></div></nav>
+      <div id="announcementBanner"></div>
+      <main class="hub-main">
+        <div class="inner" id="viewHome">
+          <div class="tool-cards">
           <a href="/threads.html" data-route="threads" class="tool-card" id="threadsCard" data-feature-item="tg_reply_threads" style="--tool-accent:#38bdf8;">
             <div class="t-icon" style="background:#38bdf833;">💬<span class="t-badge" id="threadsUnreadBadge"></span></div>
             <div class="t-name">TG Reply Threads</div>
@@ -221,7 +250,8 @@
            these mounted pages need (they were built assuming they're the
            whole page, not a child of .hub-main). -->
       <div id="spaMount" style="display:none;"></div>
-    </main>
+      </main>
+    </div>
   </div>
 
   <script src="/assets/schemas.js?v=b5c55f4a"></script>
@@ -229,6 +259,7 @@
   <script src="/assets/announcement-banner.js?v=4881665d"></script>
   <script src="/assets/settings-dropdown.js?v=437d2f61"></script>
   <script src="/assets/settings-admin-panel.js?v=53569c6b"></script>
+  <script src="/assets/ip-access-panel.js?v=c847d20b"></script>
   <script>
     window.initThemeToggle();
     window.initClock();
@@ -594,7 +625,7 @@
       acctBody.innerHTML = '<p class="edit-modal-note">Loading…</p>';
       acctBackdrop.classList.add("is-open");
       const modalEl = acctBackdrop.querySelector(".edit-modal");
-      modalEl.classList.toggle("wide", mode === "profile" || mode === "tgroutes" || mode === "depositsheets" || mode === "settings");
+      modalEl.classList.toggle("wide", mode === "profile" || mode === "tgroutes" || mode === "depositsheets" || mode === "settings" || mode === "whitelist");
       // "profile", "tgroutes", "depositsheets", and "settings" all use
       // per-row inline save buttons instead of one global footer Save
       // (too many independently-editable rows for a single "Save" to
@@ -602,7 +633,7 @@
       // button now), the whole actions row would otherwise just be dead
       // space when Save is hidden — hide the row itself, not just the
       // button inside it.
-      const showFooterSave = mode !== "profile" && mode !== "tgroutes" && mode !== "depositsheets" && mode !== "settings";
+      const showFooterSave = mode !== "profile" && mode !== "tgroutes" && mode !== "depositsheets" && mode !== "settings" && mode !== "whitelist";
       document.getElementById("acctModalSave").style.display = showFooterSave ? "" : "none";
       document.getElementById("acctModalActions").style.display = showFooterSave ? "" : "none";
       const roleFilterEl = document.getElementById("acctProfileRoleFilter");
@@ -644,31 +675,14 @@
 
       if (mode === "whitelist") {
         acctTitle.textContent = "IP Access";
-        const res = await window.AgentAuth.authFetch("/api/admin/offices");
-        const data = await res.json();
-        acctOffices = data.ok ? data.offices : [];
-        const officeOptions = acctOffices.map((o) => `<option value="${o.id}">${acctEsc(o.name)}</option>`).join("");
         const canEditWhitelist = canEditAdminSection("whitelistIp");
-        const ro = canEditWhitelist ? "" : "disabled";
-        acctBody.innerHTML = `
-          <div class="field"><label>Office</label><select id="am_office_picker" ${ro}><option value="">+ New Office</option>${officeOptions}</select></div>
-          <div class="field"><label>Office name</label><input type="text" id="am_office_name" ${ro} autocomplete="off" /></div>
-          <div class="field"><label>Allowed IPs (one per line)</label><textarea id="am_office_ips" rows="4" placeholder="203.0.113.10" ${ro} autocomplete="off"></textarea></div>
-          ${canEditWhitelist ? "" : '<p class="edit-modal-note">View only.</p>'}`;
-        const deleteOfficeBtn = document.getElementById("acctModalDeleteOffice");
-        document.getElementById("am_office_picker").addEventListener("change", (e) => {
-          const office = acctOffices.find((o) => o.id === e.target.value);
-          document.getElementById("am_office_name").value = office ? office.name : "";
-          document.getElementById("am_office_ips").value = office ? (office.allowedIPs || []).join("\n") : "";
-          // Only an EXISTING office can be deleted — "+ New Office" (empty
-          // value) has nothing to delete yet.
-          deleteOfficeBtn.style.display = canEditWhitelist && e.target.value ? "" : "none";
+        acctBody.innerHTML = '<div class="spa-loading" style="padding:30px; text-align:center; color:var(--ink-soft);">Loading…</div>';
+        await window.renderIpAccessPanel(acctBody, {
+          authFetch: window.AgentAuth.authFetch,
+          canEdit: canEditWhitelist,
+          escapeHtml: acctEsc,
         });
-        document.getElementById("acctModalSave").style.display = canEditWhitelist ? "" : "none";
-        document.getElementById("acctModalActions").style.display = canEditWhitelist ? "" : "none";
-        deleteOfficeBtn.style.display = "none"; // starts on "+ New Office"
       }
-      if (mode !== "whitelist") document.getElementById("acctModalDeleteOffice").style.display = "none";
 
       if (mode === "reset" && isSenior) {
         acctTitle.textContent = "Reset Password";
@@ -1638,17 +1652,28 @@
 
     function closeAcctModal() {
       acctBackdrop.classList.remove("is-open");
+      // These are siblings, not children of #acctModalBackdrop — closing
+      // the main modal must explicitly take them down too, or they'd be
+      // left floating on screen with no modal behind them.
+      document.getElementById("ipaOfficeBackdrop").classList.remove("is-open");
+      document.getElementById("ipaRecordBackdrop").classList.remove("is-open");
       acctMode = null;
     }
     document.getElementById("acctModalClose").addEventListener("click", closeAcctModal);
     acctBackdrop.addEventListener("click", (e) => { if (e.target === acctBackdrop) closeAcctModal(); });
 
+    const ipaOfficeBackdrop = document.getElementById("ipaOfficeBackdrop");
+    document.getElementById("ipaOfficeClose").addEventListener("click", () => ipaOfficeBackdrop.classList.remove("is-open"));
+    ipaOfficeBackdrop.addEventListener("click", (e) => { if (e.target === ipaOfficeBackdrop) ipaOfficeBackdrop.classList.remove("is-open"); });
+
+    const ipaRecordBackdrop = document.getElementById("ipaRecordBackdrop");
+    document.getElementById("ipaRecordClose").addEventListener("click", () => ipaRecordBackdrop.classList.remove("is-open"));
+    ipaRecordBackdrop.addEventListener("click", (e) => { if (e.target === ipaRecordBackdrop) ipaRecordBackdrop.classList.remove("is-open"); });
+
     document.getElementById("acctModalSave").addEventListener("click", async () => {
       if (acctMode === "create") return acctSaveCreate();
-      if (acctMode === "whitelist") return acctSaveWhitelist();
       if (acctMode === "reset") return isSenior ? acctSaveResetAdmin() : acctSaveResetSelf();
     });
-    document.getElementById("acctModalDeleteOffice").addEventListener("click", acctDeleteWhitelistOffice);
 
     function wireBrandTogglePicker() {
       const grid = document.getElementById("am_brandGrid");
@@ -1707,42 +1732,73 @@
       setTimeout(closeAcctModal, 700);
     }
 
-    async function acctSaveWhitelist() {
-      const name = document.getElementById("am_office_name").value.trim();
-      if (!name) return setAcctNote("Office name is required.", "err");
-      const allowedIPs = document.getElementById("am_office_ips").value.split("\n").map((s) => s.trim()).filter(Boolean);
-      const id = document.getElementById("am_office_picker").value || undefined;
-      setAcctNote("Saving…");
+    // ---- IP Access → "Manage offices" popup (functions retargeted from
+    // the old whitelist-mode footer Save/Delete to this popup's own
+    // buttons — same request bodies, just called from a different
+    // place now that the IP Access dashboard owns the main modal body). ----
+    async function ipaOfficeSave() {
+      const name = document.getElementById("ipa_office_name").value.trim();
+      if (!name) return ipaOfficeNote("Office name is required.", "err");
+      const allowedIPs = document.getElementById("ipa_office_ips").value.split("\n").map((s) => s.trim()).filter(Boolean);
+      const id = document.getElementById("ipa_office_picker").value || undefined;
+      ipaOfficeNote("Saving…");
       const res = await window.AgentAuth.authFetch("/api/admin/offices", {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action: "save", id, name, allowedIPs }),
       });
       const data = await res.json();
-      if (!data.ok) return setAcctNote(data.error || "Save failed.", "err");
-      setAcctNote("Save success.", "ok");
-      setTimeout(closeAcctModal, 700);
+      if (!data.ok) return ipaOfficeNote(data.error || "Save failed.", "err");
+      ipaOfficeNote("Save success.", "ok");
+      if (window.refreshIpAccessPanel) window.refreshIpAccessPanel();
+      await ipaLoadOfficePicker();
     }
 
-    // Ported from the now-retired accounts-admin.html's Offices tab —
-    // the picker-based "IP Access" modal above can create/edit an office
-    // but had no way to remove one; this closes that gap so nothing was
-    // lost in the consolidation. Same confirm-then-call-then-refresh
-    // shape as setAgentLock()/deleteOffice() used to have.
-    async function acctDeleteWhitelistOffice() {
-      const id = document.getElementById("am_office_picker").value;
-      const name = document.getElementById("am_office_name").value || "this office";
+    async function ipaOfficeDelete() {
+      const id = document.getElementById("ipa_office_picker").value;
+      const name = document.getElementById("ipa_office_name").value || "this office";
       if (!id) return;
       if (!confirm(`Delete office "${name}"? Accounts assigned to it will need a new office.`)) return;
-      setAcctNote("Deleting…");
+      ipaOfficeNote("Deleting…");
       const res = await window.AgentAuth.authFetch("/api/admin/offices", {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action: "delete", id }),
       });
       const data = await res.json();
-      if (!data.ok) return setAcctNote(data.error || "Delete failed.", "err");
-      setAcctNote("Delete success.", "ok");
-      setTimeout(closeAcctModal, 700);
+      if (!data.ok) return ipaOfficeNote(data.error || "Delete failed.", "err");
+      ipaOfficeNote("Delete success.", "ok");
+      if (window.refreshIpAccessPanel) window.refreshIpAccessPanel();
+      await ipaLoadOfficePicker();
     }
+
+    function ipaOfficeNote(text, cls) {
+      const el = document.getElementById("ipaOfficeNote");
+      if (!el) return;
+      el.textContent = text;
+      el.className = "edit-modal-note" + (cls ? ` ${cls}` : "");
+    }
+
+    async function ipaLoadOfficePicker() {
+      const res = await window.AgentAuth.authFetch("/api/admin/offices");
+      const data = await res.json();
+      const offices = data.ok ? data.offices : [];
+      const picker = document.getElementById("ipa_office_picker");
+      if (!picker) return;
+      const current = picker.value;
+      picker.innerHTML = '<option value="">+ New Office</option>' + offices.map((o) => `<option value="${acctEsc(o.id)}">${acctEsc(o.name)}</option>`).join("");
+      picker.value = current;
+      picker.dataset.offices = JSON.stringify(offices);
+    }
+    document.addEventListener("change", (e) => {
+      if (e.target.id !== "ipa_office_picker") return;
+      const offices = JSON.parse(e.target.dataset.offices || "[]");
+      const office = offices.find((o) => o.id === e.target.value);
+      document.getElementById("ipa_office_name").value = office ? office.name : "";
+      document.getElementById("ipa_office_ips").value = office ? (office.allowedIPs || []).join("\n") : "";
+      const deleteBtn = document.getElementById("ipaOfficeDeleteBtn");
+      if (deleteBtn) deleteBtn.style.display = e.target.value ? "" : "none";
+    });
+    document.getElementById("ipaOfficeSaveBtn")?.addEventListener("click", ipaOfficeSave);
+    document.getElementById("ipaOfficeDeleteBtn")?.addEventListener("click", ipaOfficeDelete);
 
     async function acctSaveResetAdmin() {
       const username = document.getElementById("am_reset_account").value;
@@ -1783,6 +1839,6 @@
       setTimeout(closeAcctModal, 700);
     }
   </script>
-  <script src="/assets/spa-shell.js?v=2d786856"></script>
+  <script src="/assets/spa-shell.js?v=6af2f04e"></script>
 </body>
 </html>

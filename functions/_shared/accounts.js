@@ -653,6 +653,18 @@ export async function verifyRequest(request, env) {
   // is stale even if its signature and expiry are both still valid.
   if ((account.tokenVersion || 0) !== payload.v) return null;
 
+  // IP Access blocklist check — deliberately a raw KV read here instead
+  // of importing isIpBlocked() from _shared/ipAccess.js, because that
+  // module imports getOffice()/saveOffice()/setAccountLocked()/
+  // listOffices() FROM this file — importing back from here would be a
+  // circular module dependency. It's one line either way; not worth the
+  // risk of a bundler mishandling the cycle. Keep the `ipblock:<ip>` key
+  // shape in sync with _shared/ipAccess.js if that ever changes. Checked
+  // before officeIpCheckPasses() — cheaper (no office KV read) and a
+  // blocked IP should never even get to see "not on the approved list"
+  // wording, just the block message (mirrored in login.js).
+  if (await env.THREADS_KV.get(`ipblock:${requestIP(request)}`)) return null;
+
   if (!(await officeIpCheckPasses(env, account, request))) return null;
 
   await touchLastActive(env, account);

@@ -11,18 +11,20 @@
  * Built from spa-shell-pattern-guide.md's v2 template. See that doc for
  * the reasoning behind each fix referenced below by number.
  *
- * KNOWN GAP (not fixed here — needs real-browser QA, not guessed at):
- * the standalone threads.html/announcements.html pages assume they own
- * the full viewport below a single 61px topbar (their .threads-shell /
- * .ann-shell use `height: calc(100vh - 61px)` or 100%, with internal
- * scroll panes). index.html additionally has a .brand-row nav and an
- * #announcementBanner slot above .hub-layout, so the mounted shell has
- * *slightly* less real vertical room than the original page did — the
- * likely visible symptom, if any, is a bit of outer-page scroll beneath
- * an already-internally-scrolling panel, not a broken layout. Check this
- * first when testing in a real browser; a `#spaMount .threads-shell` /
- * `#spaMount .ann-shell` height override in style.css is the fix if it
- * turns out to matter visually.
+ * EXTRA FIX NOT IN THE ORIGINAL GUIDE: each of the 5 pages keeps its own
+ * page-specific CSS in a <style> block in ITS OWN <head> (not in the
+ * shared style.css) — mount() only ever clones selected BODY content, so
+ * without injectPageStyles() below, a freshly-mounted view renders with
+ * zero styling for anything that isn't already in the shared stylesheet
+ * (this was a real, ship-blocking bug the first time around, not a
+ * hypothetical). Fixed by copying every <style> tag out of the fetched
+ * doc's <head> into the real document's <head>, once per view, cached.
+ *
+ * index.html's own layout is now also viewport-locked (see style.css's
+ * `body.hub-page` rules) the same way threads.html/announcements.html
+ * already were, with .hub-main doing its own internal overflow-y:auto —
+ * so a mounted view slightly taller than the available space just gets
+ * its own scrollbar there instead of anything visually breaking.
  */
 (function () {
   const SHELL_PATH = "/"; // pushState never targets anything else — see pitfall #7
@@ -32,32 +34,36 @@
   const ROUTES = {
     threads: {
       url: "/threads.html",
-      select: [".threads-topline", "#attachLightbox", "#threadsShell"],
+      select: ["#attachLightbox", "#threadsShell"],
       // Emoji rendering is nice-to-have — threads.html's own code only
       // calls it defensively (`if (window.twemoji) ...`), so this is
       // exactly the "fire and forget" case from pitfall #5.
       extScripts: ["https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/twemoji.min.js"],
+      // No .threads-topline (its own "← Back to Home" pill) — the
+      // persistent sidebar's Home link already covers that, and having
+      // both was redundant.
     },
     promo: {
       url: "/promo.html",
-      select: [".threads-topline", ".promo-shell"],
+      select: ".promo-shell",
     },
     depositIssue: {
       url: "/deposit-issue.html",
-      select: [".threads-topline", "#imgLightbox", ".dep-shell"],
+      select: ["#imgLightbox", ".dep-shell"],
     },
     depositBackup: {
       url: "/deposit-backup.html",
-      select: [".threads-topline", "#imgLightbox", ".dep-shell"],
+      select: ["#imgLightbox", ".dep-shell"],
     },
     announcements: {
       url: "/announcements.html",
-      select: [".ann-page-backrow", "#annShell"],
+      select: "#annShell",
     },
   };
 
   const htmlCache = new Map();
   const loadedExtScripts = new Set();
+  const injectedStyleViews = new Set();
   const viewIntervals = {};
   Object.keys(ROUTES).forEach((k) => (viewIntervals[k] = []));
   let currentView = "home";
@@ -100,6 +106,28 @@
     });
   }
 
+  // Each of the 5 pages carries its OWN page-specific CSS in a <style>
+  // block in its own <head> (not in the shared style.css — e.g.
+  // deposit-issue.html's 100+ .dep-* rules exist nowhere else). The
+  // fetched doc's <head> is never otherwise touched by mount() — only
+  // the selected body content gets cloned in — so without this, a
+  // mounted view renders with zero styling for anything that isn't
+  // already in the shared stylesheet. Injected once per view and
+  // cached (data-spa-style="<view>-<n>" guards against a duplicate on
+  // repeat visits), not removed on navigating away — CSS rules sitting
+  // unused in <head> cost nothing at runtime, and re-injecting/removing
+  // on every visit would just be churn for no benefit.
+  function injectPageStyles(view, doc) {
+    if (injectedStyleViews.has(view)) return;
+    injectedStyleViews.add(view);
+    doc.querySelectorAll("style").forEach((styleEl, i) => {
+      const tag = document.createElement("style");
+      tag.setAttribute("data-spa-style", `${view}-${i}`);
+      tag.textContent = styleEl.textContent;
+      document.head.appendChild(tag);
+    });
+  }
+
   async function mount(view, { pushUrl = true } = {}) {
     clearViewIntervals(currentView);
     currentView = view;
@@ -139,6 +167,8 @@
     // below), instead of the browser asking the server for a static file
     // that would show up with no shell around it at all.
     if (pushUrl) history.pushState({ view }, "", `${SHELL_PATH}?view=${view}`);
+
+    injectPageStyles(view, doc);
 
     const selectors = Array.isArray(cfg.select) ? cfg.select : [cfg.select];
     const frag = document.createDocumentFragment();
