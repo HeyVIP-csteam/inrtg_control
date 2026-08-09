@@ -17,10 +17,11 @@
  *     inline accordions. They live as static buttons in the modal's
  *     header row (next to ✕), not inside this file's own innerHTML —
  *     see wireHeaderButtonsOnce below for why that matters.
- *   - The 4 stat cards are click-to-filter, not just numbers: Total IPs
- *     shows Approved+Blocked ("the settled ones"), Approved/Pending/
- *     Blocked each show just that one table. Pending is NEVER part of
- *     the default view — it only appears once its own card is clicked.
+ *   - The 4 stat cards are click-to-filter, not just numbers: nothing is
+ *     shown below them until a card is clicked. Total IPs then shows
+ *     Approved+Blocked ("the settled ones"); Approved/Pending/Blocked
+ *     each show just that one table. Pending is NEVER part of Total
+ *     IPs's view — it only appears once its own card is clicked.
  *   - "Add IP manually" / "Block an IP" are collapsible, auto-collapse
  *     after a successful submit, and accept comma-separated batches
  *     submitted ONE AT A TIME (not Promise.all — concurrent writes to
@@ -31,12 +32,13 @@
   const pageState = {}; // { [category]: { page, size } }
 
   // Which table section(s) are currently shown below the stat cards.
-  // "total" (default) means "the settled ones" — Approved + Blocked
-  // together, matching the hint text below the stat cards. Clicking a
-  // specific card narrows to just that one category; Pending in
-  // particular has NO table visible until its own card is clicked (it's
-  // deliberately not part of "total" — see the hint text).
-  let activeView = "total"; // "total" | "pending" | "approved" | "blocked"
+  // null (the default, on every fresh open) means "nothing yet" — just
+  // the 4 cards + Add/Block collapsibles, no table, until the person
+  // clicks a card. "total" (only reachable by clicking Total IPs) is
+  // Approved + Blocked together ("the settled ones"); every other value
+  // is exactly the one matching table. Pending is NEVER part of "total"
+  // — it only ever appears once its own card is clicked.
+  let activeView = null; // null | "total" | "pending" | "approved" | "blocked"
 
   let ctx = null; // { authFetch, canEdit, escapeHtml }
   let data = null; // last GET /api/admin/ip-access response
@@ -128,17 +130,28 @@
             <p class="edit-modal-note" id="ipaBlockNote"></p>
           </div>
         </div>
-        <p class="ipa-form-hint ipa-settled-hint">Approved and blocked IPs — the settled ones. Pending has its own card.</p>` : ""}
+        ${hintText() ? `<p class="ipa-form-hint ipa-settled-hint">${hintText()}</p>` : ""}` : ""}
         ${sectionsFor(activeView).map((cat) => renderTableSection(cat, catLabel(cat), data[cat])).join("")}
       </div>`;
     wireStaticControls(bodyEl);
   }
 
-  // "total" (the default) is deliberately Approved + Blocked, NOT
-  // Pending — matches the hint text above ("Pending has its own card")
-  // and means opening the panel never surprises anyone with a pending
-  // queue they didn't ask to see. Every other view is exactly one table.
+  // No card clicked yet → nothing to say beyond "go click one". Total IPs
+  // → explain why Pending isn't included. Every single-category view is
+  // self-explanatory from its own table title, so no hint needed there.
+  function hintText() {
+    if (activeView === null) return "Click a card above to view its IPs and record.";
+    if (activeView === "total") return "Approved and blocked IPs — the settled ones. Pending has its own card.";
+    return "";
+  }
+
+  // null (nothing clicked yet) shows no table at all. "total" (only
+  // reachable by clicking Total IPs) is deliberately Approved + Blocked,
+  // NOT Pending — matches hintText() above and means opening the panel
+  // never surprises anyone with a pending queue they didn't ask to see.
+  // Every other view is exactly the one matching table.
   function sectionsFor(view) {
+    if (view === null) return [];
     if (view === "total") return ["approved", "blocked"];
     return [view];
   }
@@ -228,11 +241,12 @@
           </div>
           ${pageRows.length ? rowsFor(cat, pageRows) : `<div class="ipa-empty-row">Nothing here.</div>`}
         </div>
+        ${totalPages > 1 ? `
         <div class="ipa-pagination">
           <button type="button" class="row-btn" data-ipa-prevpage="${cat}" ${state.page <= 1 ? "disabled" : ""}>Previous</button>
           <span class="ipa-page-indicator">Page ${state.page} / ${totalPages}</span>
           <button type="button" class="row-btn" data-ipa-nextpage="${cat}" ${state.page >= totalPages ? "disabled" : ""}>Next</button>
-        </div>
+        </div>` : ""}
       </div>`;
   }
 

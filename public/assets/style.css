@@ -2033,7 +2033,20 @@ body.announcements-page .ann-shell { flex: 1; min-height: 0; }
 .ipa-row-actions .row-btn:hover, .ipa-table .row-btn:hover { opacity: 0.75; }
 .ipa-empty-row { padding: 20px; text-align: center; color: var(--ink-soft); font-size: 12.5px; }
 
-.ipa-pagination { display: flex; align-items: center; justify-content: center; gap: 14px; margin-top: 10px; }
+.ipa-pagination { display: flex; align-items: center; justify-content: flex-end; gap: 14px; margin-top: 10px; }
+/* Previous/Next used class="row-btn" but sat inside .ipa-pagination, which
+   wasn't part of either selector that actually styles that class
+   (.ipa-row-actions .row-btn / .ipa-table .row-btn below) — so these two
+   were silently falling back to the bare, unstyled browser default button
+   (white fill, black border), the "white box" bug. Explicit rule here
+   instead of widening one of those selectors to include .ipa-pagination,
+   so this stays easy to find/adjust independent of the row-action buttons. */
+.ipa-pagination .row-btn {
+  background: none; border: none; color: var(--label-blue);
+  font-size: 12.5px; font-weight: 700; padding: 0;
+  text-decoration: underline; text-underline-offset: 2px; cursor: pointer;
+}
+.ipa-pagination .row-btn:hover:not(:disabled) { opacity: 0.75; }
 .ipa-page-indicator { font-size: 12px; color: var(--ink-soft); }
 .ipa-pagination .row-btn:disabled { opacity: 0.4; cursor: not-allowed; }
 
