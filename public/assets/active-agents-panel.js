@@ -437,7 +437,7 @@
     const todayRow = rows[0];
 
     const tableRows = rows.map((r) => `
-      <div class="ipa-row${r.isToday ? " aa-record-row-today" : ""}" style="grid-template-columns:1fr 1.2fr 1.2fr;">
+      <div class="ipa-row${r.isToday ? " aa-record-row-today" : ""}" style="grid-template-columns:0.8fr 0.8fr 1.4fr;">
         <div>${r.isToday ? "Today" : ctx.escapeHtml(r.label)}</div>
         <div style="text-align:left;">${fmtDuration(r.totalOnlineMs)}</div>
         <div>${clockTime(r.lastActiveAt)}</div>
@@ -456,7 +456,7 @@
       </div>
       <p class="ipa-table-title" style="margin:16px 0 8px;">LAST ${RECORD_DAYS} DAYS</p>
       <div class="ipa-table">
-        <div class="ipa-row ipa-row-head" style="grid-template-columns:1fr 1.2fr 1.2fr;"><div>Date</div><div style="text-align:left;">Total online time</div><div>Last active time</div></div>
+        <div class="ipa-row ipa-row-head" style="grid-template-columns:0.8fr 0.8fr 1.4fr;"><div>Date</div><div style="text-align:left;">Total online time</div><div>Last active time</div></div>
         ${tableRows}
       </div>`;
   }
