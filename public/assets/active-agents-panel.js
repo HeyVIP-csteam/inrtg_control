@@ -77,12 +77,16 @@
     try { return new Date(iso).toLocaleString(); } catch { return iso; }
   }
 
-  // "13 sec ago" / "5 min ago" / "2 hr ago" — matches the reference
-  // mock's wording exactly. Falls back to a plain date once it's been
-  // long enough that "ago" phrasing stops being useful (matches how
-  // fmtTime() reads for anything not recent).
+  // "13 sec ago" / "5 min ago" / "2 hr ago" / "3 days ago" — matches the
+  // reference mock's wording exactly, extended with day-level
+  // granularity since offline agents can realistically be offline for
+  // days, not just hours (falling straight to a full date past 24h
+  // read as broken/no-data at a glance). An account that has NEVER sent
+  // a single heartbeat (brand new, or just never logged in since this
+  // feature shipped) has no timestamp to show at all — "Never online"
+  // says that plainly instead of a bare "—", which reads as an error.
   function timeAgo(iso) {
-    if (!iso) return "—";
+    if (!iso) return "Never online";
     const diffMs = Date.now() - new Date(iso).getTime();
     if (diffMs < 0) return "just now";
     const sec = Math.floor(diffMs / 1000);
@@ -92,6 +96,8 @@
     if (min < 60) return `${min} min ago`;
     const hr = Math.floor(min / 60);
     if (hr < 24) return `${hr} hr ago`;
+    const days = Math.floor(hr / 24);
+    if (days < 14) return `${days} day${days === 1 ? "" : "s"} ago`;
     return fmtTime(iso);
   }
 
@@ -241,7 +247,7 @@
             <span class="aa-dot ${meta.dotCls} aa-avatar-dot"></span>
           </div>
           <div class="aa-roster-info">
-            <div class="aa-roster-name">@${ctx.escapeHtml(a.username)}</div>
+            <div class="aa-roster-name">${ctx.escapeHtml(a.username)}</div>
             ${a.fullName ? `<div class="aa-roster-fullname">${ctx.escapeHtml(a.fullName)}</div>` : ""}
             <div class="aa-pill-row">${pills.join("")}</div>
           </div>
@@ -275,6 +281,9 @@
       recordSearchTerm = e.target.value.trim().toLowerCase();
       renderRecordAgentList();
     });
+    document.getElementById("aaRecordBackBtn")?.addEventListener("click", () => {
+      showRecordSearchView();
+    });
     document.getElementById("aaRefreshBtn")?.addEventListener("click", async (e) => {
       const btn = e.currentTarget;
       const bodyEl = document.getElementById("aaModalBody");
@@ -293,10 +302,28 @@
     selectedRecordUsername = null;
     const searchInput = document.getElementById("aaRecordSearchInput");
     if (searchInput) searchInput.value = "";
+    showRecordSearchView();
     renderRecordAgentList();
-    document.getElementById("aaRecordBody").innerHTML =
-      `<p class="edit-modal-note">Pick an agent above to see their daily record.</p>`;
     document.getElementById("aaRecordBackdrop").classList.add("is-open");
+  }
+
+  // ---- Two-view switch — search list vs. one agent's detail. See the
+  // big comment on #aaRecordBackdrop in index.html for why this is a
+  // view swap rather than stacking the table below the search results.
+  function showRecordSearchView() {
+    document.getElementById("aaRecordTitle").style.display = "";
+    document.getElementById("aaRecordBackBtn").style.display = "none";
+    document.getElementById("aaRecordSearchView").style.display = "";
+    document.getElementById("aaRecordDetailView").style.display = "none";
+  }
+  function showRecordDetailView(username) {
+    document.getElementById("aaRecordTitle").style.display = "none";
+    document.getElementById("aaRecordBackBtn").style.display = "";
+    document.getElementById("aaRecordSearchView").style.display = "none";
+    const detailView = document.getElementById("aaRecordDetailView");
+    detailView.style.display = "";
+    detailView.innerHTML = `<div class="spa-loading" style="padding:20px; text-align:center; color:var(--ink-soft);">Loading…</div>`;
+    loadRecordDetail(username);
   }
 
   function recordStatusMeta(status) {
@@ -322,37 +349,78 @@
       return `
         <div class="aa-record-agent-row${selected}" data-aa-record-username="${ctx.escapeHtml(a.username)}">
           <span class="aa-record-avatar">${ctx.escapeHtml(letter)}</span>
-          <span class="aa-record-agent-name">@${ctx.escapeHtml(a.username)}</span>
+          <span class="aa-record-agent-name">${ctx.escapeHtml(a.username)}</span>
           <span class="aa-dot ${recordStatusMeta(a.status)}"></span>
         </div>`;
     }).join("");
     listEl.querySelectorAll("[data-aa-record-username]").forEach((row) => row.addEventListener("click", () => {
       selectedRecordUsername = row.dataset.aaRecordUsername;
-      renderRecordAgentList();
-      loadRecordFor(selectedRecordUsername);
+      showRecordDetailView(selectedRecordUsername);
     }));
   }
 
-  async function loadRecordFor(username) {
-    const body = document.getElementById("aaRecordBody");
-    body.innerHTML = `<div class="spa-loading" style="padding:20px; text-align:center; color:var(--ink-soft);">Loading…</div>`;
+  const RECORD_DAYS = 7; // "LAST 7 DAYS" — matches the reference mock
+
+  async function loadRecordDetail(username) {
+    const detailView = document.getElementById("aaRecordDetailView");
+    const agentMeta = recordAgents.find((a) => a.username === username);
     try {
-      const res = await ctx.authFetch(`/api/presence/record?username=${encodeURIComponent(username)}&days=30`);
+      const res = await ctx.authFetch(`/api/presence/record?username=${encodeURIComponent(username)}&days=${RECORD_DAYS}`);
       const json = await res.json();
-      if (!json.ok) { body.innerHTML = `<p class="edit-modal-note err">${ctx.escapeHtml(json.error || "Failed to load record.")}</p>`; return; }
-      if (!json.days.length) { body.innerHTML = `<p class="edit-modal-note">No recorded activity in the last 30 days.</p>`; return; }
-      const rows = json.days.map((d) => `
-        <div class="ipa-row" style="grid-template-columns:1fr 1fr;">
-          <div>${ctx.escapeHtml(d.dayKey)}</div>
-          <div>${fmtDuration(d.totalOnlineMs)}</div>
-        </div>`).join("");
-      body.innerHTML = `
-        <div class="ipa-table">
-          <div class="ipa-row ipa-row-head" style="grid-template-columns:1fr 1fr;"><div>Date</div><div>Online Time</div></div>
-          ${rows}
-        </div>`;
+      if (!json.ok) { detailView.innerHTML = `<p class="edit-modal-note err">${ctx.escapeHtml(json.error || "Failed to load record.")}</p>`; return; }
+      renderRecordDetail(detailView, username, agentMeta, json.days || []);
     } catch {
-      body.innerHTML = `<p class="edit-modal-note err">Network error — try again.</p>`;
+      detailView.innerHTML = `<p class="edit-modal-note err">Network error — try again.</p>`;
     }
+  }
+
+  function renderRecordDetail(detailView, username, agentMeta, days) {
+    const byDayKey = Object.fromEntries(days.map((d) => [d.dayKey, d]));
+
+    // Build the visible 7-day calendar client-side rather than trusting
+    // the server to have a row for every day — most days for most
+    // agents genuinely have no data at all (missing = 0s / never, not
+    // an error). Day-key format here is a plain browser-local
+    // YYYY-MM-DD, which can drift by one calendar day from the server's
+    // Asia/Colombo dayKey right around midnight in either timezone —
+    // an accepted, documented approximation (display labels only; the
+    // underlying totals always come from the server's real dayKey).
+    const todayLocalKey = new Date().toISOString().slice(0, 10);
+    const rows = [];
+    for (let i = 0; i < RECORD_DAYS; i++) {
+      const d = new Date(Date.now() - i * 86400000);
+      const key = d.toISOString().slice(0, 10);
+      const label = key === todayLocalKey ? "Today" : d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+      const entry = byDayKey[key];
+      rows.push({ key, label, isToday: key === todayLocalKey, totalOnlineMs: entry ? entry.totalOnlineMs : 0, lastActiveAt: entry ? entry.lastActiveAt : null });
+    }
+
+    const meta = agentMeta ? statusMeta(agentMeta.status) : statusMeta("offline");
+    const letter = (username || "?").trim().slice(0, 1).toUpperCase();
+    const todayRow = rows[0];
+
+    const tableRows = rows.map((r) => `
+      <div class="ipa-row${r.isToday ? " aa-record-row-today" : ""}" style="grid-template-columns:1fr 1.2fr 1.2fr;">
+        <div>${r.isToday ? "Today" : ctx.escapeHtml(r.label)}</div>
+        <div>${fmtDuration(r.totalOnlineMs)}</div>
+        <div>${r.lastActiveAt ? timeAgo(r.lastActiveAt) : "—"}</div>
+      </div>`).join("");
+
+    detailView.innerHTML = `
+      <div class="aa-record-detail-header">
+        <span class="aa-record-avatar aa-record-detail-avatar">${ctx.escapeHtml(letter)}</span>
+        <span class="aa-record-detail-name">${ctx.escapeHtml(username)}</span>
+        <span class="aa-status-pill ${meta.cls}"><span class="aa-dot ${meta.dotCls}"></span> ${meta.label}</span>
+      </div>
+      <div class="aa-record-detail-summary">
+        ${agentMeta && agentMeta.officeName ? ctx.escapeHtml(agentMeta.officeName) : "—"} ·
+        Today online: ${fmtDuration(todayRow.totalOnlineMs)} ·
+        Last active: ${todayRow.lastActiveAt ? timeAgo(todayRow.lastActiveAt) : "—"}
+      </div>
+      <p class="ipa-table-title" style="margin:16px 0 8px;">LAST ${RECORD_DAYS} DAYS</p>
+      <div class="ipa-table">
+        <div class="ipa-row ipa-row-head" style="grid-template-columns:1fr 1.2fr 1.2fr;"><div>Date</div><div>Total online time</div><div>Last active time</div></div>
+        ${tableRows}
+      </div>`;
   }
 })();

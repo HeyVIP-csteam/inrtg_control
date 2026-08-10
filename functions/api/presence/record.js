@@ -1,11 +1,13 @@
 /**
  * GET /api/presence/record?username=<u>&days=<n> -> { ok, username,
- *   fullName, days: [{ dayKey, totalOnlineMs }] } (newest first)
+ *   fullName, days: [{ dayKey, totalOnlineMs, lastActiveAt }] } (newest
+ *   first)
  *
- * Backs the "🕘 Record" popup inside the Active Agents panel — daily
- * totals only, per the same reasoning as _shared/presence.js's header
- * comment (no per-event timeline is stored, so none can be returned).
- * Same "activeAgents" gate as list.js.
+ * Backs the Record detail view inside the Active Agents panel — daily
+ * totals + a per-day "last active" timestamp only, per the same
+ * reasoning as _shared/presence.js's header comment (no per-event
+ * timeline is stored, so none can be returned). Same "activeAgents"
+ * gate as list.js.
  *
  * OWNER IS NEVER INCLUDED — same rule as list.js, enforced separately
  * here since this endpoint takes a raw `username` query param instead

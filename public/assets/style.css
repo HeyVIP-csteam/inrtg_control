@@ -2182,6 +2182,14 @@ body.announcements-page .ann-shell { flex: 1; min-height: 0; }
 }
 .aa-record-agent-name { flex: 1; min-width: 0; font-size: 13px; font-weight: 600; color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
+/* ---- Active Agents "Record" detail view (single agent) ---- */
+.aa-record-detail-header { display: flex; align-items: center; gap: 10px; margin-bottom: 6px; }
+.aa-record-detail-avatar { width: 34px; height: 34px; font-size: 13px; }
+.aa-record-detail-name { font-weight: 700; font-size: 15px; color: var(--ink); flex: 1; min-width: 0; }
+.aa-record-detail-summary { font-size: 12px; color: var(--ink-soft); }
+.aa-record-row-today { color: var(--accent-gold); font-weight: 700; background: rgba(243, 196, 99, 0.08); }
+.aa-record-row-today > div:first-child { color: var(--accent-gold); }
+
 @media (max-width: 720px) {
   .aa-header-right { width: 100%; justify-content: space-between; }
   .aa-search-row #aaSearchInput { width: 100% !important; }

@@ -227,15 +227,25 @@
        #aaRecordSearchInput is a static node, built once right here in
        markup and NEVER touched by innerHTML again; only
        #aaRecordAgentList's contents get rewritten on every keystroke.
-       See wireRecordSearchOnce()/renderRecordAgentList() in
+
+       TWO VIEWS, ONE MODAL — clicking a name in the search list swaps
+       #aaRecordSearchView out for #aaRecordDetailView (a single agent's
+       7-day table + a "← Back to search" link in place of the "🕘
+       Record" title), rather than stacking the table below the search
+       results. See showRecordSearchView()/showRecordDetailView() in
        active-agents-panel.js. -->
   <div class="edit-modal-backdrop" id="aaRecordBackdrop">
     <div class="edit-modal wide">
       <button type="button" class="modal-close-btn" id="aaRecordClose" title="Close" aria-label="Close">✕</button>
-      <p class="edit-modal-title">🕘 Record</p>
-      <input type="text" id="aaRecordSearchInput" class="aa-record-search-input" placeholder="🔍 Search agent by name…" autocomplete="off" />
-      <div id="aaRecordAgentList" class="aa-record-agent-list"></div>
-      <div id="aaRecordBody"></div>
+      <div class="edit-modal-header-row" style="margin-bottom:14px;">
+        <p class="edit-modal-title" id="aaRecordTitle" style="margin:0;">🕘 Record</p>
+        <button type="button" class="btn-submit ipa-ghost-btn" id="aaRecordBackBtn" style="display:none;">← Back to search</button>
+      </div>
+      <div id="aaRecordSearchView">
+        <input type="text" id="aaRecordSearchInput" class="aa-record-search-input" placeholder="🔍 Search agent by name…" autocomplete="off" />
+        <div id="aaRecordAgentList" class="aa-record-agent-list"></div>
+      </div>
+      <div id="aaRecordDetailView" style="display:none;"></div>
     </div>
   </div>
 

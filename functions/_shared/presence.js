@@ -89,11 +89,19 @@ async function getCurrentRaw(env, username) {
   return raw ? JSON.parse(raw) : null;
 }
 
-async function addDailyCredit(env, username, dayKey, creditMs) {
-  if (creditMs <= 0) return;
+// Updates a day's record with BOTH concerns at once: how much online
+// time to credit (may be 0 — e.g. an agent's very first-ever heartbeat,
+// or the first heartbeat after coming back from offline, has no prior
+// write to measure elapsed time against) and "when were they last
+// active", which should be touched on every real write regardless of
+// whether there was any elapsed time to credit. Splitting these into
+// two separate KV writes would double the write cost for no benefit —
+// they're the same underlying record.
+async function touchDaily(env, username, dayKey, creditMs, lastActiveIso) {
   const raw = await env.THREADS_KV.get(dailyKey(username, dayKey));
-  const daily = raw ? JSON.parse(raw) : { totalOnlineMs: 0 };
-  daily.totalOnlineMs = (daily.totalOnlineMs || 0) + creditMs;
+  const daily = raw ? JSON.parse(raw) : { totalOnlineMs: 0, lastHeartbeatAt: null };
+  if (creditMs > 0) daily.totalOnlineMs = (daily.totalOnlineMs || 0) + creditMs;
+  daily.lastHeartbeatAt = lastActiveIso;
   await env.THREADS_KV.put(dailyKey(username, dayKey), JSON.stringify(daily));
 }
 
@@ -129,22 +137,33 @@ export async function recordHeartbeat(env, username, deviceType) {
     return { written: false };
   }
 
+  const nowIso = new Date(now).toISOString();
+  const todayKey = dayKeyColombo(new Date(now));
+
   // Credit elapsed time toward today's online total, capped at
   // MAX_CREDIT_MS to avoid the sleep/wake spike described above. If the
   // agent had gone offline (or this is their first-ever heartbeat),
   // there's nothing to credit — the clock only starts counting again
-  // from this write.
+  // from this write. Either way, "last active" gets touched — that's
+  // true regardless of whether there was elapsed time to credit.
   if (wasAlreadyOnline) {
     const creditMs = Math.min(now - current.lastWriteTime, MAX_CREDIT_MS);
-    await addDailyCredit(env, username, current.dayKey || dayKeyColombo(new Date(current.lastWriteTime)), creditMs);
+    const creditDayKey = current.dayKey || dayKeyColombo(new Date(current.lastWriteTime));
+    await touchDaily(env, username, creditDayKey, creditMs, nowIso);
+    // Rare midnight-rollover edge case: the credited time belongs to
+    // YESTERDAY's key, but "last active" should still land on TODAY's
+    // row since that's when this heartbeat actually happened.
+    if (creditDayKey !== todayKey) await touchDaily(env, username, todayKey, 0, nowIso);
+  } else {
+    await touchDaily(env, username, todayKey, 0, nowIso);
   }
 
   const fresh = {
     status: "online",
     deviceType: safeDeviceType,
-    lastHeartbeat: new Date(now).toISOString(),
+    lastHeartbeat: nowIso,
     lastWriteTime: now,
-    dayKey: dayKeyColombo(new Date(now)),
+    dayKey: todayKey,
   };
   await env.THREADS_KV.put(currentKey(username), JSON.stringify(fresh));
   return { written: true };
@@ -165,9 +184,13 @@ export async function recordHeartbeat(env, username, deviceType) {
 export async function markOffline(env, username) {
   const now = Date.now();
   const current = await getCurrentRaw(env, username);
+  const nowIso = new Date(now).toISOString();
+  const todayKey = dayKeyColombo(new Date(now));
   if (current && current.status === "online") {
     const creditMs = Math.min(now - current.lastWriteTime, MAX_CREDIT_MS);
-    await addDailyCredit(env, username, current.dayKey || dayKeyColombo(new Date(current.lastWriteTime)), creditMs);
+    const creditDayKey = current.dayKey || dayKeyColombo(new Date(current.lastWriteTime));
+    await touchDaily(env, username, creditDayKey, creditMs, nowIso);
+    if (creditDayKey !== todayKey) await touchDaily(env, username, todayKey, 0, nowIso);
   }
   await env.THREADS_KV.put(currentKey(username), JSON.stringify({
     status: "offline",
@@ -232,10 +255,11 @@ export async function listPresence(env, usernames) {
 }
 
 /**
- * Daily records for the "Record" search popup — last `days` days of
- * totals for one agent, newest first. Missing days (agent didn't work /
- * feature wasn't live yet) are simply omitted rather than padded with
- * zero rows.
+ * Daily records for the "Record" popup — last `days` days of totals for
+ * one agent, newest first. Missing days (agent didn't work / feature
+ * wasn't live yet) are simply omitted rather than padded with zero
+ * rows — the caller (active-agents-panel.js's record detail view) fills
+ * in the visible calendar days and treats an absent entry as 0s / never.
  */
 export async function getDailyRecord(env, username, days = 30) {
   const now = new Date();
@@ -248,7 +272,7 @@ export async function getDailyRecord(env, username, days = 30) {
     const raw = await env.THREADS_KV.get(dailyKey(username, dayKey));
     if (!raw) return null;
     const daily = JSON.parse(raw);
-    return { dayKey, totalOnlineMs: daily.totalOnlineMs || 0 };
+    return { dayKey, totalOnlineMs: daily.totalOnlineMs || 0, lastActiveAt: daily.lastHeartbeatAt || null };
   }));
   return rows.filter(Boolean);
 }
