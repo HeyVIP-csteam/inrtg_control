@@ -1,0 +1,83 @@
+# Active Agents — 新功能实现记录
+
+把 `active-agents-optimization-notes.md` 里总结的三条核心经验（阈值留余量、
+节流写入、只存汇总不存分段时间线）直接用在这次从零实现的 Active Agents 功能上，
+布局与交互模式复用项目里已经打磨过的容器/组件，而不是另起一套。
+
+## 一、这是什么
+
+一个实时的"客服在线状态"面板：谁在线、谁挂机、谁离线，今天在线了多久。从首页
+"TG Reply Threads"同一个卡片网格区域点开，以弹窗形式呈现（不是路由到新页面）。
+
+入口权限：默认只有 superadmin / owner 能看到，Owner 之后可以在 Agent Profile
+的 Account Management Access 里逐账号调整——这套机制项目里已经有了（`allowedAdminSections`），
+新功能只是作为第 8 个受控项挂进去，没有另建一套权限系统。
+
+## 二、改了哪些文件
+
+| 文件 | 改动 |
+|---|---|
+| `functions/_shared/presence.js` | 新建。心跳节流写入 + 每日汇总的核心逻辑 |
+| `functions/api/presence/heartbeat.js` | 新建。客户端心跳上报（只能报自己） |
+| `functions/api/presence/list.js` | 新建。花名册 + 统计数据，受权限门控 |
+| `functions/api/presence/record.js` | 新建。Record 弹窗的每日时长查询 |
+| `functions/_shared/accounts.js` | 加一行权限项 `activeAgents`（floor=superadmin） |
+| `public/assets/presence-heartbeat.js` | 新建。全局心跳客户端脚本 |
+| `public/assets/active-agents-panel.js` | 新建。面板 UI：统计卡片、花名册、Record |
+| `public/assets/style.css` | 新增 `.aa-*` 样式，尽量复用已有的 `.ipa-*` |
+| `public/index.html` | 首页卡片、弹窗骨架、权限镜像、开关逻辑 |
+| `threads/promo/deposit-issue/deposit-backup/announcements/form.html` | 各自的 `<head>` 里加一行心跳脚本引用 |
+
+**没有改 `wrangler.toml`**——心跳数据复用了已经绑定好的 `THREADS_KV`，加
+`presence:` 前缀区分，不需要新开 KV namespace，也就不需要在 Cloudflare
+Dashboard 那边多做任何绑定操作，改完直接部署就能跑。
+
+## 三、把优化笔记里的经验落地在哪几处
+
+### 1. 阈值必须比"节流后的真实间隔"留出余量
+
+服务端节流窗口 60 秒，离线判定阈值分两档：前台 100 秒 / 后台（被浏览器
+节流到约 60 秒的那种）150 秒。两档都刻意留了明显宽于"最坏情况实际间隔"的
+余量——注释里把这道算术直接写在 `presence.js` 文件头，免得以后有人把某个
+数字单独调小而不知道另一边也得跟着变。
+
+### 2. 写入频率跟着业务事件走，不是跟着心跳频率走
+
+`recordHeartbeat()` 里：状态没变 且 距上次真实写入不到 60 秒 → 直接返回，
+完全不碰 KV。前端心跳频率（15 秒一次）完全不用为了省配额而改——这条也是
+笔记里特别强调的一点，节流应该是纯后端行为，客户端无感知。
+
+### 3. 数据粒度按业务实际需要来，不存没人会看的明细
+
+从设计第一天就只存"当前状态"+"每日累计时长"两种 key，没有做过、也不打算
+做分段时间线（不存在"先存细粒度再优化"这个阶段）。`presence.js` 文件头
+写清楚了：如果哪天真的需要"某个客服 2 点整具体在干嘛"这种精确到时间点的
+查询，那才是重新引入分段记录的信号，现在的业务需求（花名册 + 每日汇总）
+不需要。
+
+### 4. 两个前端坑，这次直接在设计阶段绕开，而不是修复
+
+- **输入框被 innerHTML 整体重渲染吃掉焦点**：面板会议每 10 秒轮询刷新一次
+  （在线状态是实时的），如果像常规弹窗那样整体 `innerHTML=`，搜索框会在
+  用户打字过程中被反复重建、光标不断丢失。`active-agents-panel.js` 因此
+  做成了"两阶段渲染"——`ensureShell()` 只在弹窗打开时建一次搜索框，之后
+  每次刷新只重写统计卡片和花名册两个子容器，搜索框这个 DOM 节点全程不被
+  触碰。文件头注释里详细写了为什么这么拆。
+- **弹窗跑偏（left+right+max-width 互相打架）**：Record 子弹窗直接复用了
+  项目里 `.edit-modal-backdrop`（`display:flex` + `align-items/justify-content`
+  做居中）这套现成容器，而不是自己写绝对定位——从根上避免了这个坑，连
+  "要不要修"这个问题都不会出现。另外 Record 的"人员筛选"干脆用下拉选择框
+  而不是文本搜索框，同样是从设计上直接绕开了输入框焦点的问题类别，而不是
+  搜索框实现完再去修一遍。
+
+## 四、部署后要检查的东西
+
+1. 用一个 superadmin 或 owner 账号登录，首页应该能看到新的 "Active Agents"
+   卡片（其他角色默认看不到，这是预期行为，不是 bug）。
+2. 打开面板，确认在线人数统计对得上（自己这个账号至少应该是 Online）。
+3. 把标签页切到后台放几分钟，再切回来，确认自己的状态经历了
+   Online → Inactive → 切回来后很快恢复 Online 这个过程（不用等到 15 秒
+   下一次心跳，`presence-heartbeat.js` 在 `visibilitychange` 里做了立即上报）。
+4. Owner 登录后，去 Agent Profile 打开某个非 superadmin 账号的 "Account
+   Management Access"，勾选/取消 "Active Agents"，确认对应账号刷新页面后
+   卡片按预期出现/消失。

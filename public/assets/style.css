@@ -2056,3 +2056,36 @@ body.announcements-page .ann-shell { flex: 1; min-height: 0; }
   .ipa-row-head { display: none; }
   .ipa-row { border: 1px solid var(--border); border-radius: 10px; margin-bottom: 8px; }
 }
+
+/* ---- Active Agents ---- */
+.aa-search-row { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; flex-wrap: wrap; }
+.aa-roster-grid {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 12px;
+}
+.aa-roster-card {
+  display: flex; align-items: center; gap: 12px;
+  background: var(--field-bg); border: 1px solid var(--border); border-radius: 12px;
+  padding: 12px 14px;
+}
+.aa-avatar {
+  width: 40px; height: 40px; border-radius: 50%; flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 13px; font-weight: 700; color: #fff; font-family: var(--font-display);
+}
+.aa-roster-info { min-width: 0; flex: 1; }
+.aa-roster-name { font-weight: 700; font-size: 13px; color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.aa-roster-sub { font-size: 11px; color: var(--ink-soft); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.aa-status-pill {
+  flex-shrink: 0; font-size: 11px; font-weight: 700; padding: 4px 10px; border-radius: 999px;
+  white-space: nowrap; background: var(--card-bg); border: 1px solid var(--border);
+}
+.aa-status-online { color: #16a34a; border-color: rgba(22, 163, 74, 0.35); }
+[data-theme="dark"] .aa-status-online { color: #34d399; border-color: rgba(52, 211, 153, 0.35); }
+.aa-status-inactive { color: #d97706; border-color: rgba(217, 119, 6, 0.35); }
+[data-theme="dark"] .aa-status-inactive { color: #f3c463; border-color: rgba(243, 196, 99, 0.35); }
+.aa-status-offline { color: var(--ink-soft); }
+
+@media (max-width: 720px) {
+  .aa-roster-grid { grid-template-columns: 1fr; }
+  .aa-search-row #aaSearchInput { width: 100% !important; }
+}

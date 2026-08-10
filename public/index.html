@@ -81,6 +81,7 @@
 <script src="/assets/toast.js?v=67c1e195" defer></script>
 <script src="/assets/starfield.js?v=b6e92821" defer></script>
 <script src="/assets/authguard.js?v=9dba9c0c"></script>
+<script src="/assets/presence-heartbeat.js?v=1"></script>
 <script src="/assets/pageTransition.js?v=1966b947"></script>
 </head>
 <body class="page-transition-in hub-page">
@@ -187,6 +188,46 @@
     </div>
   </div>
 
+  <!-- Active Agents — reuses the project's existing edit-modal-backdrop /
+       edit-modal / modal-close-btn component system (same one Account
+       Management, IP Access, etc. all use) rather than inventing a new
+       popup container: free dark/light theming, free centering (flex,
+       not absolute left/right/max-width — see the IP Access Record
+       popup just above, which proves this container never needs the
+       "popover ran off to one side" fix some other stacks need). -->
+  <div class="edit-modal-backdrop" id="aaModalBackdrop">
+    <div class="edit-modal wide">
+      <button type="button" class="modal-close-btn" id="aaModalClose" title="Close" aria-label="Close">✕</button>
+      <div class="edit-modal-header-row">
+        <p class="edit-modal-title" id="aaModalTitle">Active Agents</p>
+        <button type="button" class="btn-submit ipa-ghost-btn" id="aaRecordBtn">🕘 Record</button>
+      </div>
+      <div id="aaModalBody"></div>
+    </div>
+  </div>
+
+  <!-- Active Agents "Record" popup — per-agent daily online-time totals
+       (see functions/api/presence/record.js). The agent picker is a
+       <select>, deliberately NOT a live-filtered text search box: a
+       dropdown sidesteps the exact "innerHTML re-render destroys the
+       <input> mid-keystroke, focus is lost" bug class that Record
+       search boxes are prone to elsewhere in this app (fixed once
+       already in ip-access-panel.js's Record view) instead of having to
+       re-fix it here. -->
+  <div class="edit-modal-backdrop" id="aaRecordBackdrop">
+    <div class="edit-modal wide">
+      <button type="button" class="modal-close-btn" id="aaRecordClose" title="Close" aria-label="Close">✕</button>
+      <p class="edit-modal-title">Active Agents — Record</p>
+      <div class="edit-modal-header-row" style="margin-top:-6px;">
+        <label style="display:flex;align-items:center;gap:8px;font-size:12.5px;font-weight:600;color:var(--ink-soft);">
+          Agent
+          <select id="aaRecordAgentSelect" class="acct-role-filter" style="min-width:200px;"></select>
+        </label>
+      </div>
+      <div id="aaRecordBody"></div>
+    </div>
+  </div>
+
   <div class="hub-layout">
     <aside class="sidebar" id="hubSidebar">
       <div class="sidebar-header"><span class="dot"></span> ISSUE SUBMISSION</div>
@@ -252,6 +293,17 @@
             <div class="t-name">Announcement</div>
             <div class="t-desc">Create and schedule the site-wide REMINDER banner</div>
           </a>
+          <!-- No data-route on purpose — this opens as a popup over the
+               current page (see #aaModalBackdrop below), the same way
+               Account Management's sections do, instead of an spa-shell
+               route. spa-shell.js only intercepts clicks on
+               [data-route] elements, so this is safe to wire with its
+               own click handler (see openActiveAgentsModal below). -->
+          <a href="#" class="tool-card" id="activeAgentsCard" style="--tool-accent:#34d399;display:none;">
+            <div class="t-icon" style="background:#34d39933;">🟢</div>
+            <div class="t-name">Active Agents</div>
+            <div class="t-desc">See who's online, inactive, or offline right now</div>
+          </a>
         </div>
 
         <div class="hub-stats" id="hubStats"></div>
@@ -281,6 +333,7 @@
   <script src="/assets/settings-dropdown.js?v=437d2f61"></script>
   <script src="/assets/settings-admin-panel.js?v=53569c6b"></script>
   <script src="/assets/ip-access-panel.js?v=97ca84fa"></script>
+  <script src="/assets/active-agents-panel.js?v=1"></script>
   <script>
     window.initThemeToggle();
     window.initClock();
@@ -536,6 +589,8 @@
       { id: "depositSheets", name: "Deposit Sheet Link", icon: "🧾", floorRank: ROLE_RANK.superadmin },
       { id: "settings", name: "Settings", icon: "⚙️", floorRank: ROLE_RANK.admin },
       { id: "announcements", name: "Announcements", icon: "📢", floorRank: ROLE_RANK.admin },
+      // Mirrors functions/_shared/accounts.js exactly — keep in sync.
+      { id: "activeAgents", name: "Active Agents", icon: "🟢", floorRank: ROLE_RANK.superadmin },
     ];
     const EDITABLE_ADMIN_SECTIONS = ["whitelistIp", "tgRoutes", "agentProfile", "depositSheets", "settings", "announcements"];
     // SECURITY FIX — 2026-07-28: role-based defaults for accounts the
@@ -551,7 +606,7 @@
       agent: [],
       senior: ["createAccount"],
       admin: ["whitelistIp", "announcements"],
-      superadmin: ["createAccount", "whitelistIp", "tgRoutes", "agentProfile", "depositSheets", "settings", "announcements"],
+      superadmin: ["createAccount", "whitelistIp", "tgRoutes", "agentProfile", "depositSheets", "settings", "announcements", "activeAgents"],
     };
     const ADMIN_SECTIONS_DEFAULT_EDIT = {
       agent: [],
@@ -597,6 +652,19 @@
     // is currently active — a lightweight separate fetch on load + 30s
     // poll drives this; doesn't share state with announcement-banner.js.
     document.getElementById("announcementCard").style.display = canSeeAdminSection("announcements") ? "" : "none";
+
+    // ---- Active Agents tool card — same gate pattern as Announcement
+    // above, floor is superadmin (see ADMIN_SECTIONS_LIST). Opens a
+    // popup in-place rather than routing anywhere; see
+    // public/assets/active-agents-panel.js for the panel itself.
+    const activeAgentsCardEl = document.getElementById("activeAgentsCard");
+    if (activeAgentsCardEl) {
+      activeAgentsCardEl.style.display = canSeeAdminSection("activeAgents") ? "" : "none";
+      activeAgentsCardEl.addEventListener("click", (e) => {
+        e.preventDefault();
+        if (window.openActiveAgentsModal) window.openActiveAgentsModal();
+      });
+    }
     async function pollAnnouncementBreathing() {
       try {
         const res = await window.AgentAuth.authFetch("/api/announcements");
@@ -1719,6 +1787,32 @@
     const ipaRecordBackdrop = document.getElementById("ipaRecordBackdrop");
     document.getElementById("ipaRecordClose").addEventListener("click", () => ipaRecordBackdrop.classList.remove("is-open"));
     ipaRecordBackdrop.addEventListener("click", (e) => { if (e.target === ipaRecordBackdrop) ipaRecordBackdrop.classList.remove("is-open"); });
+
+    // ---- Active Agents modal — independent of Account Management's
+    // modal (acctModalBackdrop above); opened straight from the home
+    // tool card (see activeAgentsCardEl's click handler earlier in this
+    // script) rather than through acctMode. Polling (see
+    // active-agents-panel.js) is explicitly stopped on close so an
+    // agent leaving the panel open in a background tab doesn't keep
+    // polling /api/presence/list every 10s forever.
+    const aaModalBackdrop = document.getElementById("aaModalBackdrop");
+    function closeAaModal() {
+      aaModalBackdrop.classList.remove("is-open");
+      document.getElementById("aaRecordBackdrop").classList.remove("is-open");
+      if (window.stopActiveAgentsPanel) window.stopActiveAgentsPanel();
+    }
+    document.getElementById("aaModalClose").addEventListener("click", closeAaModal);
+    aaModalBackdrop.addEventListener("click", (e) => { if (e.target === aaModalBackdrop) closeAaModal(); });
+    window.openActiveAgentsModal = async function openActiveAgentsModal() {
+      aaModalBackdrop.classList.add("is-open");
+      const bodyEl = document.getElementById("aaModalBody");
+      bodyEl.innerHTML = '<div class="spa-loading" style="padding:30px; text-align:center; color:var(--ink-soft);">Loading…</div>';
+      await window.renderActiveAgentsPanel(bodyEl, { authFetch: window.AgentAuth.authFetch, escapeHtml: acctEsc });
+    };
+
+    const aaRecordBackdrop = document.getElementById("aaRecordBackdrop");
+    document.getElementById("aaRecordClose").addEventListener("click", () => aaRecordBackdrop.classList.remove("is-open"));
+    aaRecordBackdrop.addEventListener("click", (e) => { if (e.target === aaRecordBackdrop) aaRecordBackdrop.classList.remove("is-open"); });
 
     document.getElementById("acctModalSave").addEventListener("click", async () => {
       if (acctMode === "create") return acctSaveCreate();

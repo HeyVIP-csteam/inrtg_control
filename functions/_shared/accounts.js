@@ -116,6 +116,14 @@ export const ADMIN_SECTIONS_LIST = [
   // whitelistIp which is admin-see/no-edit by default) — see
   // ADMIN_SECTIONS_DEFAULT_SEEN/EDIT just below.
   { id: "announcements", name: "Announcements", icon: "📢", floorRank: ROLE_RANK.admin },
+  // "Active Agents" — live online/inactive/offline board for staff
+  // accounts (functions/_shared/presence.js + functions/api/presence/*).
+  // Floor is superadmin, same tier as depositSheets: the Owner starts
+  // everyone else locked out and opens it up per-account from here, same
+  // opt-in-only pattern as every other section. View-only concept (no
+  // "edit" — it's a live dashboard, not an editable resource), so it's
+  // deliberately absent from EDITABLE_ADMIN_SECTIONS below.
+  { id: "activeAgents", name: "Active Agents", icon: "🟢", floorRank: ROLE_RANK.superadmin },
 ];
 
 // Role-based defaults, used ONLY when the Owner has never explicitly set
@@ -132,7 +140,7 @@ export const ADMIN_SECTIONS_DEFAULT_SEEN = {
   agent: [],
   senior: ["createAccount"],
   admin: ["whitelistIp", "announcements"],
-  superadmin: ["createAccount", "whitelistIp", "tgRoutes", "agentProfile", "depositSheets", "settings", "announcements"],
+  superadmin: ["createAccount", "whitelistIp", "tgRoutes", "agentProfile", "depositSheets", "settings", "announcements", "activeAgents"],
 };
 export const ADMIN_SECTIONS_DEFAULT_EDIT = {
   agent: [],
