@@ -6,6 +6,14 @@
  * totals only, per the same reasoning as _shared/presence.js's header
  * comment (no per-event timeline is stored, so none can be returned).
  * Same "activeAgents" gate as list.js.
+ *
+ * OWNER IS NEVER INCLUDED — same rule as list.js, enforced separately
+ * here since this endpoint takes a raw `username` query param instead
+ * of reading from a pre-filtered list. Without this explicit check, the
+ * Owner's OWN request for their own username would still succeed
+ * (listAccounts()'s "hidden from everyone except itself" rule lets an
+ * account see itself) — this endpoint blocks it unconditionally,
+ * regardless of who's asking.
  */
 import { authenticateStaff, ROLE_RANK, canSeeAdminSection, listAccounts } from "../../_shared/accounts.js";
 import { getDailyRecord } from "../../_shared/presence.js";
@@ -37,7 +45,7 @@ async function handleGet({ request, env }) {
 
   const accounts = await listAccounts(env, { viewerUsername: auth.account.username });
   const target = accounts.find((a) => a.username === username);
-  if (!target) return json({ ok: false, error: "Unknown agent." }, 404);
+  if (!target || target.role === "owner") return json({ ok: false, error: "Unknown agent." }, 404);
 
   const records = await getDailyRecord(env, username, days);
   records.sort((a, b) => (a.dayKey < b.dayKey ? 1 : -1)); // newest first

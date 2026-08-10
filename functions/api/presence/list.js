@@ -6,6 +6,11 @@
  * Two states only (online/offline) — see _shared/presence.js's header
  * comment for why "inactive" was removed.
  *
+ * OWNER IS NEVER INCLUDED — filtered out unconditionally below,
+ * regardless of who's viewing (even the Owner's own view of this
+ * panel). See the comment on that filter for why this is stricter than
+ * listAccounts()'s usual "hidden from everyone except itself" rule.
+ *
  * Gated by canSeeAdminSection(account, "activeAgents") — same flexible
  * per-account model as every other Account Management Access section
  * (see _shared/accounts.js's ADMIN_SECTIONS_LIST). Floor is superadmin;
@@ -32,17 +37,26 @@ async function handleGet({ request, env }) {
     return json({ ok: false, error: "You don't have access to Active Agents." }, 403);
   }
 
-  const [accounts, offices] = await Promise.all([
+  const [rawAccounts, offices] = await Promise.all([
     listAccounts(env, { viewerUsername: auth.account.username }),
     listOffices(env),
   ]);
+  // Owner is excluded from this board unconditionally — not just from
+  // OTHER viewers (listAccounts()'s default behavior already hides
+  // owner-role accounts from everyone except the owner itself), but
+  // from the owner's own view of this panel too. Presence data (online
+  // status, device, today's online time) is a different sensitivity
+  // class than "does an account exist" — the Owner not appearing here
+  // at all, regardless of who's looking, is the simpler and stricter
+  // guarantee.
+  const accounts = rawAccounts.filter((a) => a.role !== "owner");
   const officeNameById = Object.fromEntries((offices || []).map((o) => [o.id, o.name]));
   const usernames = accounts.map((a) => a.username);
   const presence = await listPresence(env, usernames);
   const byUsername = Object.fromEntries(presence.map((p) => [p.username, p]));
 
   const agents = accounts.map((a) => {
-    const p = byUsername[a.username] || { status: "offline", lastHeartbeat: null, todayOnlineMs: 0 };
+    const p = byUsername[a.username] || { status: "offline", deviceType: "desktop", lastHeartbeat: null, todayOnlineMs: 0 };
     return {
       username: a.username,
       fullName: a.fullName || "",
@@ -50,6 +64,7 @@ async function handleGet({ request, env }) {
       officeName: a.officeId ? (officeNameById[a.officeId] || "") : "",
       locked: !!a.locked,
       status: a.locked ? "offline" : p.status,
+      deviceType: p.deviceType,
       lastHeartbeat: p.lastHeartbeat,
       todayOnlineMs: p.todayOnlineMs,
     };

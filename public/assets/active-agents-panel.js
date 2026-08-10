@@ -229,8 +229,11 @@
       const initials = (a.fullName || a.username || "?").trim().slice(0, 2).toUpperCase();
       const color = colorFor(a.username);
       const pills = [];
-      if (a.officeName) pills.push(`<span class="aa-pill">Team: ${ctx.escapeHtml(a.officeName)}</span>`);
-      pills.push(`<span class="aa-pill">🪪 ${ctx.escapeHtml(a.role)}</span>`);
+      pills.push(`<span class="aa-pill">🪪 ${ctx.escapeHtml(a.role.charAt(0).toUpperCase() + a.role.slice(1))}</span>`);
+      const deviceIcon = a.deviceType === "mobile" ? "📱" : "🖥️";
+      const deviceLabel = a.deviceType === "mobile" ? "Mobile" : "Desktop";
+      pills.push(`<span class="aa-pill">${deviceIcon} ${deviceLabel}</span>`);
+      if (a.officeName) pills.push(`<span class="aa-pill">🏢 ${ctx.escapeHtml(a.officeName)}</span>`);
       return `
         <div class="aa-list-row">
           <div class="aa-avatar-wrap">

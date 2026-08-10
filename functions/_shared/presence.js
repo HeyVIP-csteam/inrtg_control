@@ -100,8 +100,14 @@ async function addDailyCredit(env, username, dayKey, creditMs) {
 /**
  * Called on every heartbeat from the browser. A heartbeat only ever
  * means "online" now (see file header) — there's no status to pass in
- * anymore. Returns fast, without touching KV at all, unless the
- * throttle window has elapsed since the last real write.
+ * anymore. `deviceType` is "desktop" or "mobile", detected client-side
+ * from the User-Agent (see public/assets/presence-heartbeat.js) — real
+ * per-agent data, not a static label. Returns fast, without touching KV
+ * at all, unless the throttle window has elapsed since the last real
+ * write (which also means a device switch — e.g. picking up a phone
+ * mid-shift — can take up to MIN_KV_WRITE_INTERVAL_MS to show up on the
+ * board; same "good-enough, eventually consistent" trade-off the rest
+ * of this file makes elsewhere).
  *
  * NOTE ON DAY-BOUNDARY CREDIT: if a heartbeat's elapsed-time credit
  * straddles a Colombo midnight, the whole credit is attributed to
@@ -111,9 +117,10 @@ async function addDailyCredit(env, username, dayKey, creditMs) {
  * error is bounded by MIN_KV_WRITE_INTERVAL_MS and only ever affects
  * the one heartbeat that happens to straddle midnight.
  */
-export async function recordHeartbeat(env, username) {
+export async function recordHeartbeat(env, username, deviceType) {
   const now = Date.now();
   const current = await getCurrentRaw(env, username);
+  const safeDeviceType = deviceType === "mobile" ? "mobile" : "desktop";
 
   const wasAlreadyOnline = !!current && current.status === "online";
   const elapsedSinceWrite = current ? now - current.lastWriteTime : Infinity;
@@ -134,6 +141,7 @@ export async function recordHeartbeat(env, username) {
 
   const fresh = {
     status: "online",
+    deviceType: safeDeviceType,
     lastHeartbeat: new Date(now).toISOString(),
     lastWriteTime: now,
     dayKey: dayKeyColombo(new Date(now)),
@@ -149,6 +157,10 @@ export async function recordHeartbeat(env, username) {
  * polling loop, so bypassing the throttle here doesn't reopen the
  * write-budget problem this file exists to solve. Also credits any
  * remaining online time first, same as a normal heartbeat would.
+ * deviceType isn't needed here — an offline agent's device doesn't show
+ * on the board (see renderRoster()'s pill logic), so the last-known
+ * value from their final recordHeartbeat() call is simply left in
+ * place, stale but unused.
  */
 export async function markOffline(env, username) {
   const now = Date.now();
@@ -159,6 +171,7 @@ export async function markOffline(env, username) {
   }
   await env.THREADS_KV.put(currentKey(username), JSON.stringify({
     status: "offline",
+    deviceType: current ? current.deviceType : undefined,
     lastHeartbeat: new Date(now).toISOString(),
     lastWriteTime: now,
     dayKey: dayKeyColombo(new Date(now)),
@@ -210,6 +223,7 @@ export async function listPresence(env, usernames) {
     return {
       username,
       status,
+      deviceType: current && current.deviceType === "mobile" ? "mobile" : "desktop",
       lastHeartbeat: current ? current.lastHeartbeat : null,
       todayOnlineMs: liveOnlineMs,
     };

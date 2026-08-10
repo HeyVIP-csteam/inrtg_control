@@ -1,6 +1,6 @@
 /**
- * POST /api/presence/heartbeat  {}                  -> "I'm online"
- * POST /api/presence/heartbeat  { status: "offline" } -> tab closing (beacon)
+ * POST /api/presence/heartbeat  { device: "desktop"|"mobile" } -> "I'm online"
+ * POST /api/presence/heartbeat  { status: "offline" }          -> tab closing (beacon)
  *
  * Called by every logged-in agent's browser every ~15s (see
  * public/assets/presence-heartbeat.js) — NOT gated by "activeAgents"
@@ -12,7 +12,9 @@
  * see authenticateStaff() below using the token's own username.
  *
  * Two states only (online/offline) — see _shared/presence.js's header
- * comment for why "inactive" was removed.
+ * comment for why "inactive" was removed. `device` is client-detected
+ * from the User-Agent (real per-agent data, not a static label) — see
+ * presence-heartbeat.js.
  */
 import { authenticateStaff, ROLE_RANK } from "../../_shared/accounts.js";
 import { recordHeartbeat, markOffline } from "../../_shared/presence.js";
@@ -42,7 +44,7 @@ async function handlePost({ request, env }) {
     return json({ ok: true });
   }
 
-  const result = await recordHeartbeat(env, auth.account.username);
+  const result = await recordHeartbeat(env, auth.account.username, body.device);
   return json({ ok: true, written: result.written });
 }
 

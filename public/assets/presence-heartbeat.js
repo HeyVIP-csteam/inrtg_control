@@ -33,10 +33,19 @@
  *                presence.js) — the only honest way to detect "closed
  *                the tab / lost power / network died", since none of
  *                those let a script run one last message reliably.
+ *
+ * DEVICE TYPE — "desktop" or "mobile", detected once from
+ * navigator.userAgent (real per-agent data, shown as a badge in the
+ * roster — see active-agents-panel.js). A simple UA regex, same
+ * approach every "is this a phone" check in the wild uses; there's no
+ * bulletproof way to detect this (desktop Chrome can spoof a mobile UA
+ * in devtools, etc.) but it's accurate for the actual case this exists
+ * for — agents working from a phone vs. an office desktop.
  */
 (function () {
   const HEARTBEAT_URL = "/api/presence/heartbeat";
   const HEARTBEAT_INTERVAL_MS = 15 * 1000;
+  const DEVICE_TYPE = /Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent) ? "mobile" : "desktop";
 
   async function sendHeartbeat() {
     if (!window.AgentAuth || !window.AgentAuth.getAuth || !window.AgentAuth.getAuth()) return;
@@ -44,7 +53,7 @@
       await window.AgentAuth.authFetch(HEARTBEAT_URL, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: "{}",
+        body: JSON.stringify({ device: DEVICE_TYPE }),
       });
     } catch {
       // Network blip — the next interval's heartbeat (or the server's
