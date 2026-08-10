@@ -2,11 +2,14 @@
  * Active Agents dashboard — renders into #aaModalBody when the
  * "Active Agents" tool card is opened (see index.html's
  * openActiveAgentsModal()). Talks to /api/presence/list +
- * /api/presence/record. Layout/interaction pattern is deliberately the
- * same shape as ip-access-panel.js (stat cards, click-to-filter, a
- * separate "Record" popup opened from a static header button) — reusing
- * a pattern already fought through once in this codebase rather than
- * inventing a new one.
+ * /api/presence/record. Row/badge/online-pill visual language follows
+ * the reference "Online Users" mock the business owner supplied —
+ * circular avatar with a status dot cut into its corner, two small info
+ * pills under the name, right-aligned status + relative time, thin
+ * footer bar. Interaction pattern (stat-card filter, a separate
+ * "Record" popup opened from a static header button) stays the same
+ * shape as ip-access-panel.js — reusing a pattern already fought
+ * through once in this codebase rather than inventing a new one.
  *
  * TWO-PHASE RENDER — READ THIS BEFORE TOUCHING render():
  * This panel POLLS every 10s while open (agents' status changes live).
@@ -19,23 +22,41 @@
  * So rendering here is split in two:
  *   ensureShell(bodyEl)   — runs ONCE per modal open. Builds the search
  *                           input + the two empty containers it never
- *                           touches again (#aaStatsWrap, #aaRosterWrap).
+ *                           touches again (#aaStatsWrap, #aaRosterWrap),
+ *                           plus the static footer bar.
  *   renderDynamic(bodyEl) — runs on every data refresh (poll tick,
- *                           filter-card click, search input event).
- *                           Only ever touches the two containers'
- *                           innerHTML, NEVER the shell/search input.
+ *                           filter-card click, search input event,
+ *                           manual refresh-button click). Only ever
+ *                           touches the two containers' innerHTML plus
+ *                           the header's online-count pill, NEVER the
+ *                           shell/search input.
+ *
+ * A THIRD, LIGHTER refresh runs every 2s on top of the above: it only
+ * rewrites the textContent of each row's "X sec ago" label (tagged with
+ * data-aa-heartbeat) so the relative time actually counts up live, the
+ * way the reference mock shows it — without touching any other DOM, so
+ * it's free to run far more often than the real data poll.
+ *
+ * RECORD POPUP'S SEARCH BOX gets the exact same static-input/
+ * dynamic-results split as the main roster search above — see
+ * openRecordPopup()/renderRecordAgentList() below and the big comment
+ * on #aaRecordBackdrop in index.html.
  */
 (function () {
   const POLL_INTERVAL_MS = 10 * 1000;
+  const TIME_TICK_INTERVAL_MS = 2 * 1000;
   const AVATAR_COLORS = ["#60A5FA", "#FBBF24", "#F87171", "#F472B6", "#34D399", "#A78BFA", "#38bdf8", "#fb923c"];
 
   let ctx = null; // { authFetch, escapeHtml }
   let data = null; // last GET /api/presence/list response
-  let activeView = null; // null | "total" | "online" | "inactive" | "offline"
+  let activeView = null; // null | "total" | "online" | "offline"
   let searchTerm = "";
   let pollTimer = null;
+  let tickTimer = null;
   let headerWired = false;
-  let recordAgents = []; // cached agent list for the Record dropdown
+  let recordAgents = []; // cached agent list for the Record picker
+  let recordSearchTerm = "";
+  let selectedRecordUsername = null;
 
   function colorFor(name) {
     let hash = 0;
@@ -56,10 +77,27 @@
     try { return new Date(iso).toLocaleString(); } catch { return iso; }
   }
 
+  // "13 sec ago" / "5 min ago" / "2 hr ago" — matches the reference
+  // mock's wording exactly. Falls back to a plain date once it's been
+  // long enough that "ago" phrasing stops being useful (matches how
+  // fmtTime() reads for anything not recent).
+  function timeAgo(iso) {
+    if (!iso) return "—";
+    const diffMs = Date.now() - new Date(iso).getTime();
+    if (diffMs < 0) return "just now";
+    const sec = Math.floor(diffMs / 1000);
+    if (sec < 5) return "just now";
+    if (sec < 60) return `${sec} sec ago`;
+    const min = Math.floor(sec / 60);
+    if (min < 60) return `${min} min ago`;
+    const hr = Math.floor(min / 60);
+    if (hr < 24) return `${hr} hr ago`;
+    return fmtTime(iso);
+  }
+
   function statusMeta(status) {
-    if (status === "online") return { label: "Online", dot: "🟢", cls: "aa-status-online" };
-    if (status === "inactive") return { label: "Inactive", dot: "🟡", cls: "aa-status-inactive" };
-    return { label: "Offline", dot: "⚫", cls: "aa-status-offline" };
+    if (status === "online") return { label: "Online", cls: "aa-status-online", dotCls: "aa-dot-online" };
+    return { label: "Offline", cls: "aa-status-offline", dotCls: "aa-dot-offline" };
   }
 
   async function fetchList() {
@@ -77,15 +115,29 @@
     await refresh(bodyEl, { showLoading: true });
     wireHeaderButtonsOnce();
     startPolling(bodyEl);
+    startTimeTicking(bodyEl);
   };
 
   window.stopActiveAgentsPanel = function stopActiveAgentsPanel() {
     if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+    if (tickTimer) { clearInterval(tickTimer); tickTimer = null; }
   };
 
   function startPolling(bodyEl) {
     if (pollTimer) clearInterval(pollTimer);
     pollTimer = setInterval(() => refresh(bodyEl, { showLoading: false }), POLL_INTERVAL_MS);
+  }
+
+  // Lightweight — only rewrites textContent on already-rendered nodes,
+  // never innerHTML, never anywhere near the search input. Safe to run
+  // independently of and much more often than the real data poll.
+  function startTimeTicking(bodyEl) {
+    if (tickTimer) clearInterval(tickTimer);
+    tickTimer = setInterval(() => {
+      bodyEl.querySelectorAll("[data-aa-heartbeat]").forEach((el) => {
+        el.textContent = timeAgo(el.dataset.aaHeartbeat || null);
+      });
+    }, TIME_TICK_INTERVAL_MS);
   }
 
   async function refresh(bodyEl, { showLoading }) {
@@ -114,7 +166,11 @@
           <input type="text" id="aaSearchInput" class="acct-profile-search" placeholder="🔍 Search username or name…" autocomplete="off" style="width:260px;" />
           <span class="edit-modal-note" id="aaSearchHint" style="margin:0;">Click a card above to filter, or search by name.</span>
         </div>
-        <div id="aaRosterWrap"></div>
+        <div id="aaRosterWrap" class="aa-roster-scroll"></div>
+        <div class="aa-footer-bar">
+          <span class="aa-footer-left"><span class="aa-dot aa-dot-online aa-footer-livedot"></span> Live presence</span>
+          <span class="aa-footer-right">Admin view only</span>
+        </div>
       </div>`;
     bodyEl.querySelector("#aaSearchInput").addEventListener("input", (e) => {
       searchTerm = e.target.value.trim().toLowerCase();
@@ -130,10 +186,16 @@
     if (!statsWrap || !rosterWrap) return; // modal was closed mid-flight
 
     const { stats } = data;
+
+    const onlinePill = document.getElementById("aaOnlineCountPill");
+    if (onlinePill) onlinePill.textContent = `${stats.online} online`;
+    const subtitle = document.getElementById("aaHeaderSubtitle");
+    if (subtitle) subtitle.textContent = `${stats.total} agent${stats.total === 1 ? "" : "s"} tracked · updates live`;
+
+    statsWrap.classList.add("aa-stat-cards-3");
     statsWrap.innerHTML = `
       <div class="ipa-stat-card${activeView === "total" ? " ipa-stat-card-active" : ""}" data-aa-view="total"><div class="ipa-stat-label">Total Agents</div><div class="ipa-stat-value">${stats.total}</div></div>
       <div class="ipa-stat-card${activeView === "online" ? " ipa-stat-card-active" : ""}" data-aa-view="online"><div class="ipa-stat-label">Online</div><div class="ipa-stat-value ipa-stat-approved">${stats.online}</div></div>
-      <div class="ipa-stat-card${activeView === "inactive" ? " ipa-stat-card-active" : ""}" data-aa-view="inactive"><div class="ipa-stat-label">Inactive</div><div class="ipa-stat-value ipa-stat-pending">${stats.inactive}</div></div>
       <div class="ipa-stat-card${activeView === "offline" ? " ipa-stat-card-active" : ""}" data-aa-view="offline"><div class="ipa-stat-label">Offline</div><div class="ipa-stat-value ipa-stat-blocked">${stats.offline}</div></div>`;
     statsWrap.querySelectorAll("[data-aa-view]").forEach((card) => card.addEventListener("click", () => {
       activeView = activeView === card.dataset.aaView ? null : card.dataset.aaView;
@@ -162,30 +224,38 @@
 
     if (!agents.length) return `<div class="ipa-empty-row">No agents match.</div>`;
 
-    return `<div class="aa-roster-grid">${agents.map((a) => {
+    return agents.map((a) => {
       const meta = statusMeta(a.status);
       const initials = (a.fullName || a.username || "?").trim().slice(0, 2).toUpperCase();
       const color = colorFor(a.username);
+      const pills = [];
+      if (a.officeName) pills.push(`<span class="aa-pill">Team: ${ctx.escapeHtml(a.officeName)}</span>`);
+      pills.push(`<span class="aa-pill">🪪 ${ctx.escapeHtml(a.role)}</span>`);
       return `
-        <div class="aa-roster-card">
-          <div class="aa-avatar" style="background:${color};">${initials}</div>
+        <div class="aa-list-row">
+          <div class="aa-avatar-wrap">
+            <div class="aa-avatar" style="background:${color};">${ctx.escapeHtml(initials)}</div>
+            <span class="aa-dot ${meta.dotCls} aa-avatar-dot"></span>
+          </div>
           <div class="aa-roster-info">
             <div class="aa-roster-name">${ctx.escapeHtml(a.fullName || a.username)}</div>
-            <div class="aa-roster-sub">@${ctx.escapeHtml(a.username)} · ${ctx.escapeHtml(a.role)}</div>
-            <div class="aa-roster-sub">Today: ${fmtDuration(a.todayOnlineMs)}${a.lastHeartbeat ? ` · last seen ${fmtTime(a.lastHeartbeat)}` : ""}</div>
+            <div class="aa-pill-row">${pills.join("")}</div>
           </div>
-          <span class="aa-status-pill ${meta.cls}">${meta.dot} ${meta.label}</span>
+          <div class="aa-roster-right">
+            <span class="aa-status-pill ${meta.cls}"><span class="aa-dot ${meta.dotCls}"></span> ${meta.label}</span>
+            <span class="aa-roster-time" data-aa-heartbeat="${a.lastHeartbeat ? ctx.escapeHtml(a.lastHeartbeat) : ""}">${timeAgo(a.lastHeartbeat)}</span>
+          </div>
         </div>`;
-    }).join("")}</div>`;
+    }).join("");
   }
-  function rank(status) { return status === "online" ? 0 : status === "inactive" ? 1 : 2; }
+  function rank(status) { return status === "online" ? 0 : 1; }
 
-  // "🕘 Record" lives as a static node in index.html's modal header row
-  // (next to ✕), not inside bodyEl's innerHTML — same reason as
-  // ip-access-panel.js's wireHeaderButtonsOnce: it must only ever be
-  // bound once per page load, or every ensureShell() call (once per
-  // modal open) would risk stacking listeners if this ran more than
-  // once — it's page-lifetime static, so a plain one-time guard here
+  // "🕘 Record" and "↻ Refresh" live as static nodes in index.html's
+  // modal header row (next to ✕), not inside bodyEl's innerHTML — same
+  // reason as ip-access-panel.js's wireHeaderButtonsOnce: they must only
+  // ever be bound once per page load, or every ensureShell() call (once
+  // per modal open) would risk stacking listeners if this ran more than
+  // once — they're page-lifetime static, so a plain one-time guard here
   // is enough.
   function wireHeaderButtonsOnce() {
     if (headerWired) return;
@@ -193,19 +263,70 @@
     document.getElementById("aaRecordBtn")?.addEventListener("click", () => {
       openRecordPopup();
     });
-    document.getElementById("aaRecordAgentSelect")?.addEventListener("change", (e) => {
-      loadRecordFor(e.target.value);
+    // Static, page-lifetime node (see the big comment on this popup in
+    // index.html) — bound exactly once, same reasoning as everything
+    // else in this function. Only #aaRecordAgentList gets rewritten per
+    // keystroke, never this input itself.
+    document.getElementById("aaRecordSearchInput")?.addEventListener("input", (e) => {
+      recordSearchTerm = e.target.value.trim().toLowerCase();
+      renderRecordAgentList();
+    });
+    document.getElementById("aaRefreshBtn")?.addEventListener("click", async (e) => {
+      const btn = e.currentTarget;
+      const bodyEl = document.getElementById("aaModalBody");
+      btn.classList.add("aa-spinning");
+      btn.disabled = true;
+      await refresh(bodyEl, { showLoading: false });
+      btn.disabled = false;
+      // Let the spin finish a full turn rather than snapping to a stop
+      // the instant the (usually near-instant) fetch resolves.
+      setTimeout(() => btn.classList.remove("aa-spinning"), 400);
     });
   }
 
   function openRecordPopup() {
-    const select = document.getElementById("aaRecordAgentSelect");
-    const current = select.value;
-    select.innerHTML = recordAgents.map((a) =>
-      `<option value="${ctx.escapeHtml(a.username)}">${ctx.escapeHtml(a.fullName || a.username)} (@${ctx.escapeHtml(a.username)})</option>`).join("");
-    if (current && recordAgents.some((a) => a.username === current)) select.value = current;
+    recordSearchTerm = "";
+    selectedRecordUsername = null;
+    const searchInput = document.getElementById("aaRecordSearchInput");
+    if (searchInput) searchInput.value = "";
+    renderRecordAgentList();
+    document.getElementById("aaRecordBody").innerHTML =
+      `<p class="edit-modal-note">Pick an agent above to see their daily record.</p>`;
     document.getElementById("aaRecordBackdrop").classList.add("is-open");
-    if (select.value) loadRecordFor(select.value);
+  }
+
+  function recordStatusMeta(status) {
+    if (status === "online") return "aa-dot-online";
+    return "aa-dot-offline";
+  }
+
+  function renderRecordAgentList() {
+    const listEl = document.getElementById("aaRecordAgentList");
+    if (!listEl) return;
+    let agents = recordAgents;
+    if (recordSearchTerm) {
+      agents = agents.filter((a) =>
+        a.username.toLowerCase().includes(recordSearchTerm) || (a.fullName || "").toLowerCase().includes(recordSearchTerm));
+    }
+    if (!agents.length) {
+      listEl.innerHTML = `<div class="ipa-empty-row">No agents match.</div>`;
+      return;
+    }
+    listEl.innerHTML = agents.map((a) => {
+      const letter = (a.fullName || a.username || "?").trim().slice(0, 1).toUpperCase();
+      const selected = a.username === selectedRecordUsername ? " aa-record-agent-row-active" : "";
+      return `
+        <div class="aa-record-agent-row${selected}" data-aa-record-username="${ctx.escapeHtml(a.username)}">
+          <span class="aa-record-avatar">${ctx.escapeHtml(letter)}</span>
+          <span class="aa-record-agent-name">${ctx.escapeHtml(a.fullName || a.username)}</span>
+          <span class="aa-dot ${recordStatusMeta(a.status)}"></span>
+        </div>`;
+    }).join("");
+    listEl.querySelectorAll("[data-aa-record-username]").forEach((row) => row.addEventListener("click", () => {
+      selectedRecordUsername = row.dataset.aaRecordUsername;
+      renderRecordAgentList();
+      loadRecordFor(selectedRecordUsername);
+    }));
   }
 
   async function loadRecordFor(username) {

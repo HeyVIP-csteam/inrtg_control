@@ -198,32 +198,43 @@
   <div class="edit-modal-backdrop" id="aaModalBackdrop">
     <div class="edit-modal wide">
       <button type="button" class="modal-close-btn" id="aaModalClose" title="Close" aria-label="Close">✕</button>
-      <div class="edit-modal-header-row">
-        <p class="edit-modal-title" id="aaModalTitle">Active Agents</p>
-        <button type="button" class="btn-submit ipa-ghost-btn" id="aaRecordBtn">🕘 Record</button>
+      <div class="edit-modal-header-row aa-header-row">
+        <div class="aa-header-left">
+          <div class="aa-header-icon">👥</div>
+          <div>
+            <p class="edit-modal-title aa-header-title" id="aaModalTitle" style="margin:0;">Active Agents</p>
+            <p class="aa-header-subtitle" id="aaHeaderSubtitle">Loading…</p>
+          </div>
+        </div>
+        <div class="aa-header-right">
+          <span class="aa-online-pill" id="aaOnlineCountPill">— online</span>
+          <button type="button" class="aa-icon-btn" id="aaRefreshBtn" title="Refresh now" aria-label="Refresh">↻</button>
+          <button type="button" class="btn-submit ipa-ghost-btn" id="aaRecordBtn">🕘 Record</button>
+        </div>
       </div>
       <div id="aaModalBody"></div>
     </div>
   </div>
 
   <!-- Active Agents "Record" popup — per-agent daily online-time totals
-       (see functions/api/presence/record.js). The agent picker is a
-       <select>, deliberately NOT a live-filtered text search box: a
-       dropdown sidesteps the exact "innerHTML re-render destroys the
-       <input> mid-keystroke, focus is lost" bug class that Record
-       search boxes are prone to elsewhere in this app (fixed once
-       already in ip-access-panel.js's Record view) instead of having to
-       re-fix it here. -->
+       (see functions/api/presence/record.js). Agent picker per the
+       business owner's reference mock: a live-filtered search box over
+       a clickable roster list, not a <select>. This means the exact
+       "innerHTML re-render destroys the <input> mid-keystroke, focus is
+       lost" bug class this app has hit before (see ip-access-panel.js's
+       Record view) is back in play here — handled the same way
+       active-agents-panel.js's main roster search already handles it:
+       #aaRecordSearchInput is a static node, built once right here in
+       markup and NEVER touched by innerHTML again; only
+       #aaRecordAgentList's contents get rewritten on every keystroke.
+       See wireRecordSearchOnce()/renderRecordAgentList() in
+       active-agents-panel.js. -->
   <div class="edit-modal-backdrop" id="aaRecordBackdrop">
     <div class="edit-modal wide">
       <button type="button" class="modal-close-btn" id="aaRecordClose" title="Close" aria-label="Close">✕</button>
-      <p class="edit-modal-title">Active Agents — Record</p>
-      <div class="edit-modal-header-row" style="margin-top:-6px;">
-        <label style="display:flex;align-items:center;gap:8px;font-size:12.5px;font-weight:600;color:var(--ink-soft);">
-          Agent
-          <select id="aaRecordAgentSelect" class="acct-role-filter" style="min-width:200px;"></select>
-        </label>
-      </div>
+      <p class="edit-modal-title">🕘 Record</p>
+      <input type="text" id="aaRecordSearchInput" class="aa-record-search-input" placeholder="🔍 Search agent by name…" autocomplete="off" />
+      <div id="aaRecordAgentList" class="aa-record-agent-list"></div>
       <div id="aaRecordBody"></div>
     </div>
   </div>
@@ -302,7 +313,7 @@
           <a href="#" class="tool-card" id="activeAgentsCard" style="--tool-accent:#34d399;display:none;">
             <div class="t-icon" style="background:#34d39933;">🟢</div>
             <div class="t-name">Active Agents</div>
-            <div class="t-desc">See who's online, inactive, or offline right now</div>
+            <div class="t-desc">See who's online or offline right now</div>
           </a>
         </div>
 

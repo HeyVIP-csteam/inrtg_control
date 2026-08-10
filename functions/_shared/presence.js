@@ -1,28 +1,33 @@
 /**
  * presence.js  (SERVER-ONLY)
  *
- * "Active Agents" — a real-time online/inactive/offline board for staff
- * accounts, built on THREADS_KV under its own `presence:` prefix so it
- * never collides with thread/office/account/feature-status keys already
+ * "Active Agents" — a real-time online/offline board for staff accounts,
+ * built on THREADS_KV under its own `presence:` prefix so it never
+ * collides with thread/office/account/feature-status keys already
  * living in that same namespace.
  *
+ * TWO STATES ONLY — online / offline. There used to be a third
+ * "inactive" state (tab backgrounded / idle) with its own, shorter
+ * offline threshold. Removed on request: a backgrounded tab that keeps
+ * heartbeating counts as online the same as a foreground one now — the
+ * only question this board answers is "is their browser still checked
+ * in", not "are they actively looking at it right now". See
+ * public/assets/presence-heartbeat.js — it no longer tracks idle time
+ * or tab visibility for this reason, it just heartbeats.
+ *
  * KV SHAPE:
- *   presence:current:<username>  -> { status: "online"|"inactive",
+ *   presence:current:<username>  -> { status: "online"|"offline",
  *                                      lastHeartbeat: ISO string,
  *                                      lastWriteTime: epoch ms,
  *                                      dayKey: "YYYY-MM-DD" (Asia/Colombo) }
  *   presence:daily:<username>:<YYYY-MM-DD> -> { totalOnlineMs: number }
  *
- * DELIBERATELY NOT STORED: a per-event timeline (every Online<->Inactive
+ * DELIBERATELY NOT STORED: a per-event timeline (every Online<->Offline
  * transition with a timestamp). Only two things are ever asked of this
  * feature — "what's this agent's status right now" and "how long were
  * they online today/this week" — both answered fully by `current` +
- * `daily`. A segmented timeline needs one KV write per status change,
- * which under a 15s-heartbeat, multi-agent office adds up fast; a daily
- * counter needs a write only when the throttle window below allows it.
- * See PROJECT_STATUS.md-style reasoning notes if this ever needs
- * revisiting — the moment someone asks "show me exactly when Agent X
- * went idle at 2pm", that's the signal to add a real timeline back.
+ * `daily`. See PROJECT_STATUS.md-style reasoning notes if this ever
+ * needs revisiting.
  *
  * WRITE THROTTLING — the whole point of this file. Every logged-in
  * agent's browser sends a heartbeat every ~15s (see
@@ -35,28 +40,30 @@
  * window has elapsed — see recordHeartbeat() below.
  *
  * THRESHOLD SAFETY MARGIN — MIN_KV_WRITE_INTERVAL_MS (how rarely we're
- * willing to write) MUST stay comfortably BELOW the *_OFFLINE_AFTER_MS
- * thresholds (how long without a write before we call someone offline),
- * or a genuinely-online agent gets misjudged offline in the gap between
- * two real writes. Worst case gap between real writes here is roughly
- * MIN_KV_WRITE_INTERVAL_MS + one heartbeat interval (~15s) for the
- * foreground case, and worse in the background case because Chrome
- * throttles a hidden tab's timers to ~60s on its own — see
- * presence-heartbeat.js's header comment. The numbers below leave
- * deliberate headroom for both.
+ * willing to write) MUST stay comfortably BELOW OFFLINE_AFTER_MS (how
+ * long without a write before we call someone offline), or a
+ * genuinely-online agent gets misjudged offline in the gap between two
+ * real writes. Worst case gap between real writes here is roughly
+ * MIN_KV_WRITE_INTERVAL_MS + one heartbeat interval (~15s), plus
+ * whatever the browser's own background-tab timer throttling adds on
+ * top (Chrome clamps a hidden tab's timers to ~60s regardless of what
+ * interval was requested — see presence-heartbeat.js's header comment).
+ * OFFLINE_AFTER_MS below (5 minutes) leaves wide headroom over that
+ * worst case either way, which is also why the write-throttle window
+ * could be relaxed to 2 minutes without any real risk of false
+ * "offline" flips — fewer writes, same accuracy guarantee.
  */
 
-const MIN_KV_WRITE_INTERVAL_MS = 60 * 1000; // don't write more than once/minute per agent
-const ONLINE_OFFLINE_AFTER_MS = 100 * 1000; // foreground heartbeats aren't browser-throttled
-const INACTIVE_OFFLINE_AFTER_MS = 150 * 1000; // background tabs get throttled to ~60s by the browser itself
+const MIN_KV_WRITE_INTERVAL_MS = 2 * 60 * 1000; // don't write more than once/2min per agent
+const OFFLINE_AFTER_MS = 5 * 60 * 1000; // no heartbeat for 5 minutes -> offline
 
 // Cap how much "online" time a single heartbeat can retroactively credit
 // to the daily total. Without this, a laptop that sleeps for 3 hours and
-// then wakes up (next heartbeat arrives 3h later, previous status was
-// "online") would silently add 3 fake hours to that day's total. Capped
-// at the offline threshold — anything longer than that gap should never
-// have been counted as "was online the whole time" in the first place.
-const MAX_CREDIT_MS = ONLINE_OFFLINE_AFTER_MS;
+// then wakes up (next heartbeat arrives 3h later) would silently add 3
+// fake hours to that day's total. Capped at the offline threshold —
+// anything longer than that gap should never have been counted as "was
+// online the whole time" in the first place.
+const MAX_CREDIT_MS = OFFLINE_AFTER_MS;
 
 function currentKey(username) { return `presence:current:${username}`; }
 function dailyKey(username, dayKey) { return `presence:daily:${username}:${dayKey}`; }
@@ -91,9 +98,10 @@ async function addDailyCredit(env, username, dayKey, creditMs) {
 }
 
 /**
- * Called on every heartbeat from the browser. Returns fast, without
- * touching KV at all, unless the status genuinely changed or the
- * throttle window has elapsed — see the file header for why.
+ * Called on every heartbeat from the browser. A heartbeat only ever
+ * means "online" now (see file header) — there's no status to pass in
+ * anymore. Returns fast, without touching KV at all, unless the
+ * throttle window has elapsed since the last real write.
  *
  * NOTE ON DAY-BOUNDARY CREDIT: if a heartbeat's elapsed-time credit
  * straddles a Colombo midnight, the whole credit is attributed to
@@ -103,28 +111,29 @@ async function addDailyCredit(env, username, dayKey, creditMs) {
  * error is bounded by MIN_KV_WRITE_INTERVAL_MS and only ever affects
  * the one heartbeat that happens to straddle midnight.
  */
-export async function recordHeartbeat(env, username, status) {
-  const normalizedStatus = status === "inactive" ? "inactive" : "online";
+export async function recordHeartbeat(env, username) {
   const now = Date.now();
   const current = await getCurrentRaw(env, username);
 
-  const unchanged = !!current && current.status === normalizedStatus;
+  const wasAlreadyOnline = !!current && current.status === "online";
   const elapsedSinceWrite = current ? now - current.lastWriteTime : Infinity;
 
-  if (unchanged && elapsedSinceWrite < MIN_KV_WRITE_INTERVAL_MS) {
+  if (wasAlreadyOnline && elapsedSinceWrite < MIN_KV_WRITE_INTERVAL_MS) {
     return { written: false };
   }
 
-  // Credit elapsed time toward today's online total — only for time that
-  // was actually spent "online" (inactive/idle time doesn't count),
-  // and only up to MAX_CREDIT_MS to avoid the sleep/wake spike above.
-  if (current && current.status === "online") {
+  // Credit elapsed time toward today's online total, capped at
+  // MAX_CREDIT_MS to avoid the sleep/wake spike described above. If the
+  // agent had gone offline (or this is their first-ever heartbeat),
+  // there's nothing to credit — the clock only starts counting again
+  // from this write.
+  if (wasAlreadyOnline) {
     const creditMs = Math.min(now - current.lastWriteTime, MAX_CREDIT_MS);
     await addDailyCredit(env, username, current.dayKey || dayKeyColombo(new Date(current.lastWriteTime)), creditMs);
   }
 
   const fresh = {
-    status: normalizedStatus,
+    status: "online",
     lastHeartbeat: new Date(now).toISOString(),
     lastWriteTime: now,
     dayKey: dayKeyColombo(new Date(now)),
@@ -135,11 +144,11 @@ export async function recordHeartbeat(env, username, status) {
 
 /**
  * Immediate, un-throttled write for the rare, real "this agent just left"
- * events — tab closed (sendBeacon on pagehide) or explicit logout. These
- * are natural low-frequency events, not a polling loop, so bypassing the
- * throttle here doesn't reopen the write-budget problem this file exists
- * to solve. Also credits any remaining online time first, same as a
- * normal heartbeat would.
+ * events — tab closed (sendBeacon/fetch-keepalive on pagehide) or
+ * explicit logout. These are natural low-frequency events, not a
+ * polling loop, so bypassing the throttle here doesn't reopen the
+ * write-budget problem this file exists to solve. Also credits any
+ * remaining online time first, same as a normal heartbeat would.
  */
 export async function markOffline(env, username) {
   const now = Date.now();
@@ -158,20 +167,19 @@ export async function markOffline(env, username) {
 
 /**
  * Derives the DISPLAYED status for one agent from their raw `current`
- * record. "offline" is never stored by a heartbeat (only by
- * markOffline() above) — it's computed here, at read time, whenever a
- * heartbeat has gone quiet for longer than the relevant threshold. This
- * is what actually detects "closed the laptop / lost connection /
- * crashed", which a heartbeat-based system can only ever infer from
- * silence, never be told directly.
+ * record. "offline" is written directly by markOffline() (tab close /
+ * logout), OR inferred here, at read time, whenever a heartbeat has
+ * gone quiet for longer than OFFLINE_AFTER_MS. This second path is what
+ * actually detects "closed the laptop / lost connection / crashed",
+ * which a heartbeat-based system can only ever infer from silence,
+ * never be told directly.
  */
 function deriveStatus(current, now) {
   if (!current) return "offline";
   if (current.status === "offline") return "offline";
   const age = now - current.lastWriteTime;
-  const threshold = current.status === "online" ? ONLINE_OFFLINE_AFTER_MS : INACTIVE_OFFLINE_AFTER_MS;
-  if (age > threshold) return "offline";
-  return current.status; // "online" | "inactive"
+  if (age > OFFLINE_AFTER_MS) return "offline";
+  return "online";
 }
 
 /**
@@ -193,7 +201,7 @@ export async function listPresence(env, usernames) {
     const daily = dailyRaw ? JSON.parse(dailyRaw) : null;
     // If still online right now, add the not-yet-credited time since the
     // last write so "today's total" looks live instead of jumping in
-    // 60s steps — display-only, never written back to KV.
+    // 2-minute steps — display-only, never written back to KV.
     let liveOnlineMs = daily ? daily.totalOnlineMs || 0 : 0;
     const status = deriveStatus(current, now);
     if (status === "online" && current) {
@@ -231,4 +239,4 @@ export async function getDailyRecord(env, username, days = 30) {
   return rows.filter(Boolean);
 }
 
-export const PRESENCE_THRESHOLDS = { MIN_KV_WRITE_INTERVAL_MS, ONLINE_OFFLINE_AFTER_MS, INACTIVE_OFFLINE_AFTER_MS };
+export const PRESENCE_THRESHOLDS = { MIN_KV_WRITE_INTERVAL_MS, OFFLINE_AFTER_MS };
