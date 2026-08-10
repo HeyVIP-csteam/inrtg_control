@@ -64,12 +64,22 @@
     return AVATAR_COLORS[hash % AVATAR_COLORS.length];
   }
 
+  // Includes seconds down to the second, matching the reference mock's
+  // "10m 49s" / "0s" — the earlier "< 1m" rounding hid exactly the kind
+  // of short-session detail (someone online for 45s) this table exists
+  // to show accurately. Hours-scale durations still drop seconds (an
+  // agent online for "3h 12m 08s" doesn't need to-the-second precision
+  // at that scale) — same "precision matches what's actually useful"
+  // judgment call the rest of this feature makes elsewhere.
   function fmtDuration(ms) {
-    if (!ms || ms < 60000) return "< 1m";
-    const totalMin = Math.floor(ms / 60000);
-    const h = Math.floor(totalMin / 60);
-    const m = totalMin % 60;
-    return h > 0 ? `${h}h ${m}m` : `${m}m`;
+    if (!ms || ms < 0) return "0s";
+    const totalSec = Math.floor(ms / 1000);
+    const h = Math.floor(totalSec / 3600);
+    const m = Math.floor((totalSec % 3600) / 60);
+    const s = totalSec % 60;
+    if (h > 0) return `${h}h ${m}m`;
+    if (m > 0) return `${m}m ${s}s`;
+    return `${s}s`;
   }
 
   function fmtTime(iso) {
@@ -361,6 +371,15 @@
 
   const RECORD_DAYS = 7; // "LAST 7 DAYS" — matches the reference mock
 
+  // Actual clock time ("6:08:07 PM"), not relative — for "Last active"
+  // specifically, per the reference mock. Different from timeAgo(),
+  // which is still used for the roster rows and this same detail view's
+  // "X min ago" freshness line.
+  function clockTime(iso) {
+    if (!iso) return "—";
+    try { return new Date(iso).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" }); } catch { return "—"; }
+  }
+
   async function loadRecordDetail(username) {
     const detailView = document.getElementById("aaRecordDetailView");
     const agentMeta = recordAgents.find((a) => a.username === username);
@@ -390,9 +409,27 @@
     for (let i = 0; i < RECORD_DAYS; i++) {
       const d = new Date(Date.now() - i * 86400000);
       const key = d.toISOString().slice(0, 10);
-      const label = key === todayLocalKey ? "Today" : d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+      const isToday = key === todayLocalKey;
+      const label = isToday ? "Today" : d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
       const entry = byDayKey[key];
-      rows.push({ key, label, isToday: key === todayLocalKey, totalOnlineMs: entry ? entry.totalOnlineMs : 0, lastActiveAt: entry ? entry.lastActiveAt : null });
+      let lastActiveAt = entry ? entry.lastActiveAt : null;
+      // Fallback for TODAY only: presence:current's own lastHeartbeat
+      // (agentMeta.lastHeartbeat, from list.js) is kept fresh on every
+      // single real write regardless of anything day-record-specific —
+      // it's the same field the roster's "X min ago" already relies on.
+      // The per-day lastHeartbeatAt field only exists on daily records
+      // that received at least one write AFTER this field was added, so
+      // an agent whose today-record predates that (or who just sent
+      // their very first-ever heartbeat, which doesn't touch a credit
+      // path) could show a real today total but a missing lastActiveAt.
+      // Falling back here means the detail view never shows "last
+      // active: —" for someone who's plainly online right now. Past
+      // days have no "current" state to fall back to, so they're left
+      // as a genuine "—" when truly absent.
+      if (isToday && !lastActiveAt && agentMeta && agentMeta.lastHeartbeat) {
+        lastActiveAt = agentMeta.lastHeartbeat;
+      }
+      rows.push({ key, label, isToday, totalOnlineMs: entry ? entry.totalOnlineMs : 0, lastActiveAt });
     }
 
     const meta = agentMeta ? statusMeta(agentMeta.status) : statusMeta("offline");
@@ -402,8 +439,8 @@
     const tableRows = rows.map((r) => `
       <div class="ipa-row${r.isToday ? " aa-record-row-today" : ""}" style="grid-template-columns:1fr 1.2fr 1.2fr;">
         <div>${r.isToday ? "Today" : ctx.escapeHtml(r.label)}</div>
-        <div>${fmtDuration(r.totalOnlineMs)}</div>
-        <div>${r.lastActiveAt ? timeAgo(r.lastActiveAt) : "—"}</div>
+        <div style="text-align:left;">${fmtDuration(r.totalOnlineMs)}</div>
+        <div>${clockTime(r.lastActiveAt)}</div>
       </div>`).join("");
 
     detailView.innerHTML = `
@@ -413,13 +450,13 @@
         <span class="aa-status-pill ${meta.cls}"><span class="aa-dot ${meta.dotCls}"></span> ${meta.label}</span>
       </div>
       <div class="aa-record-detail-summary">
-        ${agentMeta && agentMeta.officeName ? ctx.escapeHtml(agentMeta.officeName) : "—"} ·
+        ${agentMeta ? timeAgo(agentMeta.lastHeartbeat) : "—"} ·
         Today online: ${fmtDuration(todayRow.totalOnlineMs)} ·
-        Last active: ${todayRow.lastActiveAt ? timeAgo(todayRow.lastActiveAt) : "—"}
+        Last active: ${clockTime(todayRow.lastActiveAt)}
       </div>
       <p class="ipa-table-title" style="margin:16px 0 8px;">LAST ${RECORD_DAYS} DAYS</p>
       <div class="ipa-table">
-        <div class="ipa-row ipa-row-head" style="grid-template-columns:1fr 1.2fr 1.2fr;"><div>Date</div><div>Total online time</div><div>Last active time</div></div>
+        <div class="ipa-row ipa-row-head" style="grid-template-columns:1fr 1.2fr 1.2fr;"><div>Date</div><div style="text-align:left;">Total online time</div><div>Last active time</div></div>
         ${tableRows}
       </div>`;
   }
