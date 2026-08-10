@@ -11,14 +11,14 @@
  * panel). See the comment on that filter for why this is stricter than
  * listAccounts()'s usual "hidden from everyone except itself" rule.
  *
- * Gated by canSeeAdminSection(account, "activeAgents") — same flexible
- * per-account model as every other Account Management Access section
- * (see _shared/accounts.js's ADMIN_SECTIONS_LIST). Floor is superadmin;
- * the Owner can extend or restrict individual accounts from there via
- * the existing Agent Profile "Account Management Access" checkboxes,
- * exactly like Whitelist IP / TG Routes / Settings / Announcements.
+ * Gated by canAccessOwnerTopic(account, "activeAgents") — lives in the
+ * Agent Profile's "Topic access" list now (moved out of Account
+ * Management Access, 2026-08-10 — see OWNER_TOPIC_ITEMS in
+ * _shared/accounts.js). Floor is superadmin; STRICTLY the real Owner can
+ * grant/restrict individual accounts (no canGrantAdminAccess delegation
+ * here, unlike the old Account Management Access model).
  */
-import { authenticateStaff, ROLE_RANK, canSeeAdminSection, listAccounts, listOffices } from "../../_shared/accounts.js";
+import { authenticateStaff, ROLE_RANK, canAccessOwnerTopic, listAccounts, listOffices } from "../../_shared/accounts.js";
 import { listPresence } from "../../_shared/presence.js";
 
 export async function onRequestGet(context) {
@@ -33,7 +33,7 @@ async function handleGet({ request, env }) {
   if (!env.THREADS_KV) return json({ ok: false, error: "THREADS_KV is not bound yet." }, 500);
   const auth = await authenticateStaff(request, env, ROLE_RANK.agent);
   if (!auth.ok || !auth.account) return json({ ok: false, error: "Not authorized." }, 401);
-  if (!canSeeAdminSection(auth.account, "activeAgents")) {
+  if (!canAccessOwnerTopic(auth.account, "activeAgents")) {
     return json({ ok: false, error: "You don't have access to Active Agents." }, 403);
   }
 

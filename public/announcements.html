@@ -95,30 +95,24 @@
     const authInfo = window.AgentAuth.getAuth();
     const myRank = ROLE_RANK[authInfo?.role] ?? ROLE_RANK.agent;
 
-    // Mirrors _shared/accounts.js canSeeAdminSection()/canEditAdminSection()
-    // for "announcements" specifically — UI convenience only, the server
-    // independently re-checks on every request regardless of this.
+    // Mirrors _shared/accounts.js canAccessOwnerTopic(account,
+    // "announcements") — moved out of Account Management Access into the
+    // Agent Profile's "Topic access" list, 2026-08-10 (see
+    // OWNER_TOPIC_ITEMS in _shared/accounts.js). UI convenience only, the
+    // server independently re-checks on every request regardless of
+    // this. STRICTLY Owner-granted (ownerTopicAccess) — no "all"
+    // shortcut, no rank>=admin blanket bypass. Single tier: having this
+    // topic means both viewing and managing announcements (no separate
+    // view-only mode anymore).
     const ANN_FLOOR = ROLE_RANK.admin;
-    const ANN_DEFAULT_SEEN = { agent: false, senior: false, admin: true, superadmin: true };
-    const ANN_DEFAULT_EDIT = { agent: false, senior: false, admin: true, superadmin: true };
     function canSeeAnnouncements() {
       if (!authInfo) return false;
       if (authInfo.role === "owner") return true;
       if (myRank < ANN_FLOOR) return false;
-      if (authInfo.allowedAdminSections === "all") return true;
-      if (Array.isArray(authInfo.allowedAdminSections)) return authInfo.allowedAdminSections.includes("announcements");
-      return !!ANN_DEFAULT_SEEN[authInfo.role];
-    }
-    function canEditAnnouncements() {
-      if (!authInfo) return false;
-      if (authInfo.role === "owner") return true;
-      if (!canSeeAnnouncements()) return false;
-      if (authInfo.adminSectionEditAccess === "all") return true;
-      if (Array.isArray(authInfo.adminSectionEditAccess)) return authInfo.adminSectionEditAccess.includes("announcements");
-      return !!ANN_DEFAULT_EDIT[authInfo.role];
+      return Array.isArray(authInfo.ownerTopicAccess) && authInfo.ownerTopicAccess.includes("announcements");
     }
 
-    const canEdit = canEditAnnouncements();
+    const canEdit = canSeeAnnouncements();
     let topics = [];
     let announcements = [];
     let selectedId = null; // null while on the blank "new" form
@@ -202,12 +196,28 @@
       const ro = canEdit ? "" : "disabled";
       // Replaces the old Active checkbox — the save button itself doubles
       // as the status toggle, labeled with the state clicking it WILL
-      // produce (not the current one), so "Active" means "save + turn
-      // this on" and "Inactive" means "save + turn this off". New drafts
-      // default to becoming Active on first save, matching the checkbox's
-      // old default of checked=true for a brand-new announcement.
-      const currentEnabled = a ? !!a.enabled : true;
-      const toggleLabel = currentEnabled ? "Inactive" : "Active";
+      // produce (not the raw `enabled` flag). Keyed off whether the
+      // announcement is EFFECTIVELY active right now (isEffectivelyActive
+      // — accounts for start/end dates too), not just the raw `enabled`
+      // flag, so:
+      //   - a brand-new draft (no record yet) is not effectively active
+      //     -> button reads "Active" (first save turns it on)
+      //   - an Expired announcement still has enabled:true under the
+      //     hood (that's what makes it "expired" instead of "inactive" —
+      //     see statusOf), but isEffectivelyActive is false for it (past
+      //     endAt) -> button reads "Active" (re-enable it), not
+      //     "Inactive" (which would be a no-op/confusing on something
+      //     that isn't currently showing to anyone anyway)
+      //   - a Scheduled announcement (future startAt) is the same case
+      //     -> "Active"
+      //   - only a currently, effectively Active announcement shows
+      //     "Inactive" (click to turn it off)
+      // BUG FIXED, 2026-08-10: this used to read `a.enabled` directly
+      // (defaulting a brand-new draft to `true`), which showed
+      // "Inactive" for a draft that had never been saved yet AND for
+      // Expired announcements — backwards in both cases.
+      const effectivelyActive = a ? isEffectivelyActive(a, Date.now()) : false;
+      const toggleLabel = effectivelyActive ? "Inactive" : "Active";
 
       card.innerHTML = `
         <div class="ann-form-scroll">
@@ -235,7 +245,7 @@
         </div>
         <div class="ann-form-footer">
           ${canEdit && a ? '<button type="button" class="btn-danger" id="annDeleteBtn">Delete</button>' : ""}
-          ${canEdit ? `<button type="button" class="btn-submit" id="annSaveBtn" data-target-enabled="${currentEnabled ? "false" : "true"}" style="width:auto;padding:9px 18px;">${toggleLabel}</button>` : ""}
+          ${canEdit ? `<button type="button" class="btn-submit" id="annSaveBtn" data-target-enabled="${effectivelyActive ? "false" : "true"}" style="width:auto;padding:9px 18px;">${toggleLabel}</button>` : ""}
         </div>`;
 
       const saveBtn = document.getElementById("annSaveBtn");

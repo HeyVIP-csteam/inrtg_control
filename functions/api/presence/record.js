@@ -17,7 +17,7 @@
  * account see itself) — this endpoint blocks it unconditionally,
  * regardless of who's asking.
  */
-import { authenticateStaff, ROLE_RANK, canSeeAdminSection, listAccounts } from "../../_shared/accounts.js";
+import { authenticateStaff, ROLE_RANK, canAccessOwnerTopic, listAccounts } from "../../_shared/accounts.js";
 import { getDailyRecord } from "../../_shared/presence.js";
 
 const MAX_DAYS = 90;
@@ -34,7 +34,7 @@ async function handleGet({ request, env }) {
   if (!env.THREADS_KV) return json({ ok: false, error: "THREADS_KV is not bound yet." }, 500);
   const auth = await authenticateStaff(request, env, ROLE_RANK.agent);
   if (!auth.ok || !auth.account) return json({ ok: false, error: "Not authorized." }, 401);
-  if (!canSeeAdminSection(auth.account, "activeAgents")) {
+  if (!canAccessOwnerTopic(auth.account, "activeAgents")) {
     return json({ ok: false, error: "You don't have access to Active Agents." }, 403);
   }
 

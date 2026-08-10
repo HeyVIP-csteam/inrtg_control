@@ -109,45 +109,84 @@ export const ADMIN_SECTIONS_LIST = [
   // Admin/Senior never see it at all unless individually granted via
   // allowedAdminSections, same opt-in-only pattern as the others.
   { id: "depositSheets", name: "Deposit Sheet Link", icon: "🧾", floorRank: ROLE_RANK.superadmin },
-  // Announcement banner management (create/schedule the amber REMINDER
-  // banner every logged-in agent sees). Floor is admin, same as
-  // tgRoutes/agentProfile/settings, but its ROLE DEFAULT below is
-  // deliberately its own tier (admin sees+edits it by default, unlike
-  // whitelistIp which is admin-see/no-edit by default) — see
-  // ADMIN_SECTIONS_DEFAULT_SEEN/EDIT just below.
-  { id: "announcements", name: "Announcements", icon: "📢", floorRank: ROLE_RANK.admin },
-  // "Active Agents" — live online/inactive/offline board for staff
-  // accounts (functions/_shared/presence.js + functions/api/presence/*).
-  // Floor is superadmin, same tier as depositSheets: the Owner starts
-  // everyone else locked out and opens it up per-account from here, same
-  // opt-in-only pattern as every other section. View-only concept (no
-  // "edit" — it's a live dashboard, not an editable resource), so it's
-  // deliberately absent from EDITABLE_ADMIN_SECTIONS below.
-  { id: "activeAgents", name: "Active Agents", icon: "👥", floorRank: ROLE_RANK.superadmin },
+  // NOTE — "announcements" and "activeAgents" USED to live here (both
+  // superadmin-tier, Owner-controlled Account Management Access items).
+  // Moved out, 2026-08-10 — they're now OWNER_TOPIC_ITEMS below, living
+  // in the Agent Profile's "Topic access" list instead of Account
+  // Management Access. See the comment on OWNER_TOPIC_ITEMS for why, and
+  // canAccessOwnerTopic() for the enforcement.
 ];
 
 // Role-based defaults, used ONLY when the Owner has never explicitly set
 // allowedAdminSections / adminSectionEditAccess on that specific account.
 //   - agent:      sees none of the 4 (Reset Password only, ungated)
 //   - senior:     Create Account only (the one section its floor unlocks)
-//   - admin:      Whitelist IP (view-only) + Announcements (view AND
-//                 edit — its own default tier, see the field comment on
-//                 "announcements" in ADMIN_SECTIONS_LIST above)
-//   - superadmin: every section, all fully editable
+//   - admin:      Whitelist IP (view-only)
+//   - superadmin: every remaining section, all fully editable
 //   - owner:      always full access — short-circuited before these are
 //                 ever consulted, see canSeeAdminSection()/canEditAdminSection()
 export const ADMIN_SECTIONS_DEFAULT_SEEN = {
   agent: [],
   senior: ["createAccount"],
-  admin: ["whitelistIp", "announcements"],
-  superadmin: ["createAccount", "whitelistIp", "tgRoutes", "agentProfile", "depositSheets", "settings", "announcements", "activeAgents"],
+  admin: ["whitelistIp"],
+  superadmin: ["createAccount", "whitelistIp", "tgRoutes", "agentProfile", "depositSheets", "settings"],
 };
 export const ADMIN_SECTIONS_DEFAULT_EDIT = {
   agent: [],
   senior: [],
-  admin: ["announcements"], // Whitelist IP visible but view-only by default; Announcements is both by default
-  superadmin: ["whitelistIp", "tgRoutes", "agentProfile", "depositSheets", "settings", "announcements"],
+  admin: [], // Whitelist IP visible but view-only by default
+  superadmin: ["whitelistIp", "tgRoutes", "agentProfile", "depositSheets", "settings"],
 };
+
+// ---- Owner Topics ("Topic access", Owner-gated items) ----
+//
+// MOVED, 2026-08-10: "Announcements" and "Active Agents" used to be
+// Account Management Access items (ADMIN_SECTIONS_LIST above) —
+// superadmin-tier, but editable by ANY Owner-delegated account via
+// canManageOthersAdminAccess() (canGrantAdminAccess), same as every
+// other Account Management Access item. Per a direct request, both moved
+// into the Agent Personal Profile's "Topic access" list instead (next to
+// the real form-module checkboxes, e.g. qa/account_issue/...) — but they
+// are NOT real form modules (there's no form.html?module=announcements),
+// so they are NOT added to allowedModules/window.MODULES. They live in
+// this separate, parallel list instead, and are rendered inline with the
+// module checkboxes purely as a UI grouping — see
+// public/index.html's OWNER_TOPIC_ITEMS + openAgentProfileModal().
+//
+// Deliberately its OWN field (`ownerTopicAccess`, see saveAccount()
+// below) rather than reusing `allowedModules`:
+//   - `allowedModules` defaults to "all" for every account (new or
+//     pre-existing) — reusing it here would mean every account
+//     automatically got Announcements/Active Agents access the moment
+//     this shipped, exactly backwards for something that's supposed to
+//     require deliberate Owner action.
+//   - `allowedModules === "all"` is also achieved just by an agent
+//     having every REAL topic checked — that can't be allowed to
+//     silently double as "and also grant these two Owner-gated items",
+//     see canAccessOwnerTopic() below.
+//
+// STRICTLY Owner-only to grant (not delegable via canGrantAdminAccess,
+// unlike Account Management Access) — enforced in
+// functions/api/admin/accounts.js. `ownerTopicAccess` defaults to an
+// EMPTY array for every account, new or pre-existing — nobody is
+// grandfathered in; the Owner has to explicitly check the box for each
+// account, same "opt-in-only" principle the rest of this file uses.
+export const OWNER_TOPIC_ITEMS = [
+  { id: "announcements", name: "Announcements", icon: "📢", floorRank: ROLE_RANK.admin },
+  { id: "activeAgents", name: "Active Agents", icon: "👥", floorRank: ROLE_RANK.superadmin },
+];
+
+export function canAccessOwnerTopic(account, topicId) {
+  if (!account) return true; // bootstrap mode — same full trust bootstrapPassword already had
+  if (account.role === "owner") return true;
+  const topic = OWNER_TOPIC_ITEMS.find((t) => t.id === topicId);
+  if (!topic) return false;
+  if (rankOf(account.role) < topic.floorRank) return false;
+  // No "all" shortcut and no rank>=admin blanket bypass on purpose (see
+  // the comment above) — explicit membership in ownerTopicAccess is the
+  // ONLY way in, regardless of rank or of what allowedModules holds.
+  return Array.isArray(account.ownerTopicAccess) && account.ownerTopicAccess.includes(topicId);
+}
 
 export function canSeeAdminSection(account, sectionId) {
   if (!account) return true; // bootstrap mode — same full trust bootstrapPassword already had
@@ -189,7 +228,7 @@ export function canManageOthersAdminAccess(account) {
 // View-only. (The separate "actor must outrank the TARGET account" rule
 // for Agent Profile edits, in functions/api/admin/accounts.js, is a
 // different, still-active protection — not replaced by this.)
-export const EDITABLE_ADMIN_SECTIONS = ["whitelistIp", "tgRoutes", "agentProfile", "depositSheets", "settings", "announcements"];
+export const EDITABLE_ADMIN_SECTIONS = ["whitelistIp", "tgRoutes", "agentProfile", "depositSheets", "settings"];
 
 export function canEditAdminSection(account, sectionId) {
   if (!account) return true; // bootstrap mode
@@ -428,7 +467,7 @@ function stripSecret(account) {
 // `passwordChangedBy` is only meaningful when `password` is also given —
 // the username of whoever triggered the change (their own, for
 // self-service; the admin's, for an admin-driven reset).
-export async function saveAccount(env, { username, password, passwordChangedBy, role, officeId, allowedBrands, allowedModules, allowedAdminSections, adminSectionEditAccess, canGrantAdminAccess, fullName, pid }) {
+export async function saveAccount(env, { username, password, passwordChangedBy, role, officeId, allowedBrands, allowedModules, allowedAdminSections, adminSectionEditAccess, canGrantAdminAccess, ownerTopicAccess, fullName, pid }) {
   const key = username.toLowerCase();
   const existing = await getAccount(env, key);
   let salt = existing?.salt;
@@ -522,6 +561,14 @@ export async function saveAccount(env, { username, password, passwordChangedBy, 
     // account, new or pre-existing, so nobody gains this power just by
     // this field shipping.
     canGrantAdminAccess: canGrantAdminAccess !== undefined ? !!canGrantAdminAccess : (existing?.canGrantAdminAccess || false),
+    // Owner Topics ("Topic access" list — Announcements / Active
+    // Agents). Always an explicit array, never "all" — see
+    // OWNER_TOPIC_ITEMS above for why. Defaults to [] (locked out) for
+    // every account, new or pre-existing; only an explicit Owner save
+    // ever changes it.
+    ownerTopicAccess: ownerTopicAccess !== undefined
+      ? (Array.isArray(ownerTopicAccess) ? ownerTopicAccess : [])
+      : (existing?.ownerTopicAccess ?? []),
     fullName: fullName !== undefined ? fullName : (existing?.fullName || ""),
     pid: pid !== undefined ? pid : (existing?.pid || ""),
     lastActiveAt: existing?.lastActiveAt || null,

@@ -149,6 +149,22 @@ async function handlePost({ request, env }) {
       }
     }
 
+    // Owner Topics ("Topic access" list — Announcements / Active Agents).
+    // STRICTLY the real Owner, unlike allowedAdminSections above — no
+    // canGrantAdminAccess delegation here on purpose (see OWNER_TOPIC_ITEMS
+    // in _shared/accounts.js). Still scoped to targets ranked below the
+    // actor, same as everywhere else, even though for a real Owner that's
+    // always true (owner outranks everyone) — kept for consistency/
+    // future-proofing if that ever stops being trivially true.
+    if (body.ownerTopicAccess !== undefined) {
+      if (auth.account?.role !== "owner") {
+        return json({ ok: false, error: "Only the Owner can change Topic access for Announcements or Active Agents." }, 403);
+      }
+      if (existingTarget && !canManage(actorRank, rankOf(existingTarget.role))) {
+        return json({ ok: false, error: "You can only change Topic access for accounts ranked below your own." }, 403);
+      }
+    }
+
     if (!existingTarget) {
       // ---- Creating a brand-new account ----
       if (!canSeeAdminSection(auth.account, "createAccount")) {
@@ -219,6 +235,7 @@ async function handlePost({ request, env }) {
         allowedAdminSections: body.allowedAdminSections !== undefined ? body.allowedAdminSections : undefined,
         adminSectionEditAccess: body.adminSectionEditAccess !== undefined ? body.adminSectionEditAccess : undefined,
         canGrantAdminAccess: body.canGrantAdminAccess !== undefined ? !!body.canGrantAdminAccess : undefined,
+        ownerTopicAccess: body.ownerTopicAccess !== undefined ? body.ownerTopicAccess : undefined,
         fullName: body.fullName !== undefined ? body.fullName : undefined,
         pid: body.pid !== undefined ? body.pid : undefined,
       });

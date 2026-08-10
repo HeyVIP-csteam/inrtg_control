@@ -611,11 +611,11 @@
       { id: "agentProfile", name: "Agent Profile", icon: "🪪", floorRank: ROLE_RANK.admin },
       { id: "depositSheets", name: "Deposit Sheet Link", icon: "🧾", floorRank: ROLE_RANK.superadmin },
       { id: "settings", name: "Settings", icon: "⚙️", floorRank: ROLE_RANK.admin },
-      { id: "announcements", name: "Announcements", icon: "📢", floorRank: ROLE_RANK.admin },
-      // Mirrors functions/_shared/accounts.js exactly — keep in sync.
-      { id: "activeAgents", name: "Active Agents", icon: "👥", floorRank: ROLE_RANK.superadmin },
+      // "announcements" and "activeAgents" USED to live here — moved to
+      // OWNER_TOPIC_ITEMS below, 2026-08-10 (see the comment on that
+      // constant, and on the matching one in functions/_shared/accounts.js).
     ];
-    const EDITABLE_ADMIN_SECTIONS = ["whitelistIp", "tgRoutes", "agentProfile", "depositSheets", "settings", "announcements"];
+    const EDITABLE_ADMIN_SECTIONS = ["whitelistIp", "tgRoutes", "agentProfile", "depositSheets", "settings"];
     // SECURITY FIX — 2026-07-28: role-based defaults for accounts the
     // Owner has never explicitly touched. Mirrors
     // ADMIN_SECTIONS_DEFAULT_SEEN / ADMIN_SECTIONS_DEFAULT_EDIT in
@@ -628,15 +628,36 @@
     const ADMIN_SECTIONS_DEFAULT_SEEN = {
       agent: [],
       senior: ["createAccount"],
-      admin: ["whitelistIp", "announcements"],
-      superadmin: ["createAccount", "whitelistIp", "tgRoutes", "agentProfile", "depositSheets", "settings", "announcements", "activeAgents"],
+      admin: ["whitelistIp"],
+      superadmin: ["createAccount", "whitelistIp", "tgRoutes", "agentProfile", "depositSheets", "settings"],
     };
     const ADMIN_SECTIONS_DEFAULT_EDIT = {
       agent: [],
       senior: [],
-      admin: ["announcements"], // Whitelist IP visible by default, but view-only; Announcements is both by default
-      superadmin: ["whitelistIp", "tgRoutes", "agentProfile", "depositSheets", "settings", "announcements"],
+      admin: [], // Whitelist IP visible by default, but view-only
+      superadmin: ["whitelistIp", "tgRoutes", "agentProfile", "depositSheets", "settings"],
     };
+
+    // ---- Owner Topics ("Topic access", Owner-gated items) ----
+    // Mirrors OWNER_TOPIC_ITEMS / canAccessOwnerTopic() in
+    // functions/_shared/accounts.js exactly — keep in sync. Rendered
+    // inline with the real form-module checkboxes in the Agent Profile's
+    // "Topic access" list (see openAgentProfileModal below), but backed
+    // by their own `ownerTopicAccess` field — NOT allowedModules — and
+    // STRICTLY Owner-editable (no canGrantAdminAccess delegation, unlike
+    // Account Management Access above).
+    const OWNER_TOPIC_ITEMS = [
+      { id: "announcements", name: "Announcements", icon: "📢", floorRank: ROLE_RANK.admin },
+      { id: "activeAgents", name: "Active Agents", icon: "👥", floorRank: ROLE_RANK.superadmin },
+    ];
+    function canAccessOwnerTopic(topicId) {
+      if (!authInfo) return false;
+      if (authInfo.role === "owner") return true;
+      const topic = OWNER_TOPIC_ITEMS.find((t) => t.id === topicId);
+      if (!topic) return false;
+      if (myRank < topic.floorRank) return false;
+      return Array.isArray(authInfo.ownerTopicAccess) && authInfo.ownerTopicAccess.includes(topicId);
+    }
     function canSeeAdminSection(sectionId) {
       if (!authInfo) return false;
       if (authInfo.role === "owner") return true;
@@ -674,7 +695,7 @@
     // the app's existing pulse keyframe) while at least one announcement
     // is currently active — a lightweight separate fetch on load + 30s
     // poll drives this; doesn't share state with announcement-banner.js.
-    document.getElementById("announcementCard").style.display = canSeeAdminSection("announcements") ? "" : "none";
+    document.getElementById("announcementCard").style.display = canAccessOwnerTopic("announcements") ? "" : "none";
 
     // ---- Active Agents tool card — same gate pattern as Announcement
     // above, floor is superadmin (see ADMIN_SECTIONS_LIST). Opens a
@@ -682,7 +703,7 @@
     // public/assets/active-agents-panel.js for the panel itself.
     const activeAgentsCardEl = document.getElementById("activeAgentsCard");
     if (activeAgentsCardEl) {
-      activeAgentsCardEl.style.display = canSeeAdminSection("activeAgents") ? "" : "none";
+      activeAgentsCardEl.style.display = canAccessOwnerTopic("activeAgents") ? "" : "none";
       activeAgentsCardEl.addEventListener("click", (e) => {
         e.preventDefault();
         if (window.openActiveAgentsModal) window.openActiveAgentsModal();
@@ -702,7 +723,7 @@
         }
       } catch {}
     }
-    if (canSeeAdminSection("announcements")) {
+    if (canAccessOwnerTopic("announcements")) {
       pollAnnouncementBreathing();
       setInterval(pollAnnouncementBreathing, 30000);
     }
@@ -729,7 +750,7 @@
         }
       } catch {}
     }
-    if (canSeeAdminSection("activeAgents")) {
+    if (canAccessOwnerTopic("activeAgents")) {
       pollActiveAgentsStat();
       setInterval(pollActiveAgentsStat, 30000);
     }
@@ -1585,8 +1606,20 @@
       const allModulesSelected = a.allowedModules === "all" || a.allowedModules === undefined;
       const moduleChecks = AGENT_PROFILE_MODULE_LIST.map((m) => `
         <label class="agent-profile-module-check">
-          <input type="checkbox" value="${acctEsc(m.id)}" ${allModulesSelected || (Array.isArray(a.allowedModules) && a.allowedModules.includes(m.id)) ? "checked" : ""} ${canManageAccess ? "" : "disabled"} />
+          <input type="checkbox" class="ap-real-module-checkbox" value="${acctEsc(m.id)}" ${allModulesSelected || (Array.isArray(a.allowedModules) && a.allowedModules.includes(m.id)) ? "checked" : ""} ${canManageAccess ? "" : "disabled"} />
           ${m.icon || ""} ${acctEsc(m.name)}
+        </label>`).join("");
+      // Owner Topics (Announcements / Active Agents) — rendered inline
+      // with the real module checkboxes above (same "Topic access"
+      // list), but backed by `ownerTopicAccess`, not `allowedModules` —
+      // no "all" shortcut, and STRICTLY Owner-editable regardless of
+      // canManageAccess (a SuperAdmin who can edit everything else in
+      // this modal still can't touch these two — only isRealOwner can).
+      // See OWNER_TOPIC_ITEMS above for why this is a separate field.
+      const ownerTopicChecks = OWNER_TOPIC_ITEMS.map((t) => `
+        <label class="agent-profile-module-check">
+          <input type="checkbox" class="ap-owner-topic-checkbox" value="${acctEsc(t.id)}" ${Array.isArray(a.ownerTopicAccess) && a.ownerTopicAccess.includes(t.id) ? "checked" : ""} ${isRealOwner ? "" : "disabled"} />
+          ${t.icon} ${acctEsc(t.name)} <span class="agent-profile-locked-note">(Owner only)</span>
         </label>`).join("");
 
       // Account Management Access — Owner-only. Unset allowedAdminSections
@@ -1659,7 +1692,7 @@
                 <span>🔒 Topic access ${canManageAccess ? "" : '<span class="agent-profile-locked-note">(SuperAdmin only, and only for accounts ranked below your own)</span>'}</span>
                 <span class="arrow">&rarr;</span>
               </p>
-              <div class="agent-profile-module-list agent-profile-collapsible-body">${moduleChecks}</div>
+              <div class="agent-profile-module-list agent-profile-collapsible-body">${moduleChecks}${ownerTopicChecks}</div>
             </div>
 
             ${canManageOthersAdminAccess ? `
@@ -1777,9 +1810,29 @@
         const pills = Array.from(document.querySelectorAll("#ap_brandGrid .brand-toggle-pill"));
         const selected = pills.filter((p) => p.classList.contains("selected")).map((p) => p.dataset.brand);
         payload.allowedBrands = pills.length > 0 && selected.length === pills.length ? "all" : selected;
-        const moduleChecks = Array.from(document.querySelectorAll(".agent-profile-module-list input[type=checkbox]"));
+        // Scoped to .ap-real-module-checkbox specifically now (NOT every
+        // checkbox in .agent-profile-module-list) — that list also
+        // contains the Owner Topic checkboxes (Announcements/Active
+        // Agents, .ap-owner-topic-checkbox) rendered inline just below,
+        // which must NOT be folded into allowedModules/"all" (see the
+        // comment on OWNER_TOPIC_ITEMS above for why that would be a
+        // real access-control bug).
+        const moduleChecks = Array.from(document.querySelectorAll(".ap-real-module-checkbox"));
         const selectedModules = moduleChecks.filter((c) => c.checked).map((c) => c.value);
         payload.allowedModules = selectedModules.length === moduleChecks.length ? "all" : selectedModules;
+      }
+      // Owner Topics (Announcements / Active Agents) — checkboxes are
+      // always in the DOM (rendered disabled for non-Owners so they can
+      // at least SEE whether an account is granted), but must only be
+      // sent to the server when the VIEWER is the real Owner. If a
+      // non-Owner's save always included this field (even unchanged),
+      // the server's Owner-only gate on ownerTopicAccess (see
+      // functions/api/admin/accounts.js) would reject the ENTIRE save —
+      // breaking basic profile edits for every SuperAdmin. Gate on
+      // isRealOwner explicitly rather than DOM presence.
+      if (isRealOwner) {
+        const ownerTopicCheckboxes = Array.from(document.querySelectorAll(".ap-owner-topic-checkbox"));
+        payload.ownerTopicAccess = ownerTopicCheckboxes.filter((c) => c.checked).map((c) => c.value);
       }
       // Account Management Access — separate block, rendered for the Owner
       // OR a delegated account (canManageOthersAdminAccess), independent
