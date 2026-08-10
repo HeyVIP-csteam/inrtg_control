@@ -226,7 +226,7 @@
 
     return agents.map((a) => {
       const meta = statusMeta(a.status);
-      const initials = (a.fullName || a.username || "?").trim().slice(0, 2).toUpperCase();
+      const initials = (a.username || "?").trim().slice(0, 2).toUpperCase();
       const color = colorFor(a.username);
       const pills = [];
       pills.push(`<span class="aa-pill">🪪 ${ctx.escapeHtml(a.role.charAt(0).toUpperCase() + a.role.slice(1))}</span>`);
@@ -241,7 +241,8 @@
             <span class="aa-dot ${meta.dotCls} aa-avatar-dot"></span>
           </div>
           <div class="aa-roster-info">
-            <div class="aa-roster-name">${ctx.escapeHtml(a.fullName || a.username)}</div>
+            <div class="aa-roster-name">@${ctx.escapeHtml(a.username)}</div>
+            ${a.fullName ? `<div class="aa-roster-fullname">${ctx.escapeHtml(a.fullName)}</div>` : ""}
             <div class="aa-pill-row">${pills.join("")}</div>
           </div>
           <div class="aa-roster-right">
@@ -316,12 +317,12 @@
       return;
     }
     listEl.innerHTML = agents.map((a) => {
-      const letter = (a.fullName || a.username || "?").trim().slice(0, 1).toUpperCase();
+      const letter = (a.username || "?").trim().slice(0, 1).toUpperCase();
       const selected = a.username === selectedRecordUsername ? " aa-record-agent-row-active" : "";
       return `
         <div class="aa-record-agent-row${selected}" data-aa-record-username="${ctx.escapeHtml(a.username)}">
           <span class="aa-record-avatar">${ctx.escapeHtml(letter)}</span>
-          <span class="aa-record-agent-name">${ctx.escapeHtml(a.fullName || a.username)}</span>
+          <span class="aa-record-agent-name">@${ctx.escapeHtml(a.username)}</span>
           <span class="aa-dot ${recordStatusMeta(a.status)}"></span>
         </div>`;
     }).join("");

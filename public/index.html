@@ -303,6 +303,7 @@
             <div class="t-icon" style="background:#f59e0b33;" id="announcementCardIcon">📢</div>
             <div class="t-name">Announcement</div>
             <div class="t-desc">Create and schedule the site-wide REMINDER banner</div>
+            <div class="t-sub-stat" id="announcementActiveStat"></div>
           </a>
           <!-- No data-route on purpose — this opens as a popup over the
                current page (see #aaModalBackdrop below), the same way
@@ -311,9 +312,10 @@
                [data-route] elements, so this is safe to wire with its
                own click handler (see openActiveAgentsModal below). -->
           <a href="#" class="tool-card" id="activeAgentsCard" style="--tool-accent:#34d399;display:none;">
-            <div class="t-icon" style="background:#34d39933;">🟢</div>
+            <div class="t-icon" style="background:#34d39933;" id="activeAgentsCardIcon">🟢</div>
             <div class="t-name">Active Agents</div>
             <div class="t-desc">See who's online or offline right now</div>
+            <div class="t-sub-stat" id="activeAgentsOnlineStat"></div>
           </a>
         </div>
 
@@ -680,13 +682,46 @@
       try {
         const res = await window.AgentAuth.authFetch("/api/announcements");
         const data = await res.json();
-        const hasActive = data.ok && Array.isArray(data.announcements) && data.announcements.length > 0;
+        const count = data.ok && Array.isArray(data.announcements) ? data.announcements.length : 0;
+        const hasActive = count > 0;
         document.getElementById("announcementCardIcon").classList.toggle("breathing", hasActive);
+        const stat = document.getElementById("announcementActiveStat");
+        if (stat) {
+          stat.textContent = hasActive ? `${count} active` : "";
+          stat.classList.toggle("breathing", hasActive);
+        }
       } catch {}
     }
     if (canSeeAdminSection("announcements")) {
       pollAnnouncementBreathing();
       setInterval(pollAnnouncementBreathing, 30000);
+    }
+
+    // ---- Active Agents tool card — same "breathing while there's
+    // something live" language as Announcement above, driven by its own
+    // lightweight poll (doesn't share state with active-agents-panel.js,
+    // which only runs once the modal itself is open). Breathes only
+    // while at least one agent is online — an all-offline board is the
+    // calm, ordinary state, same convention as Announcement's "nothing
+    // active = no breathing" and IP Access's pending-alert card.
+    async function pollActiveAgentsStat() {
+      try {
+        const res = await window.AgentAuth.authFetch("/api/presence/list");
+        const data = await res.json();
+        if (!data.ok) return;
+        const online = data.stats ? data.stats.online : 0;
+        const hasOnline = online > 0;
+        document.getElementById("activeAgentsCardIcon")?.classList.toggle("breathing", hasOnline);
+        const stat = document.getElementById("activeAgentsOnlineStat");
+        if (stat) {
+          stat.textContent = `${online} online`;
+          stat.classList.toggle("breathing", hasOnline);
+        }
+      } catch {}
+    }
+    if (canSeeAdminSection("activeAgents")) {
+      pollActiveAgentsStat();
+      setInterval(pollActiveAgentsStat, 30000);
     }
 
     const acctToggle = document.getElementById("acctMgmtToggle");
@@ -1811,6 +1846,7 @@
       aaModalBackdrop.classList.remove("is-open");
       document.getElementById("aaRecordBackdrop").classList.remove("is-open");
       if (window.stopActiveAgentsPanel) window.stopActiveAgentsPanel();
+      if (typeof pollActiveAgentsStat === "function") pollActiveAgentsStat();
     }
     document.getElementById("aaModalClose").addEventListener("click", closeAaModal);
     aaModalBackdrop.addEventListener("click", (e) => { if (e.target === aaModalBackdrop) closeAaModal(); });

@@ -182,3 +182,36 @@ Dashboard 那边多做任何绑定操作，改完直接部署就能跑。
 Owner 账号本身依然会正常发心跳（不影响登录心跳机制本身），只是读取/展示这
 一侧完全不会把它吐出来。
 
+## 十、首页卡片补上数量提示 + 呼吸灯（第七轮）
+
+Announcement 和 Active Agents 这两张首页工具卡，之前只有图标会呼吸（有内容/
+有人在线时），但没有像 TG Reply Threads 卡片那样在卡片里显示一行具体数字
+（"7 unsolved"）。现在补上了：
+
+- Announcement 卡片新增 `#announcementActiveStat`，显示"X active"，复用已有
+  的 30 秒轮询（`pollAnnouncementBreathing`），有内容时文字本身也跟着呼吸
+  （之前只有图标在呼吸）。
+- Active Agents 卡片新增 `#activeAgentsOnlineStat`，显示"X online"，新增一个
+  独立的 30 秒轮询（`pollActiveAgentsStat`，跟 Announcement 那个互不干扰），
+  同时给图标也接上了呼吸效果（之前只有 Announcement 的图标会呼吸，Active
+  Agents 的图标没有）。在线人数为 0 时不呼吸（跟 Announcement"没有内容不呼吸"
+  是同一套语言），有人在线才呼吸提醒。
+- 关掉 Active Agents 弹窗时会顺带手动刷新一次这个数字，不用等到下一次 30 秒
+  轮询——弹窗里看的数字和刚关闭时首页卡片上的数字不会对不上。
+- 两个数字的颜色不用额外写 CSS——`.t-sub-stat` 本来就是继承卡片自己的
+  `--tool-accent` 这个 CSS 变量，Announcement 卡片是琥珀色、Active Agents
+  是绿色，跟卡片图标背景色天然一致，没有额外硬编码颜色。
+- 这两个轮询都做了权限判断（`canSeeAdminSection` 通过才会启动），没有权限
+  看这两张卡片的账号不会白白发这些请求。
+
+## 十一、花名册主显示改成用户名（第八轮）
+
+之前花名册每一行的加粗大字用的是 `fullName || username`——只要账号填了姓名
+就显示姓名，用户名反而看不到了。改成用户名优先：
+
+- 加粗主显示：`@username`（Record 弹窗的选人列表同步改了）
+- 姓名（如果填了）降级成用户名下面一行小字，不再抢占主显示位置——没填姓名的
+  账号就正常只显示用户名，不会多出一行空白
+- 头像圆圈里的首字母也从"姓名首字母"改成"用户名首字母"，跟主显示保持一致
+- 搜索框逻辑没变，用户名和姓名两个字段都还能搜到，只是显示优先级换了
+

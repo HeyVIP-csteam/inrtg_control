@@ -2129,6 +2129,7 @@ body.announcements-page .ann-shell { flex: 1; min-height: 0; }
 
 .aa-roster-info { min-width: 0; flex: 1; }
 .aa-roster-name { font-weight: 700; font-size: 13.5px; color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.aa-roster-fullname { font-size: 11px; color: var(--ink-soft); margin-top: 1px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .aa-pill-row { display: flex; gap: 6px; margin-top: 5px; flex-wrap: wrap; }
 .aa-pill {
   font-size: 10.5px; font-weight: 600; color: var(--ink-soft);
