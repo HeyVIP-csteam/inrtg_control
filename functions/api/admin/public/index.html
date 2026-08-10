@@ -1,0 +1,1894 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>INR CS Team - TBC</title>
+<style>
+  /* Critical, inline, zero-network-cost — the very first paint of every
+     navigation must already show the space photo, before style.css OR
+     starfield.js even finishes downloading. Without this, a flat color
+     (or worse, the plain white browser-default canvas) shows through for
+     a beat between "old page faded out" and "starfield.js has mounted
+     the real, animated version" — a real gap in a genuine full-page
+     navigation, not something any particular transition animation can
+     paper over. Used to be a flat color here instead of the photo itself
+     — technically gap-free, but visually a jarring flat-color-then-photo
+     jump once starfield.js caught up. Using the same photo here removes
+     that jump — BUT a first version of this fix used the RAW photo with
+     no shading at all, which swung too far the other way: a bright,
+     full-detail, completely undimmed photo flashing full-bleed for a
+     moment reads as its own jarring "what just happened" flash, arguably
+     worse than the flat color it replaced. This version stacks the SAME
+     dark gradient math style.css's `.sf-shade` applies once fully
+     mounted (dark theme's specific numbers — see --sf-shade under
+     `:root`; dark is this project's common case, same reasoning the old
+     light-theme fallback below used to lean on) directly on top of the
+     photo here, so the very first frame already looks like the settled
+     end state — starfield.js then only ADDS motion (zoom/parallax/stars/
+     meteors) on top of something that already looks right, instead of
+     visibly swapping the look out from under you.
+     ONLY <html> is set here, deliberately NOT <body> too (an earlier
+     version of this rule set both, which was the actual bug behind the
+     starfield background vanishing — style.css's `body { background:
+     var(--page-bg); transition: background 0.2s ease; }` then had to
+     TRANSITION from this rule's background to the real gradient, and
+     that transition can't be interpolated between a photo and a
+     gradient, so it would get stuck instead of ever completing).
+     Leaving <body> alone here is fine: before style.css loads, <body>
+     has no background rule of its own yet (transparent), so <html>'s
+     photo shows through underneath it exactly the same as if <body> had
+     it directly — same fix, without fighting body's own more complex
+     background setup. */
+  html {
+    background-color: #090c1c;
+    background-image:
+      linear-gradient(180deg, rgba(3,4,13,0.35) 0%, rgba(3,4,13,0.55) 55%, rgba(3,4,13,0.75) 100%),
+      url('/assets/img/bg-space.jpg');
+    background-size: cover;
+    background-position: center;
+    background-repeat: no-repeat;
+    background-attachment: fixed;
+  }
+
+  /* Light-theme override — theme.js (loaded right after this block, and
+     synchronous/non-deferred) sets data-theme on <html> before first
+     paint, so this genuinely applies from frame one rather than flashing
+     in late. The photo is nearly invisible under the light theme's own
+     heavy overlay anyway (see --sf-shade's 0.55-0.72 alpha for
+     [data-theme="light"] in style.css), so rather than fight CSS filter
+     limitations (filter can't be scoped to just a background-image on
+     <html> without also filtering all real content once it loads), this
+     just reuses the light theme's plain --page-bg gradient values
+     directly (kept in sync manually — see :root in style.css if that
+     gradient ever changes) with no photo layer at all. Visually
+     indistinguishable from the real thing once starfield.js mounts. */
+  html[data-theme="light"] {
+    background-color: #dbe7fb;
+    background-image:
+      radial-gradient(900px 500px at 90% 0%, #eaf1ff 0%, transparent 55%),
+      linear-gradient(160deg, #dbe7fb 0%, #d9cef4 45%, #cdbdf2 75%, #c4b2ee 100%);
+  }
+</style>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;600&display=swap" onload="this.onload=null;this.rel='stylesheet'" />
+<noscript><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;600&display=swap" /></noscript>
+<link rel="stylesheet" href="/assets/style.css?v=538cb382" />
+<link rel="stylesheet" href="/assets/maintenance-breathing-light.css?v=b3446084" />
+<link rel="stylesheet" href="/assets/settings-dropdown.css?v=ff5b816c" />
+<script src="/assets/theme.js?v=5b27e630"></script>
+<script src="/assets/toast.js?v=67c1e195" defer></script>
+<script src="/assets/starfield.js?v=b6e92821" defer></script>
+<script src="/assets/authguard.js?v=9dba9c0c"></script>
+<script src="/assets/pageTransition.js?v=1966b947"></script>
+</head>
+<body class="page-transition-in hub-page">
+  <header class="topbar">
+    <div class="topbar-left">
+      <button type="button" class="sidebar-toggle-btn" id="sidebarToggleBtn" aria-label="Open menu" title="Menu">
+        <span></span><span></span><span></span>
+      </button>
+      <img src="/assets/img/logo.webp" alt="HeyVIP" class="logo-img" />
+      <span class="wordmark">INR CS TEAM - TBC</span>
+    </div>
+    <div class="topbar-right">
+      <span class="clock" id="liveClock"></span>
+      <button class="theme-pill" id="themeToggle"></button>
+      <span class="agent-whoami" id="agentWhoami"></span>
+    </div>
+  </header>
+
+  <!-- Narrow-viewport only (see style.css's @media (max-width: 720px)) —
+       dims the page behind the sidebar once it's slid open as a drawer,
+       and closing it is one tap anywhere on the dimmed area. Hidden/
+       inert at normal widths, same as the toggle button above. -->
+  <div class="sidebar-backdrop" id="sidebarBackdrop"></div>
+
+  <div class="edit-modal-backdrop" id="editModalBackdrop">
+    <div class="edit-modal">
+      <button type="button" class="modal-close-btn" id="editModalClose" title="Close" aria-label="Close">✕</button>
+      <p class="edit-modal-title" id="editModalTitle">Edit brand</p>
+      <div class="field">
+        <label>Link (opens when the pill is clicked)</label>
+        <input type="text" id="editLink" placeholder="https://..." autocomplete="off" />
+      </div>
+      <p class="edit-modal-note" id="editModalNote"></p>
+      <div class="edit-modal-actions">
+        <button type="button" class="btn-submit" id="editSave">Save</button>
+      </div>
+    </div>
+  </div>
+  <!-- Logo image editing removed for now (file upload wasn't working) — being
+       revisited later; brand pills just show colored initials until then. -->
+
+  <div class="edit-modal-backdrop" id="acctModalBackdrop">
+    <div class="edit-modal">
+      <button type="button" class="modal-close-btn" id="acctModalClose" title="Close" aria-label="Close">✕</button>
+      <div class="edit-modal-header-row">
+        <p class="edit-modal-title" id="acctModalTitle">Account Management</p>
+        <input type="text" id="acctProfileSearch" class="acct-profile-search" placeholder="🔍 Search username, full name, PSD…" autocomplete="off" style="display:none;" />
+        <select id="acctProfileRoleFilter" class="acct-role-filter" style="display:none;">
+          <option value="all">All roles</option>
+          <option value="agent">Agent</option>
+          <option value="senior">Senior</option>
+          <option value="admin">Admin</option>
+          <option value="superadmin">SuperAdmin</option>
+        </select>
+        <!-- IP Access only — sits in the header row next to the ✕ close
+             button (per business request) instead of as a full-width row
+             above the tables. Static/persistent nodes (NOT rebuilt by
+             ip-access-panel.js's render()), so their click listeners are
+             wired ONCE by ip-access-panel.js — see wireHeaderButtonsOnce
+             there; re-querying/re-binding these on every render() would
+             stack duplicate listeners since, unlike the dashboard body,
+             these nodes never get thrown away and recreated. -->
+        <div class="ipa-header-actions" id="ipaHeaderActions" style="display:none;">
+          <button type="button" class="btn-submit ipa-ghost-btn" id="ipaManageOfficesBtn">+ Manage offices</button>
+          <button type="button" class="btn-submit ipa-ghost-btn" id="ipaRecordBtn">🕘 Record</button>
+        </div>
+      </div>
+      <div id="acctModalBody"></div>
+      <p class="edit-modal-note" id="acctModalNote"></p>
+      <div class="edit-modal-actions" id="acctModalActions">
+        <button type="button" class="btn-submit" id="acctModalSave">Save</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- IP Access "Manage offices" popup — stacked ON TOP of #acctModalBackdrop
+       (higher z-index, see style.css), not nested inside it. A sibling
+       overlay, not a child of the main modal, so closeAcctModal() has to
+       close it explicitly too (see that function) — closing a parent
+       doesn't automatically take a sibling down with it. -->
+  <div class="edit-modal-backdrop" id="ipaOfficeBackdrop">
+    <div class="edit-modal">
+      <button type="button" class="modal-close-btn" id="ipaOfficeClose" title="Close" aria-label="Close">✕</button>
+      <p class="edit-modal-title">Manage offices</p>
+      <div class="field"><label>Office</label><select id="ipa_office_picker"><option value="">+ New Office</option></select></div>
+      <div class="field"><label>Office name</label><input type="text" id="ipa_office_name" autocomplete="off" /></div>
+      <div class="field"><label>Allowed IPs (one per line)</label><textarea id="ipa_office_ips" rows="4" placeholder="203.0.113.10" autocomplete="off"></textarea></div>
+      <p class="edit-modal-note" id="ipaOfficeNote"></p>
+      <div class="edit-modal-actions">
+        <button type="button" class="btn-submit" id="ipaOfficeSaveBtn">Save</button>
+        <button type="button" class="btn-submit" id="ipaOfficeDeleteBtn" style="display:none; background:var(--field-bg); color:#e0577a; box-shadow:none;">Delete Office</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- IP Access "Record" popup — full audit log, deliberately unfiltered
+       (always shows everything regardless of which card is selected in
+       the dashboard behind it — see ip-access-panel.js). -->
+  <div class="edit-modal-backdrop" id="ipaRecordBackdrop">
+    <div class="edit-modal wide">
+      <button type="button" class="modal-close-btn" id="ipaRecordClose" title="Close" aria-label="Close">✕</button>
+      <p class="edit-modal-title">IP Access — Record</p>
+      <div id="ipaRecordBody"></div>
+    </div>
+  </div>
+
+  <div class="hub-layout">
+    <aside class="sidebar" id="hubSidebar">
+      <div class="sidebar-header"><span class="dot"></span> ISSUE SUBMISSION</div>
+      <a href="/" class="sidebar-item active" style="--item-accent:#7c6cf0;">
+        <div class="icon" style="background:#7c6cf033;">🏠</div>
+        <div class="text">
+          <div class="name">Home</div>
+          <div class="desc">Hub overview</div>
+        </div>
+        <span class="arrow">&rarr;</span>
+      </a>
+      <div id="sidebarList"></div>
+
+      <div class="am-group" id="acctMgmtGroup">
+        <div class="sidebar-item am-toggle expandable" id="acctMgmtToggle">
+          <div class="icon" style="background:#a78bfa33;">🛡️</div>
+          <div class="text">
+            <div class="name">Account Management</div>
+            <div class="desc">Accounts, offices & passwords</div>
+          </div>
+          <span class="arrow">&rarr;</span>
+        </div>
+        <div class="sidebar-subitems" id="acctMgmtSubitems">
+          <div class="sidebar-subitem" id="subCreateAccount" style="display:none;--sub-accent:#a78bfa33;"><span class="sub-icon">➕</span> Create Account</div>
+          <div class="sidebar-subitem" id="subWhitelistIp" style="display:none;--sub-accent:#60a5fa33;"><span class="sub-icon">🌐</span> IP Access</div>
+          <div class="sidebar-subitem" id="subTgRoutes" style="display:none;--sub-accent:#38bdf833;"><span class="sub-icon">📡</span> TG Group / Channel</div>
+          <div class="sidebar-subitem" id="subDepositSheets" style="display:none;--sub-accent:#2f6fed33;"><span class="sub-icon">🧾</span> Deposit Sheet Link</div>
+          <div class="sidebar-subitem" id="subSettings" style="display:none;--sub-accent:#f59e0b33;"><span class="sub-icon">⚙️</span> Settings</div>
+          <div class="sidebar-subitem" id="subResetPassword" style="--sub-accent:#f3c46333;"><span class="sub-icon">🔑</span> Reset Password</div>
+          <div class="sidebar-subitem" id="subAgentProfile" style="display:none;--sub-accent:#34d39933;"><span class="sub-icon">🪪</span> Agent Profile</div>
+        </div>
+      </div>
+    </aside>
+    <div class="hub-right-col">
+      <nav class="brand-row" id="brandRow"><div class="brand-row-track" id="brandRowTrack"></div></nav>
+      <div id="announcementBanner"></div>
+      <main class="hub-main">
+        <div class="inner" id="viewHome">
+          <div class="tool-cards">
+          <a href="/threads.html" data-route="threads" class="tool-card" id="threadsCard" data-feature-item="tg_reply_threads" style="--tool-accent:#38bdf8;">
+            <div class="t-icon" style="background:#38bdf833;">💬<span class="t-badge" id="threadsUnreadBadge"></span></div>
+            <div class="t-name">TG Reply Threads</div>
+            <div class="t-desc">Track Telegram replies to your form submissions in real-time</div>
+            <div class="t-sub-stat" id="threadsUnsolvedStat"></div>
+          </a>
+          <a href="/promo.html" data-route="promo" class="tool-card" data-feature-item="promo_code_search" style="--tool-accent:#f472b6;">
+            <div class="t-icon" style="background:#f472b633;">🎟️</div>
+            <div class="t-name">Promo Code Search</div>
+            <div class="t-desc">Search multiple promo codes at once</div>
+          </a>
+          <a href="/deposit-issue.html" data-route="depositIssue" class="tool-card" data-feature-item="deposit_issue" style="--tool-accent:#2f6fed;">
+            <div class="t-icon" style="background:#2f6fed33;">💳</div>
+            <div class="t-name">Deposit Issue</div>
+            <div class="t-desc">Search Deposit Support records and update CS fields</div>
+          </a>
+          <a href="/deposit-backup.html" data-route="depositBackup" class="tool-card" data-feature-item="deposit_backup" style="--tool-accent:#2f6fed;">
+            <div class="t-icon" style="background:#2f6fed33;">💻</div>
+            <div class="t-name">Deposit Backup</div>
+            <div class="t-desc">Search This Month + Last Month backup sheets (read-only)</div>
+          </a>
+          <a href="/announcements.html" data-route="announcements" class="tool-card" id="announcementCard" style="--tool-accent:#f59e0b;display:none;">
+            <div class="t-icon" style="background:#f59e0b33;" id="announcementCardIcon">📢</div>
+            <div class="t-name">Announcement</div>
+            <div class="t-desc">Create and schedule the site-wide REMINDER banner</div>
+          </a>
+        </div>
+
+        <div class="hub-stats" id="hubStats"></div>
+        <span class="status-badge status-badge-corner"><span class="pulse"></span> Connected · Telegram + Sheets</span>
+      </div>
+
+      <!-- SPA shell mount point — filled in-place by spa-shell.js when a
+           tool-card with [data-route] is clicked, instead of a real page
+           navigation. Lives INSIDE .hub-main, as a sibling of #viewHome
+           (the .inner div above), not outside .hub-layout — the sidebar
+           (aside.sidebar, with the ISSUE SUBMISSION / Home / QA /
+           Account Management items) is the persistent shell itself and
+           must stay visible and clickable no matter which view is
+           mounted here. Only .inner/#spaMount toggle; the sidebar never
+           does. See spa-shell.js for the routing logic and
+           public/assets/style.css's "#spaMount" rules for the layout fix
+           these mounted pages need (they were built assuming they're the
+           whole page, not a child of .hub-main). -->
+      <div id="spaMount" style="display:none;"></div>
+      </main>
+    </div>
+  </div>
+
+  <script src="/assets/schemas.js?v=b5c55f4a"></script>
+  <script src="/assets/apply-feature-status-to-ui.js?v=1ee14c16"></script>
+  <script src="/assets/announcement-banner.js?v=4881665d"></script>
+  <script src="/assets/settings-dropdown.js?v=437d2f61"></script>
+  <script src="/assets/settings-admin-panel.js?v=53569c6b"></script>
+  <script src="/assets/ip-access-panel.js?v=97ca84fa"></script>
+  <script>
+    window.initThemeToggle();
+    window.initClock();
+
+    // authguard.js (loaded in <head>) already confirmed we're logged in
+    // before this page rendered at all — just fill in the pill.
+    window.AgentAuth.renderWhoami("agentWhoami");
+
+    // Narrow-viewport hamburger drawer — only actually visible/usable at
+    // ≤720px (see style.css's @media block), but wired unconditionally
+    // since it's harmless at any width and one-time setup is simpler
+    // than re-wiring on resize.
+    (function initSidebarDrawer() {
+      const sidebar = document.getElementById("hubSidebar");
+      const backdrop = document.getElementById("sidebarBackdrop");
+      const toggleBtn = document.getElementById("sidebarToggleBtn");
+      function closeDrawer() {
+        sidebar.classList.remove("open");
+        backdrop.classList.remove("open");
+      }
+      toggleBtn.addEventListener("click", () => {
+        sidebar.classList.toggle("open");
+        backdrop.classList.toggle("open");
+      });
+      backdrop.addEventListener("click", closeDrawer);
+      // Picking anything in the sidebar should close the drawer right
+      // away — otherwise it's still covering half the screen after the
+      // person already made their choice (whether that's a data-route
+      // SPA view or a real navigation like Create Account).
+      sidebar.addEventListener("click", (e) => {
+        if (e.target.closest("a, .sidebar-item, .sidebar-subitem")) closeDrawer();
+      });
+    })();
+
+    const BRAND_COLORS = ["#4fc3f7", "#f6ad55", "#f4718a", "#8b5cf6", "#34d399"];
+    const brandRowTrack = document.getElementById("brandRowTrack");
+    const brandRowEl = document.getElementById("brandRow");
+    let brandConfig = {};
+    let editingBrand = null;
+
+    function buildBrandPill(b, i) {
+      const entry = brandConfig[b.id] || {};
+      const el = document.createElement("div");
+      el.className = "brand-pill";
+      const initials = b.name.slice(0, 2).toUpperCase();
+      const avatar = entry.logoUrl
+        ? `<img class="avatar" src="${entry.logoUrl}" alt="${b.name}" />`
+        : `<span class="avatar" style="background:${BRAND_COLORS[i % BRAND_COLORS.length]};">${initials}</span>`;
+      el.innerHTML = `${avatar}<span class="pill-name">${b.name}</span><button type="button" class="pill-edit" title="Edit ${b.name}" data-brand="${b.id}">✏️</button>`;
+      el.querySelector(".pill-name").addEventListener("click", () => {
+        if (entry.link) window.open(entry.link, "_blank", "noopener");
+      });
+      el.querySelector(".pill-edit").addEventListener("click", (e) => {
+        e.stopPropagation();
+        openEditModal(b);
+      });
+      return el;
+    }
+
+    function renderBrandRow() {
+      brandRowTrack.innerHTML = "";
+      // Only the brands this logged-in agent is actually allowed to see —
+      // an agent scoped to one brand shouldn't see the other brands'
+      // pills at all, not just get blocked after clicking one.
+      const visibleBrands = window.AgentAuth ? window.AgentAuth.filterAllowedBrands(window.BRANDS) : window.BRANDS;
+      if (!visibleBrands.length) return;
+
+      // The marquee loops by scrolling exactly one HALF of the track's
+      // total width (translateX(-50%), see the CSS) — so each half needs
+      // to independently be at least as wide as the visible row, or the
+      // loop runs out of content partway through and leaves a visible
+      // gap (this showed up in practice on a wide monitor with an agent
+      // scoped to just 1-2 brands — a fixed "render twice" wasn't always
+      // wide enough). Render one copy first purely to MEASURE how wide
+      // the brand set actually renders at this screen size (pill width
+      // depends on each brand's name/logo, can't be computed without a
+      // real layout pass), then figure out how many copies make up one
+      // full-width "half", and build the real (measure copy discarded)
+      // two-halves track from that.
+      visibleBrands.forEach((b, i) => brandRowTrack.appendChild(buildBrandPill(b, i)));
+      const oneCopyWidth = brandRowTrack.scrollWidth || 1;
+      const containerWidth = (brandRowEl && brandRowEl.clientWidth) || window.innerWidth;
+      const copiesPerHalf = Math.max(1, Math.ceil(containerWidth / oneCopyWidth) + 1);
+
+      brandRowTrack.innerHTML = "";
+      for (let half = 0; half < 2; half++) {
+        for (let copy = 0; copy < copiesPerHalf; copy++) {
+          visibleBrands.forEach((b, i) => brandRowTrack.appendChild(buildBrandPill(b, i)));
+        }
+      }
+    }
+
+    // Re-measure and rebuild on resize (debounced) — a copy count picked
+    // for one window width can fall short after the window (or a
+    // maximized browser moved to a bigger monitor) gets wider.
+    let brandRowResizeTimer = null;
+    window.addEventListener("resize", () => {
+      clearTimeout(brandRowResizeTimer);
+      brandRowResizeTimer = setTimeout(renderBrandRow, 200);
+    });
+
+    async function loadBrandConfig() {
+      try {
+        const res = await fetch("/api/brand-config");
+        const data = await res.json();
+        if (data.ok) brandConfig = data.config || {};
+      } catch {
+        // Non-fatal — pills just fall back to colored initials.
+      }
+      renderBrandRow();
+    }
+    loadBrandConfig();
+
+    // ---- TG Reply Threads card: unsolved count + total unread badge ----
+    function getSeenCount(id) {
+      return parseInt(localStorage.getItem(`lastseen:${id}`) || "0", 10);
+    }
+    async function loadThreadsSummary() {
+      try {
+        const res = await window.AgentAuth.authFetch("/api/threads", { cache: "no-store" });
+        const data = await res.json();
+        if (!data.ok) return;
+        const all = [...(data.active || []), ...(data.solved || [])];
+        const unread = all.reduce((sum, t) => sum + Math.max(0, (t.replyCount || 0) - getSeenCount(t.id)), 0);
+        const unsolvedCount = (data.active || []).length;
+
+        const badge = document.getElementById("threadsUnreadBadge");
+        if (badge) badge.textContent = unread > 0 ? (unread > 99 ? "99+" : unread) : "";
+        const stat = document.getElementById("threadsUnsolvedStat");
+        if (stat) {
+          stat.textContent = unsolvedCount > 0 ? `${unsolvedCount} unsolved` : "All caught up ✓";
+          stat.classList.toggle("has-unsolved", unsolvedCount > 0);
+        }
+      } catch {
+        // Non-fatal — card just shows without the live counts.
+      }
+    }
+    loadThreadsSummary();
+    setInterval(loadThreadsSummary, 15000);
+
+    // ---- Edit modal ----
+    const backdrop = document.getElementById("editModalBackdrop");
+    const modalTitle = document.getElementById("editModalTitle");
+    const modalNote = document.getElementById("editModalNote");
+    const linkInput = document.getElementById("editLink");
+
+    function openEditModal(brand) {
+      editingBrand = brand;
+      modalTitle.textContent = `Edit ${brand.name}`;
+      modalNote.textContent = "";
+      modalNote.className = "edit-modal-note";
+      linkInput.value = (brandConfig[brand.id] && brandConfig[brand.id].link) || "";
+      backdrop.classList.add("is-open");
+    }
+    function closeEditModal() {
+      backdrop.classList.remove("is-open");
+      editingBrand = null;
+    }
+    document.getElementById("editModalClose").addEventListener("click", closeEditModal);
+    backdrop.addEventListener("click", (e) => { if (e.target === backdrop) closeEditModal(); });
+
+    document.getElementById("editSave").addEventListener("click", async () => {
+      if (!editingBrand) return;
+      modalNote.textContent = "Saving…";
+      modalNote.className = "edit-modal-note";
+
+      try {
+        // Logged-in-agent + this account's own credentials IS the
+        // authorization now — no separate shared edit password anymore
+        // (see functions/api/brand-config.js).
+        const res = await window.AgentAuth.authFetch("/api/brand-config", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ brand: editingBrand.id, link: linkInput.value || "" }),
+        });
+        const data = await res.json();
+        if (!res.ok || !data.ok) throw new Error(data.error || "Save failed.");
+        brandConfig = data.config;
+        renderBrandRow();
+        modalNote.textContent = "Saved.";
+        modalNote.className = "edit-modal-note ok";
+        setTimeout(closeEditModal, 600);
+      } catch (err) {
+        modalNote.textContent = err.message || "Save failed.";
+        modalNote.className = "edit-modal-note err";
+      }
+    });
+
+    const hubStats = document.getElementById("hubStats");
+    const visibleBrandCount = (window.AgentAuth ? window.AgentAuth.filterAllowedBrands(window.BRANDS) : window.BRANDS).length;
+    const visibleModules = window.AgentAuth ? window.AgentAuth.filterAllowedModules(window.MODULES) : window.MODULES;
+    hubStats.innerHTML = `
+      <div class="stat"><b>${visibleBrandCount}</b><span>Brands</span></div>
+      <div class="stat"><b>${visibleModules.length}</b><span>Modules</span></div>
+      <div class="stat"><b>24/7</b><span>Live routing</span></div>
+    `;
+
+    const list = document.getElementById("sidebarList");
+    visibleModules.forEach((m) => {
+      const a = document.createElement("a");
+      a.href = `/form.html?module=${m.id}`;
+      a.dataset.route = "form";
+      a.dataset.module = m.id;
+      a.className = "sidebar-item";
+      a.dataset.featureItem = m.id;
+      a.style.setProperty("--item-accent", m.accent);
+      a.innerHTML = `
+        <div class="icon" style="background:${m.accent}33;">${m.icon}</div>
+        <div class="text">
+          <div class="name">${m.name}</div>
+          <div class="desc">${m.description}</div>
+        </div>
+        <span class="arrow">&rarr;</span>
+      `;
+      list.appendChild(a);
+    });
+    window.wireFadeLinks(".sidebar-item");
+
+    // ---- Maintenance / Coming-soon toggle — gray out + block click for
+    // anything a SuperAdmin/Owner has switched off in Settings. UX only;
+    // the real enforcement is server-side (submit.js, threads.js,
+    // promo-search.js, deposit-issue/*, deposit-backup/*). See
+    // functions/api/feature-status.js + public/assets/apply-feature-
+    // status-to-ui.js.
+    applyFeatureStatuses({
+      fetchJson: (url) => window.AgentAuth.authFetch(url).then((r) => r.json()),
+    });
+
+    // ---- Account Management (sidebar dropdown + 4 focused modals) ----
+    // Rank matches functions/_shared/accounts.js ROLE_RANK exactly — keep
+    // these in sync if that ever changes.
+    const ROLE_RANK = { agent: 0, senior: 1, admin: 2, superadmin: 3, owner: 4 };
+    const authInfo = window.AgentAuth.getAuth();
+    const myRank = ROLE_RANK[authInfo?.role] ?? ROLE_RANK.agent;
+    const isSenior = myRank >= ROLE_RANK.senior;   // used for Reset Password's account-picker only, unrelated to Account Management Access below
+    const isSuperAdmin = myRank >= ROLE_RANK.superadmin; // still governs role-assignment scope elsewhere (manageScope), unrelated to Account Management Access
+
+    // Account Management Access — mirrors functions/_shared/accounts.js
+    // ADMIN_SECTIONS_LIST / canSeeAdminSection() / canEditAdminSection() /
+    // canManageOthersAdminAccess() exactly. "Seeing" a section requires
+    // BOTH the rank floor below AND (once the Owner has explicitly set
+    // allowedAdminSections for this account) being in that list — left
+    // unset, it falls back to rank-floor-only (legacy) behavior so this
+    // feature doesn't retroactively hide anything from anyone on rollout.
+    // "Editing" whitelistIp/tgRoutes/agentProfile is a SEPARATE, purely
+    // owner-controlled choice (adminSectionEditAccess) — rank plays no
+    // further role there once canSeeAdminSection() already passed.
+    const ADMIN_SECTIONS_LIST = [
+      { id: "createAccount", name: "Create Account", icon: "➕", floorRank: ROLE_RANK.senior },
+      { id: "whitelistIp", name: "IP Access", icon: "🌐", floorRank: ROLE_RANK.admin },
+      { id: "tgRoutes", name: "TG Group / Channel", icon: "📡", floorRank: ROLE_RANK.admin },
+      { id: "agentProfile", name: "Agent Profile", icon: "🪪", floorRank: ROLE_RANK.admin },
+      { id: "depositSheets", name: "Deposit Sheet Link", icon: "🧾", floorRank: ROLE_RANK.superadmin },
+      { id: "settings", name: "Settings", icon: "⚙️", floorRank: ROLE_RANK.admin },
+      { id: "announcements", name: "Announcements", icon: "📢", floorRank: ROLE_RANK.admin },
+    ];
+    const EDITABLE_ADMIN_SECTIONS = ["whitelistIp", "tgRoutes", "agentProfile", "depositSheets", "settings", "announcements"];
+    // SECURITY FIX — 2026-07-28: role-based defaults for accounts the
+    // Owner has never explicitly touched. Mirrors
+    // ADMIN_SECTIONS_DEFAULT_SEEN / ADMIN_SECTIONS_DEFAULT_EDIT in
+    // functions/_shared/accounts.js exactly — keep in sync. Previously
+    // `undefined` meant "everything the rank floor allows", so every
+    // Admin+ account defaulted to seeing all 4 sections the moment it
+    // crossed a floor. Now it falls back to a locked-down-by-default
+    // preset instead; the Owner still overrides per-account in either
+    // direction via the checkboxes below.
+    const ADMIN_SECTIONS_DEFAULT_SEEN = {
+      agent: [],
+      senior: ["createAccount"],
+      admin: ["whitelistIp", "announcements"],
+      superadmin: ["createAccount", "whitelistIp", "tgRoutes", "agentProfile", "depositSheets", "settings", "announcements"],
+    };
+    const ADMIN_SECTIONS_DEFAULT_EDIT = {
+      agent: [],
+      senior: [],
+      admin: ["announcements"], // Whitelist IP visible by default, but view-only; Announcements is both by default
+      superadmin: ["whitelistIp", "tgRoutes", "agentProfile", "depositSheets", "settings", "announcements"],
+    };
+    function canSeeAdminSection(sectionId) {
+      if (!authInfo) return false;
+      if (authInfo.role === "owner") return true;
+      const section = ADMIN_SECTIONS_LIST.find((s) => s.id === sectionId);
+      if (!section) return false;
+      if (myRank < section.floorRank) return false;
+      if (authInfo.allowedAdminSections === "all") return true;
+      if (Array.isArray(authInfo.allowedAdminSections)) return authInfo.allowedAdminSections.includes(sectionId);
+      return (ADMIN_SECTIONS_DEFAULT_SEEN[authInfo.role] || []).includes(sectionId);
+    }
+    function canEditAdminSection(sectionId) {
+      if (!authInfo) return false;
+      if (authInfo.role === "owner") return true;
+      if (!canSeeAdminSection(sectionId)) return false;
+      if (authInfo.adminSectionEditAccess === "all") return true;
+      if (Array.isArray(authInfo.adminSectionEditAccess)) return authInfo.adminSectionEditAccess.includes(sectionId);
+      return (ADMIN_SECTIONS_DEFAULT_EDIT[authInfo.role] || []).includes(sectionId);
+    }
+    const canManageOthersAdminAccess = authInfo?.role === "owner" || authInfo?.canGrantAdminAccess === true;
+    // Only the real Owner can grant/revoke the delegation itself (see
+    // canManageOthersAdminAccess() in functions/_shared/accounts.js) — a
+    // delegated account can use the power but not hand it to anyone else.
+    const isRealOwner = authInfo?.role === "owner";
+
+    document.getElementById("subCreateAccount").style.display = canSeeAdminSection("createAccount") ? "flex" : "none";
+    document.getElementById("subWhitelistIp").style.display = canSeeAdminSection("whitelistIp") ? "flex" : "none";
+    document.getElementById("subTgRoutes").style.display = canSeeAdminSection("tgRoutes") ? "flex" : "none";
+    document.getElementById("subAgentProfile").style.display = canSeeAdminSection("agentProfile") ? "flex" : "none";
+    document.getElementById("subDepositSheets").style.display = canSeeAdminSection("depositSheets") ? "flex" : "none";
+    document.getElementById("subSettings").style.display = canSeeAdminSection("settings") ? "flex" : "none";
+
+    // ---- Announcement tool card — same canSeeAdminSection gate as the
+    // Account Management subitems above, just applied to a Home-page
+    // tool card instead of a sidebar subitem. Icon "breathes" (reuses
+    // the app's existing pulse keyframe) while at least one announcement
+    // is currently active — a lightweight separate fetch on load + 30s
+    // poll drives this; doesn't share state with announcement-banner.js.
+    document.getElementById("announcementCard").style.display = canSeeAdminSection("announcements") ? "" : "none";
+    async function pollAnnouncementBreathing() {
+      try {
+        const res = await window.AgentAuth.authFetch("/api/announcements");
+        const data = await res.json();
+        const hasActive = data.ok && Array.isArray(data.announcements) && data.announcements.length > 0;
+        document.getElementById("announcementCardIcon").classList.toggle("breathing", hasActive);
+      } catch {}
+    }
+    if (canSeeAdminSection("announcements")) {
+      pollAnnouncementBreathing();
+      setInterval(pollAnnouncementBreathing, 30000);
+    }
+
+    const acctToggle = document.getElementById("acctMgmtToggle");
+    const acctSubitems = document.getElementById("acctMgmtSubitems");
+    acctToggle.addEventListener("click", () => {
+      acctToggle.classList.toggle("open");
+      acctSubitems.classList.toggle("open");
+    });
+
+    document.getElementById("subCreateAccount").addEventListener("click", () => openAcctModal("create"));
+    document.getElementById("subWhitelistIp").addEventListener("click", () => openAcctModal("whitelist"));
+    document.getElementById("subTgRoutes").addEventListener("click", () => openAcctModal("tgroutes"));
+    document.getElementById("subDepositSheets").addEventListener("click", () => openAcctModal("depositsheets"));
+    document.getElementById("subSettings").addEventListener("click", () => openAcctModal("settings"));
+    document.getElementById("subResetPassword").addEventListener("click", () => openAcctModal("reset"));
+    document.getElementById("subAgentProfile").addEventListener("click", () => openAcctModal("profile"));
+    document.getElementById("acctProfileRoleFilter").addEventListener("change", () => renderAgentProfileTable());
+    document.getElementById("acctProfileSearch").addEventListener("input", () => renderAgentProfileTable());
+
+
+    const acctBackdrop = document.getElementById("acctModalBackdrop");
+    const acctTitle = document.getElementById("acctModalTitle");
+    const acctBody = document.getElementById("acctModalBody");
+    const acctNote = document.getElementById("acctModalNote");
+    let acctMode = null;
+    let acctOffices = [];
+    let acctAccounts = [];
+
+    function acctEsc(str) {
+      return String(str == null ? "" : str).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+    }
+    function setAcctNote(msg, cls) {
+      // Final result (ok/err) now shows ONLY via the unified toast popup
+      // — this inline note used to duplicate the exact same "Saved."/
+      // error text right below the row list, which is redundant once
+      // the toast already says it, and easy to miss anyway (buried
+      // below a scrollable list). Only transient in-flight states
+      // ("Saving…", "Resetting…" — no cls) still render here.
+      if (cls === "ok" || cls === "err") {
+        acctNote.textContent = "";
+        acctNote.className = "edit-modal-note";
+        if (window.showToast) window.showToast(msg, cls);
+        return;
+      }
+      acctNote.textContent = msg || "";
+      acctNote.className = "edit-modal-note";
+    }
+
+    function timeAgoLocal(iso) {
+      if (!iso) return "—";
+      const diffMs = Date.now() - new Date(iso).getTime();
+      const mins = Math.floor(diffMs / 60000);
+      if (mins < 1) return "just now";
+      if (mins < 60) return `${mins}m ago`;
+      const hrs = Math.floor(mins / 60);
+      if (hrs < 24) return `${hrs}h ago`;
+      const days = Math.floor(hrs / 24);
+      return `${days}d ago`;
+    }
+
+    async function openAcctModal(mode) {
+      acctMode = mode;
+      setAcctNote("");
+      acctBody.innerHTML = '<p class="edit-modal-note">Loading…</p>';
+      acctBackdrop.classList.add("is-open");
+      const modalEl = acctBackdrop.querySelector(".edit-modal");
+      modalEl.classList.toggle("wide", mode === "profile" || mode === "tgroutes" || mode === "depositsheets" || mode === "settings" || mode === "whitelist");
+      // "profile", "tgroutes", "depositsheets", and "settings" all use
+      // per-row inline save buttons instead of one global footer Save
+      // (too many independently-editable rows for a single "Save" to
+      // mean anything useful). With Cancel removed (closing is via the X
+      // button now), the whole actions row would otherwise just be dead
+      // space when Save is hidden — hide the row itself, not just the
+      // button inside it.
+      const showFooterSave = mode !== "profile" && mode !== "tgroutes" && mode !== "depositsheets" && mode !== "settings" && mode !== "whitelist";
+      document.getElementById("acctModalSave").style.display = showFooterSave ? "" : "none";
+      document.getElementById("acctModalActions").style.display = showFooterSave ? "" : "none";
+      const roleFilterEl = document.getElementById("acctProfileRoleFilter");
+      roleFilterEl.style.display = mode === "profile" ? "" : "none";
+      if (mode === "profile") roleFilterEl.value = "all";
+      const searchEl = document.getElementById("acctProfileSearch");
+      searchEl.style.display = mode === "profile" ? "" : "none";
+      if (mode === "profile") searchEl.value = "";
+      document.getElementById("ipaHeaderActions").style.display = mode === "whitelist" ? "flex" : "none";
+
+      if (mode === "create") {
+        acctTitle.textContent = "Create Account";
+        const res = await window.AgentAuth.authFetch("/api/admin/offices");
+        const data = await res.json();
+        acctOffices = data.ok ? data.offices : [];
+        const officeOptions = acctOffices.map((o) => `<option value="${o.id}">${acctEsc(o.name)}</option>`).join("");
+        const brandPills = (window.BRANDS || []).map((b) => `<div class="brand-toggle-pill" data-brand="${acctEsc(b.name)}">${acctEsc(b.name).toUpperCase()}</div>`).join("");
+        // Every role strictly below the actor's own rank — replaces the
+        // old hand-written per-tier allow-list with the same canManage()
+        // rule the server enforces (see functions/api/admin/accounts.js).
+        // "owner" is never offered here — it's not in ROLE_RANK's
+        // assignable set at all from the client's perspective, same as
+        // the server refuses it outright regardless of what this
+        // dropdown does or doesn't show.
+        const manageScope = Object.keys(ROLE_RANK).filter((r) => r !== "owner" && ROLE_RANK[r] < myRank);
+        const roleOptions = manageScope.map((r) => `<option value="${r}">${r}</option>`).join("");
+        acctBody.innerHTML = `
+          <div class="field"><label>Username</label><input type="text" id="am_username" autocomplete="off" /></div>
+          <div class="field"><label>Password</label><input type="password" id="am_password" autocomplete="new-password" /></div>
+          <div class="field"><label>Full Name</label><input type="text" id="am_fullname" autocomplete="off" placeholder="e.g. Daniel Tan" /></div>
+          <div class="field"><label>PSD</label><input type="text" id="am_pid" autocomplete="off" placeholder="e.g. PSD-014" /></div>
+          <div class="field"><label>Role</label><select id="am_role">${roleOptions}</select></div>
+          <div class="field"><label>Office</label><select id="am_office"><option value="">— none —</option>${officeOptions}</select></div>
+          <div class="field">
+            <div class="brand-toggle-label"><span>Can See Brands</span><span class="select-all-btn" id="am_selectAllBtn">Select All</span></div>
+            <div class="brand-toggle-grid" id="am_brandGrid">${brandPills}</div>
+          </div>`;
+        wireBrandTogglePicker();
+      }
+
+      if (mode === "whitelist") {
+        acctTitle.textContent = "IP Access";
+        const canEditWhitelist = canEditAdminSection("whitelistIp");
+        acctBody.innerHTML = '<div class="spa-loading" style="padding:30px; text-align:center; color:var(--ink-soft);">Loading…</div>';
+        await window.renderIpAccessPanel(acctBody, {
+          authFetch: window.AgentAuth.authFetch,
+          canEdit: canEditWhitelist,
+          escapeHtml: acctEsc,
+        });
+      }
+
+      if (mode === "reset" && isSenior) {
+        acctTitle.textContent = "Reset Password";
+        const res = await window.AgentAuth.authFetch("/api/admin/accounts");
+        const data = await res.json();
+        // Same canManage() rule as everywhere else, PLUS the actor's own
+        // account (resetting your own password through the admin panel,
+        // not the "Change My Password" self-service flow, is still
+        // allowed — see the server-side isSelf check in
+        // functions/api/admin/accounts.js).
+        const manageScope = Object.keys(ROLE_RANK).filter((r) => r !== "owner" && ROLE_RANK[r] < myRank);
+        acctAccounts = data.ok ? data.accounts.filter((a) => manageScope.includes(a.role) || a.username === authInfo?.username) : [];
+        const accountOptions = acctAccounts.map((a) => `<option value="${acctEsc(a.username)}">${acctEsc(a.username)} (${acctEsc(a.role)})</option>`).join("");
+        acctBody.innerHTML = `
+          <div class="field"><label>Account</label><select id="am_reset_account">${accountOptions || '<option value="">— no eligible accounts —</option>'}</select></div>
+          <div class="field"><label>New Password</label><input type="password" id="am_reset_newpass" autocomplete="new-password" /></div>
+          <div class="field"><label>Confirm New Password</label><input type="password" id="am_reset_confirm" autocomplete="new-password" /></div>
+          <p class="edit-modal-note">You can only reset a password for accounts ranked below your own, or your own account — the old password isn't needed.</p>`;
+      }
+
+      if (mode === "reset" && !isSenior) {
+        acctTitle.textContent = "Reset Password";
+        acctBody.innerHTML = `
+          <div class="field"><label>Current Password</label><input type="password" id="am_reset_current" autocomplete="current-password" /></div>
+          <div class="field"><label>New Password</label><input type="password" id="am_reset_newpass" autocomplete="new-password" /></div>
+          <div class="field"><label>Confirm New Password</label><input type="password" id="am_reset_confirm" autocomplete="new-password" /></div>
+          <p class="edit-modal-note">You can only change your own password here.</p>`;
+      }
+
+      if (mode === "profile") {
+        acctTitle.textContent = "Agent Profile";
+        await loadAgentProfileTable();
+      }
+
+      if (mode === "tgroutes") {
+        acctTitle.textContent = "TG Group / Channel";
+        await loadTgRoutes();
+      }
+
+      if (mode === "depositsheets") {
+        acctTitle.textContent = "Deposit Sheet Link";
+        await loadDepositSheets();
+      }
+
+      if (mode === "settings") {
+        acctTitle.textContent = "Settings";
+        await loadFeatureSettings();
+      }
+    }
+
+    // ---- Settings (maintenance / coming-soon toggle) ----
+    // Reuses the exact same .tgroute-row/.tgroute-fields styling as TG
+    // Group / Channel above, plus the portable fs-dropdown component
+    // (public/assets/settings-dropdown.css/js) and renderer (public/
+    // assets/settings-admin-panel.js). Backed by
+    // /api/admin/feature-status; the live "what's blocked for me" read
+    // any agent gets is /api/feature-status (see apply-feature-status-
+    // to-ui.js, called once on page load above).
+    async function loadFeatureSettings() {
+      const res = await window.AgentAuth.authFetch("/api/admin/feature-status");
+      const data = await res.json();
+      if (!data.ok) {
+        acctBody.innerHTML = `<p class="edit-modal-note err">${acctEsc(data.error || "Failed to load.")}</p>`;
+        return;
+      }
+      const canEditSettings = canEditAdminSection("settings");
+      document.getElementById("acctModalSave").style.display = "none";
+      document.getElementById("acctModalActions").style.display = "none";
+      // renderFeatureSettingsPanel() re-renders by replacing its
+      // container's ENTIRE innerHTML every time any row's Save is
+      // clicked (see settings-admin-panel.js's render()). Passing
+      // acctBody itself as that container used to wipe out the Mention
+      // backfill / Announcement rotation speed blocks appended below it
+      // (they're siblings of whatever this panel renders) — clicking
+      // Save on ANY maintenance/coming-soon row made those two sections
+      // vanish. Giving it its own dedicated child div means its
+      // self-driven re-renders only ever touch that div, never the
+      // siblings appended after it.
+      acctBody.innerHTML = '<div id="featureStatusPanel"></div>';
+      const featureStatusPanel = document.getElementById("featureStatusPanel");
+      renderFeatureSettingsPanel(featureStatusPanel, data.items, {
+        authFetch: window.AgentAuth.authFetch,
+        escapeHtml: acctEsc,
+        canEdit: canEditSettings,
+        setNote: setAcctNote,
+        onSaved: (itemId, item) => {
+          // Use the value THIS save just returned, not a re-fetch — KV
+          // is only eventually consistent (see featureStatus.js's header
+          // comment). Compute `blocked` against the CURRENT viewer's own
+          // role, same contract as /api/feature-status.
+          applyFeatureStatusItem(itemId, {
+            status: item.status,
+            blocked: item.status !== "active" && !item.bypassRoles.includes(authInfo?.role),
+          });
+        },
+      });
+      if (canEditSettings) renderMentionBackfillTool(acctBody);
+      renderAnnouncementRotationControl(acctBody, canEditSettings);
+    }
+
+    // ---- Announcement rotation-speed control ----
+    // Same visual pattern as the Maintenance/Coming-soon rows above, but
+    // gated by "settings" (not "announcements") — deliberately: "manage
+    // the announcements" and "manage how the banner behaves" are
+    // different concerns (see functions/api/admin/announcement-settings.js).
+    async function renderAnnouncementRotationControl(container, canEditThis) {
+      const box = document.createElement("div");
+      box.className = "tgroute-divider";
+      box.style.marginTop = "18px";
+      box.innerHTML = `
+        <div style="padding-top:14px;display:flex;align-items:center;justify-content:space-between;gap:16px;">
+          <div style="flex:1;min-width:0;">
+            <div style="font-size:12.5px;font-weight:700;color:var(--ink);margin-bottom:4px;">Announcement rotation speed</div>
+            <div style="font-size:11.5px;color:var(--ink-soft);">
+              How long each announcement stays on screen before the reminder banner cycles to the next one — only matters when 2 or more are active at once.
+            </div>
+          </div>
+          <div style="display:flex;align-items:center;gap:8px;flex-shrink:0;">
+            <input type="number" id="annRotateValue" min="1" step="1" style="width:70px;padding:8px 10px;border:1px solid var(--border);border-radius:9px;background:var(--field-bg);color:var(--ink);font-size:13px;" ${canEditThis ? "" : "disabled"} />
+            <select id="annRotateUnit" style="padding:8px 10px;border:1px solid var(--border);border-radius:9px;background:var(--field-bg);color:var(--ink);font-size:13px;" ${canEditThis ? "" : "disabled"}>
+              <option value="1000">Seconds</option>
+              <option value="60000">Minutes</option>
+            </select>
+            ${canEditThis ? '<button type="button" id="annRotateSaveBtn" style="padding:8px 14px;border:none;border-radius:9px;background:linear-gradient(90deg,#f59e0b,#f3c463);color:#3a2a06;font-weight:800;font-size:12px;cursor:pointer;">Save</button>' : ""}
+          </div>
+        </div>
+        <span id="annRotateStatus" style="display:block;padding-top:8px;font-size:11.5px;color:var(--ink-soft);"></span>
+      `;
+      container.appendChild(box);
+
+      const valueEl = document.getElementById("annRotateValue");
+      const unitEl = document.getElementById("annRotateUnit");
+      const statusEl = document.getElementById("annRotateStatus");
+
+      try {
+        const res = await window.AgentAuth.authFetch("/api/admin/announcement-settings");
+        const data = await res.json();
+        if (data.ok) {
+          const ms = data.rotateIntervalMs || 5000;
+          if (ms % 60000 === 0) { unitEl.value = "60000"; valueEl.value = ms / 60000; }
+          else { unitEl.value = "1000"; valueEl.value = Math.round(ms / 1000); }
+        } else {
+          statusEl.textContent = data.error || "Failed to load.";
+        }
+      } catch {
+        statusEl.textContent = "Failed to load.";
+      }
+
+      const saveBtn = document.getElementById("annRotateSaveBtn");
+      if (saveBtn) {
+        saveBtn.addEventListener("click", async () => {
+          const n = Number(valueEl.value);
+          const unitMs = Number(unitEl.value);
+          if (!n || n <= 0) {
+            statusEl.textContent = "";
+            window.showToast("Enter a value greater than 0", "err");
+            return;
+          }
+          const rotateIntervalMs = Math.max(1000, Math.round(n * unitMs));
+          statusEl.textContent = "Saving…";
+          try {
+            const res = await window.AgentAuth.authFetch("/api/admin/announcement-settings", {
+              method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ rotateIntervalMs }),
+            });
+            const data = await res.json();
+            statusEl.textContent = "";
+            if (!data.ok) {
+              window.showToast(data.error || "Save failed.", "err");
+              return;
+            }
+            window.showToast("Save success.", "ok");
+            if (window.refreshAnnouncementBanner) window.refreshAnnouncementBanner();
+          } catch {
+            statusEl.textContent = "";
+            window.showToast("Save failed — network error.", "err");
+          }
+        });
+      }
+    }
+
+    // One-time (safe to re-run — additive) backfill for the TG Reply
+    // Threads @-mention picker: fills the brand+module registry from
+    // EXISTING thread history, not just replies that arrive from now on.
+    // See _shared/threads.js's backfillMentionRegistryPage().
+    function renderMentionBackfillTool(container) {
+      const box = document.createElement("div");
+      box.className = "tgroute-divider";
+      box.style.marginTop = "18px";
+      box.innerHTML = `
+        <div style="padding-top:14px;display:flex;align-items:center;justify-content:space-between;gap:16px;">
+          <div style="flex:1;min-width:0;">
+            <div style="font-size:12.5px;font-weight:700;color:var(--ink);margin-bottom:4px;">@ Mention history backfill</div>
+            <div style="font-size:11.5px;color:var(--ink-soft);">
+              TG Reply Threads' @ picker only remembers people going forward from when this feature shipped. Run this once to also pull in everyone from existing ticket history.
+            </div>
+          </div>
+          <button type="button" id="mentionBackfillBtn" style="flex-shrink:0;padding:8px 14px;border:1px solid var(--panel-border);border-radius:9px;background:rgba(255,255,255,0.05);color:var(--ink);font-weight:700;font-size:12px;cursor:pointer;white-space:nowrap;">Run backfill</button>
+        </div>
+        <span id="mentionBackfillStatus" style="display:block;padding-top:8px;font-size:11.5px;color:var(--ink-soft);"></span>
+      `;
+      container.appendChild(box);
+      document.getElementById("mentionBackfillBtn").addEventListener("click", async () => {
+        const btn = document.getElementById("mentionBackfillBtn");
+        const status = document.getElementById("mentionBackfillStatus");
+        btn.disabled = true;
+        let cursor = null, totalScanned = 0;
+        try {
+          for (;;) {
+            status.textContent = `Scanning… ${totalScanned} threads so far`;
+            const res = await window.AgentAuth.authFetch("/api/admin/backfill-mentions", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ cursor }),
+            });
+            const data = await res.json();
+            if (!data.ok) {
+              status.textContent = "";
+              window.showToast(data.error || "Backfill failed.", "err");
+              break;
+            }
+            totalScanned += data.scanned;
+            if (data.done) {
+              status.textContent = "";
+              window.showToast(`Backfill success — scanned ${totalScanned} threads.`, "ok");
+              break;
+            }
+            cursor = data.cursor;
+          }
+        } catch {
+          status.textContent = "";
+          window.showToast("Backfill failed — network error.", "err");
+        } finally {
+          btn.disabled = false;
+        }
+      });
+    }
+
+    // ---- TG Group / Channel (live-editable Telegram routing) ----
+    // Left column: the 5 brands. Right column: that brand's 6 modules,
+    // each with an editable Chat ID + Topic ID. Backed by
+    // /api/admin/routes, which merges hardcoded defaults
+    // (_shared/routing.js) with any live KV overrides — see
+    // _shared/routes.js for the fallback logic actually used at
+    // submission time.
+    let acctRoutesData = null;
+    let acctRoutesSelectedBrand = null;
+    // Reserved pseudo ids — NOT a real brand/module, must match the
+    // backend's SECURITY_BRAND_ID/SECURITY_MODULE_ID in
+    // functions/api/admin/routes.js exactly.
+    const SECURITY_ROW_ID = "_security";
+    const SECURITY_MODULE_ID = "alerts";
+
+    async function loadTgRoutes() {
+      const res = await window.AgentAuth.authFetch("/api/admin/routes");
+      const data = await res.json();
+      if (!data.ok) {
+        acctBody.innerHTML = `<p class="edit-modal-note err">${acctEsc(data.error || "Failed to load.")}</p>`;
+        return;
+      }
+      acctRoutesData = data;
+      if (!acctRoutesSelectedBrand || (acctRoutesSelectedBrand !== SECURITY_ROW_ID && !data.brands.some((b) => b.id === acctRoutesSelectedBrand))) {
+        acctRoutesSelectedBrand = data.brands[0]?.id || null;
+      }
+      renderTgRoutes();
+    }
+
+    function renderTgRoutes() {
+      if (!acctRoutesData) return;
+      const { brands, modules, routes, securityAlerts } = acctRoutesData;
+      const isSecuritySelected = acctRoutesSelectedBrand === SECURITY_ROW_ID;
+
+      const brandListHtml = brands.map((b) => `
+        <div class="tgroute-brand${b.id === acctRoutesSelectedBrand ? " selected" : ""}" data-brand="${acctEsc(b.id)}">${acctEsc(b.name)}</div>
+      `).join("") + `
+        <div class="tgroute-brand tgroute-security${isSecuritySelected ? " selected" : ""}" data-brand="${SECURITY_ROW_ID}">🔒 Security Alerts</div>
+      `;
+
+      if (isSecuritySelected) {
+        const r = securityAlerts || { chatId: "", topicId: null, isOverride: false };
+        const canEditRoutes = canEditAdminSection("tgRoutes");
+        const roAttr = canEditRoutes ? "" : "disabled";
+        acctBody.innerHTML = `
+          <div class="tgroute-layout">
+            <div class="tgroute-brands">${brandListHtml}</div>
+            <div class="tgroute-modules">
+              <div class="tgroute-row" data-module="${SECURITY_MODULE_ID}">
+                <div class="tgroute-mod-name">🔒 Unrecognized-IP / Account-Lock Alerts
+                  <span class="route-tag${r.isOverride ? " custom" : ""}">${r.isOverride ? "custom" : "default"}</span>
+                </div>
+                <div class="tgroute-fields">
+                  <input type="text" class="tgroute-chatid" placeholder="Chat ID e.g. -1001234567890" value="${acctEsc(r.chatId)}" autocomplete="off" ${roAttr} />
+                  <input type="text" class="tgroute-topicid" placeholder="Topic ID (optional)" value="${r.topicId ?? ""}" autocomplete="off" ${roAttr} />
+                  ${canEditRoutes ? `<div class="tgroute-row-actions">
+                    <button type="button" class="tgroute-action-btn tgroute-save">Save</button>
+                    ${r.isOverride ? '<button type="button" class="tgroute-action-btn tgroute-action-secondary tgroute-reset">Reset</button>' : ""}
+                  </div>` : ""}
+                </div>
+              </div>
+            </div>
+          </div>
+          <hr class="tgroute-divider" />
+          ${canEditRoutes ? "" : '<p class="edit-modal-note">View only.</p>'}
+          <p class="edit-modal-note tgroute-footnote">This isn't a brand — it's where login sends a Telegram alert on every failed login attempt (wrong password, unrecognized IP, or no office assigned), or when an account gets auto-locked (5 combined failures within an hour). Login stays blocked exactly the same either way; this only controls where the heads-up message goes. "default" is whatever's set in the SECURITY_ALERTS_CHAT_ID Cloudflare secret (empty = no alerts sent yet).</p>`;
+        acctBody.querySelectorAll(".tgroute-brand").forEach((el) => {
+          el.addEventListener("click", () => {
+            acctRoutesSelectedBrand = el.dataset.brand;
+            setAcctNote("");
+            renderTgRoutes();
+          });
+        });
+        acctBody.querySelectorAll(".tgroute-save").forEach((btn) => {
+          btn.addEventListener("click", () => saveTgRouteRow(btn.closest(".tgroute-row")));
+        });
+        acctBody.querySelectorAll(".tgroute-reset").forEach((btn) => {
+          btn.addEventListener("click", () => resetTgRouteRow(btn.closest(".tgroute-row")));
+        });
+        return;
+      }
+
+      const canEditRoutes = canEditAdminSection("tgRoutes");
+      const roAttr = canEditRoutes ? "" : "disabled";
+      const moduleRowsHtml = modules.map((m) => {
+        const key = `${acctRoutesSelectedBrand}|${m.id}`;
+        const r = routes[key] || { chatId: "", topicId: null, isOverride: false };
+        return `
+          <div class="tgroute-row" data-module="${acctEsc(m.id)}">
+            <div class="tgroute-mod-name">${m.emoji} ${acctEsc(m.name)}
+              <span class="route-tag${r.isOverride ? " custom" : ""}">${r.isOverride ? "custom" : "default"}</span>
+            </div>
+            <div class="tgroute-fields">
+              <input type="text" class="tgroute-chatid" placeholder="Chat ID e.g. -1001234567890" value="${acctEsc(r.chatId)}" autocomplete="off" ${roAttr} />
+              <input type="text" class="tgroute-topicid" placeholder="Topic ID (optional)" value="${r.topicId ?? ""}" autocomplete="off" ${roAttr} />
+              ${canEditRoutes ? `<div class="tgroute-row-actions">
+                <button type="button" class="tgroute-action-btn tgroute-save">Save</button>
+                ${r.isOverride ? '<button type="button" class="tgroute-action-btn tgroute-action-secondary tgroute-reset">Reset</button>' : ""}
+              </div>` : ""}
+            </div>
+          </div>`;
+      }).join("");
+
+      acctBody.innerHTML = `
+        <div class="tgroute-layout">
+          <div class="tgroute-brands">${brandListHtml}</div>
+          <div class="tgroute-modules">${moduleRowsHtml}</div>
+        </div>
+        <hr class="tgroute-divider" />
+        ${canEditRoutes ? "" : '<p class="edit-modal-note">View only.</p>'}
+        <p class="edit-modal-note tgroute-footnote">Changes apply to the very next form submission — no redeploy needed. "default" rows are still using the value built into the code; "custom" rows have been overridden here.</p>`;
+
+      acctBody.querySelectorAll(".tgroute-brand").forEach((el) => {
+        el.addEventListener("click", () => {
+          acctRoutesSelectedBrand = el.dataset.brand;
+          setAcctNote("");
+          renderTgRoutes();
+        });
+      });
+      acctBody.querySelectorAll(".tgroute-save").forEach((btn) => {
+        btn.addEventListener("click", () => saveTgRouteRow(btn.closest(".tgroute-row")));
+      });
+      acctBody.querySelectorAll(".tgroute-reset").forEach((btn) => {
+        btn.addEventListener("click", () => resetTgRouteRow(btn.closest(".tgroute-row")));
+      });
+    }
+
+    async function saveTgRouteRow(row) {
+      const moduleId = row.dataset.module;
+      const chatId = row.querySelector(".tgroute-chatid").value.trim();
+      const topicId = row.querySelector(".tgroute-topicid").value.trim();
+      if (!chatId) return setAcctNote("Chat ID is required.", "err");
+      setAcctNote("Saving…");
+      const res = await window.AgentAuth.authFetch("/api/admin/routes", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "save", brandId: acctRoutesSelectedBrand, moduleId, chatId, topicId: topicId === "" ? null : topicId }),
+      });
+      const data = await res.json();
+      if (!data.ok) return setAcctNote(data.error || "Save failed.", "err");
+      if (acctRoutesSelectedBrand === SECURITY_ROW_ID) {
+        acctRoutesData.securityAlerts = data.route;
+      } else {
+        acctRoutesData.routes[`${acctRoutesSelectedBrand}|${moduleId}`] = data.route;
+      }
+      setAcctNote("Save success.", "ok");
+      renderTgRoutes();
+    }
+
+    async function resetTgRouteRow(row) {
+      const moduleId = row.dataset.module;
+      setAcctNote("Resetting…");
+      const res = await window.AgentAuth.authFetch("/api/admin/routes", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "reset", brandId: acctRoutesSelectedBrand, moduleId }),
+      });
+      const data = await res.json();
+      if (!data.ok) return setAcctNote(data.error || "Reset failed.", "err");
+      if (acctRoutesSelectedBrand === SECURITY_ROW_ID) {
+        acctRoutesData.securityAlerts = data.route;
+      } else {
+        acctRoutesData.routes[`${acctRoutesSelectedBrand}|${moduleId}`] = data.route;
+      }
+      setAcctNote("Reset success.", "ok");
+      renderTgRoutes();
+    }
+
+    let acctOfficesById = {};
+
+    // ---- Deposit Sheet Link (live-editable Google Sheet links for
+    // Deposit Issue + Deposit Backup) ----
+    // Same brand-sidebar layout as TG Group/Channel above (reuses the
+    // .tgroute-* CSS classes as-is — this is the same "pick a brand on
+    // the left, edit its rows on the right" shape, just with Sheet
+    // link + tab names instead of Chat ID + Topic ID). Backed by
+    // /api/admin/deposit-sheets — see functions/_shared/depositSheets.js
+    // for the KV layer and functions/api/admin/deposit-sheets.js for the
+    // full action list.
+    let acctDepositData = null;
+    let acctDepositSelectedBrand = null;
+
+    async function loadDepositSheets() {
+      const res = await window.AgentAuth.authFetch("/api/admin/deposit-sheets");
+      const data = await res.json();
+      if (!data.ok) {
+        acctBody.innerHTML = `<p class="edit-modal-note err">${acctEsc(data.error || "Failed to load.")}</p>`;
+        return;
+      }
+      acctDepositData = data;
+      if (!acctDepositSelectedBrand || !data.brands.some((b) => b.id === acctDepositSelectedBrand)) {
+        acctDepositSelectedBrand = data.brands[0]?.id || null;
+      }
+      renderDepositSheets();
+    }
+
+    function renderDepositSheets() {
+      if (!acctDepositData) return;
+      const { brands, sheets, backup } = acctDepositData;
+      const canEdit = canEditAdminSection("depositSheets");
+      const roAttr = canEdit ? "" : "disabled";
+
+      const brandListHtml = brands.map((b) => `
+        <div class="tgroute-brand${b.id === acctDepositSelectedBrand ? " selected" : ""}" data-brand="${acctEsc(b.id)}">${acctEsc(b.name)}</div>
+      `).join("");
+
+      const issue = sheets[acctDepositSelectedBrand] || { sheetId: "", tabNames: [], isOverride: false };
+      const back = backup[acctDepositSelectedBrand] || { thisMonth: null, lastMonth: null };
+      const thisMonth = back.thisMonth || { sheetId: "", tabNames: [] };
+      const lastMonth = back.lastMonth; // null = not linked, never directly editable
+
+      acctBody.innerHTML = `
+        <div class="tgroute-layout">
+          <div class="tgroute-brands">${brandListHtml}</div>
+          <div class="tgroute-modules">
+
+            <div class="tgroute-row" data-row="issue">
+              <div class="tgroute-mod-name">💳 Deposit Issue
+                <span class="route-tag${issue.isOverride ? " custom" : ""}">${issue.isOverride ? "linked" : "not linked"}</span>
+              </div>
+              <div class="tgroute-fields">
+                <input type="text" class="ds-sheet" placeholder="Google Sheet URL or ID" value="${acctEsc(issue.sheetId)}" autocomplete="off" ${roAttr} />
+                <input type="text" class="ds-tabs" placeholder="Tab names, comma-separated" value="${acctEsc((issue.tabNames || []).join(", "))}" autocomplete="off" ${roAttr} />
+                ${canEdit ? `<div class="tgroute-row-actions">
+                  <button type="button" class="tgroute-action-btn ds-save-issue">Save</button>
+                  ${issue.isOverride ? '<button type="button" class="tgroute-action-btn tgroute-action-secondary ds-reset-issue">Reset</button>' : ""}
+                </div>` : ""}
+              </div>
+            </div>
+
+            <div class="tgroute-row" data-row="backup-this">
+              <div class="tgroute-mod-name">📅 Deposit Backup — This Month
+                <span class="route-tag${back.thisMonth ? " custom" : ""}">${back.thisMonth ? "linked" : "not linked"}</span>
+              </div>
+              <div class="tgroute-fields">
+                <input type="text" class="ds-sheet" placeholder="Google Sheet URL or ID" value="${acctEsc(thisMonth.sheetId)}" autocomplete="off" ${roAttr} />
+                <input type="text" class="ds-tabs" placeholder="Tab names, comma-separated" value="${acctEsc((thisMonth.tabNames || []).join(", "))}" autocomplete="off" ${roAttr} />
+                ${canEdit ? `<div class="tgroute-row-actions">
+                  <button type="button" class="tgroute-action-btn ds-save-this">Save</button>
+                  ${back.thisMonth ? '<button type="button" class="tgroute-action-btn tgroute-action-secondary ds-clear-this">Clear</button>' : ""}
+                </div>` : ""}
+              </div>
+            </div>
+
+            <div class="tgroute-row" data-row="backup-last">
+              <div class="tgroute-mod-name">🗓️ Deposit Backup — Last Month
+                <span class="route-tag${lastMonth ? " custom" : ""}">${lastMonth ? "linked" : "not linked"}</span>
+              </div>
+              <div class="tgroute-fields">
+                <input type="text" value="${acctEsc(lastMonth ? lastMonth.sheetId : "")}" placeholder="(set automatically by rollover)" disabled />
+                <input type="text" value="${acctEsc(lastMonth ? (lastMonth.tabNames || []).join(", ") : "")}" disabled />
+              </div>
+              <p class="edit-modal-note tgroute-footnote" style="margin-top:8px;">Last Month is read-only — it's always "whatever This Month was, before the most recent rollover." ${canEdit ? 'Use the button below at the start of a new month, after saving the new sheet into "This Month" above is no longer needed for the old one.' : ''}</p>
+              ${canEdit ? `<button type="button" class="tgroute-action-btn tgroute-action-secondary ds-roll" style="margin-top:4px;">Roll: This Month → Last Month</button>` : ""}
+            </div>
+
+          </div>
+        </div>
+        <hr class="tgroute-divider" />
+        ${canEdit ? "" : '<p class="edit-modal-note">View only.</p>'}
+        <p class="edit-modal-note tgroute-footnote">Changes apply to the very next search/update for that brand — no redeploy needed. Every brand starts fully unlinked; searching an unlinked brand tells the agent it isn't configured yet rather than guessing.</p>`;
+
+      acctBody.querySelectorAll(".tgroute-brand").forEach((el) => {
+        el.addEventListener("click", () => {
+          acctDepositSelectedBrand = el.dataset.brand;
+          setAcctNote("");
+          renderDepositSheets();
+        });
+      });
+      const issueRow = acctBody.querySelector('[data-row="issue"]');
+      const thisRow = acctBody.querySelector('[data-row="backup-this"]');
+      if (issueRow) {
+        issueRow.querySelector(".ds-save-issue")?.addEventListener("click", () => saveDepositSheetRow(issueRow, "save"));
+        issueRow.querySelector(".ds-reset-issue")?.addEventListener("click", () => resetDepositSheetRow("reset"));
+      }
+      if (thisRow) {
+        thisRow.querySelector(".ds-save-this")?.addEventListener("click", () => saveDepositSheetRow(thisRow, "saveBackupThisMonth"));
+        thisRow.querySelector(".ds-clear-this")?.addEventListener("click", () => resetDepositSheetRow("clearBackupThisMonth"));
+      }
+      acctBody.querySelector(".ds-roll")?.addEventListener("click", () => {
+        if (!confirm(`Roll over ${acctDepositData.brands.find((b) => b.id === acctDepositSelectedBrand)?.name || ""}'s Deposit Backup? This Month becomes the new Last Month (discarding whatever was there before), and This Month is cleared out.`)) return;
+        resetDepositSheetRow("rollBackup");
+      });
+    }
+
+    async function saveDepositSheetRow(row, action) {
+      const sheetUrlOrId = row.querySelector(".ds-sheet").value.trim();
+      const tabNames = row.querySelector(".ds-tabs").value.trim();
+      if (!sheetUrlOrId) return setAcctNote("Sheet URL or ID is required.", "err");
+      if (!tabNames) return setAcctNote("At least one tab name is required.", "err");
+      setAcctNote("Saving…");
+      const res = await window.AgentAuth.authFetch("/api/admin/deposit-sheets", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action, brandId: acctDepositSelectedBrand, sheetUrlOrId, tabNames }),
+      });
+      const data = await res.json();
+      if (!data.ok) return setAcctNote(data.error || "Save failed.", "err");
+      applyDepositSheetResult(action, data);
+      setAcctNote("Save success.", "ok");
+      renderDepositSheets();
+    }
+
+    async function resetDepositSheetRow(action) {
+      const verb = action === "rollBackup" ? "Roll over" : "Reset";
+      setAcctNote(action === "rollBackup" ? "Rolling over…" : "Resetting…");
+      const res = await window.AgentAuth.authFetch("/api/admin/deposit-sheets", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action, brandId: acctDepositSelectedBrand }),
+      });
+      const data = await res.json();
+      if (!data.ok) return setAcctNote(data.error || `${verb} failed.`, "err");
+      applyDepositSheetResult(action, data);
+      setAcctNote(`${verb} success.`, "ok");
+      renderDepositSheets();
+    }
+
+    function applyDepositSheetResult(action, data) {
+      if (action === "save" || action === "reset") {
+        acctDepositData.sheets[acctDepositSelectedBrand] = data.sheet;
+      } else {
+        acctDepositData.backup[acctDepositSelectedBrand] = data.backup;
+      }
+    }
+
+    async function loadAgentProfileTable() {
+      const [accountsRes, officesRes] = await Promise.all([
+        window.AgentAuth.authFetch("/api/admin/accounts"),
+        window.AgentAuth.authFetch("/api/admin/offices"),
+      ]);
+      const accountsData = await accountsRes.json();
+      const officesData = await officesRes.json();
+      acctAccounts = accountsData.ok ? accountsData.accounts : [];
+      acctOffices = officesData.ok ? officesData.offices : [];
+      acctOfficesById = {};
+      if (officesData.ok) {
+        officesData.offices.forEach((o) => { acctOfficesById[o.id] = o; });
+      }
+      renderAgentProfileTable();
+    }
+
+    function renderAgentProfileTable() {
+      const roleFilter = document.getElementById("acctProfileRoleFilter").value || "all";
+      const searchTerm = document.getElementById("acctProfileSearch").value.trim().toLowerCase();
+      let visibleAccounts = roleFilter === "all" ? acctAccounts : acctAccounts.filter((a) => a.role === roleFilter);
+      if (searchTerm) {
+        visibleAccounts = visibleAccounts.filter((a) =>
+          (a.username || "").toLowerCase().includes(searchTerm) ||
+          (a.fullName || "").toLowerCase().includes(searchTerm) ||
+          (a.pid || "").toLowerCase().includes(searchTerm)
+        );
+      }
+
+      const rows = visibleAccounts.map((a) => {
+        // Office / IP — SuperAdmin can log in from anywhere with no office
+        // owner is the ONE role exempt from the office/IP requirement now
+        // (see _shared/accounts.js officeIpCheckPasses()) — SuperAdmin
+        // USED to be exempt too, but per OWNER_ROLE_SETUP.md's design,
+        // SuperAdmin now must be bound to an office just like everyone
+        // else, so a SuperAdmin row with no office is flagged as broken
+        // here too, same as Admin/Senior/Agent.
+        const office = a.officeId ? acctOfficesById[a.officeId] : null;
+        let officeCell;
+        if (office) {
+          officeCell = acctEsc(office.name);
+        } else if (a.role === "owner") {
+          officeCell = `<span class="office-none">— no office (unrestricted, OK for Owner)</span>`;
+        } else {
+          officeCell = `<span class="office-missing">⚠️ No office — can't log in</span>`;
+        }
+        const statusCell = a.locked
+          ? `<span class="office-missing" title="${acctEsc(a.lockedReason || "Locked")}">🔒 Locked</span>`
+          : `<span style="color:var(--ink-soft);">Active</span>`;
+        const brandsCell = a.allowedBrands === "all" ? "All" : ((a.allowedBrands || []).join(", ") || "—");
+        // Per-ROW check (same reasoning as canManageAccess in
+        // openAgentProfileModal below) — a SuperAdmin viewer might be
+        // able to lock one row but not another (e.g. another SuperAdmin,
+        // same rank) — showing the button on every row regardless would
+        // mean clicking it on a same-or-higher-rank row just gets
+        // rejected by the server with no visual hint beforehand.
+        const rowTargetRank = ROLE_RANK[a.role] ?? ROLE_RANK.agent;
+        const canManageThisRow = canEditAdminSection("agentProfile") && myRank > rowTargetRank;
+        const lockBtn = canManageThisRow
+          ? (a.locked
+              ? `<button type="button" class="row-btn" data-unlock="${acctEsc(a.username)}" title="Unlock this account">🔓</button>`
+              : `<button type="button" class="row-btn" data-lock="${acctEsc(a.username)}" title="Lock this account">🔒</button>`)
+          : "";
+        // Username itself is the entry point into the Agent Personal
+        // Profile popup now (see openAgentProfileModal below) — reaching
+        // this table at all already required Can-See access to
+        // agentProfile (sidebar gating above), so this is effectively
+        // always true here; kept explicit for clarity.
+        const usernameCell = canSeeAdminSection("agentProfile")
+          ? `<button type="button" class="link-btn" data-open-profile="${acctEsc(a.username)}">${acctEsc(a.username)}</button>`
+          : acctEsc(a.username);
+        return `
+          <tr data-username="${acctEsc(a.username)}">
+            <td>${usernameCell}</td>
+            <td class="cell-role"><span class="role-tag">${acctEsc(a.role)}</span></td>
+            <td class="cell-office">${officeCell}</td>
+            <td class="cell-brands">${acctEsc(brandsCell)}</td>
+            <td>${statusCell}</td>
+            <td class="cell-fullname">${acctEsc(a.fullName || "—")}</td>
+            <td class="cell-pid">${acctEsc(a.pid || "—")}</td>
+            <td>${lockBtn}</td>
+          </tr>`;
+      }).join("");
+      acctBody.innerHTML = `
+        <div class="agent-profile-table-wrap">
+          <table class="agent-profile-table">
+            <thead><tr><th>Username</th><th>Role</th><th>Office</th><th>Brands</th><th>Status</th><th>Full Name</th><th>PSD</th><th></th></tr></thead>
+            <tbody>${rows || '<tr><td colspan="8" style="color:var(--ink-soft);">No accounts match this filter.</td></tr>'}</tbody>
+          </table>
+        </div>
+        ${canEditAdminSection("agentProfile") ? "" : '<p class="edit-modal-note">View only.</p>'}`;
+      acctBody.querySelectorAll("[data-open-profile]").forEach((btn) => {
+        btn.addEventListener("click", () => openAgentProfileModal(btn.dataset.openProfile));
+      });
+      acctBody.querySelectorAll("[data-lock]").forEach((btn) => {
+        btn.addEventListener("click", () => setAgentLock(btn.dataset.lock, true));
+      });
+      acctBody.querySelectorAll("[data-unlock]").forEach((btn) => {
+        btn.addEventListener("click", () => setAgentLock(btn.dataset.unlock, false));
+      });
+    }
+
+    async function setAgentLock(username, locked) {
+      const verb = locked ? "Lock" : "Unlock";
+      if (!confirm(`${verb} account "${username}"?${locked ? " They won't be able to log in (or keep using an already-open session) until unlocked." : ""}`)) return;
+      const res = await window.AgentAuth.authFetch("/api/admin/accounts", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: locked ? "lock" : "unlock", username }),
+      });
+      const data = await res.json();
+      if (!data.ok) {
+        if (window.showToast) window.showToast(data.error || `${verb} failed.`, "err");
+        else alert(data.error || `${verb} failed.`);
+        return;
+      }
+      await loadAgentProfileTable();
+      // Wording is derived from `verb` (computed from the actual `locked`
+      // this call just saved), never hardcoded — a fixed string here would
+      // say "Locked." on an unlock and vice versa. See toast design doc §5.
+      if (window.showToast) window.showToast(`${verb} success.`, "ok");
+    }
+
+    // ---- Agent Personal Profile popup ----
+    //
+    // Opened by clicking a username in the table above (Admin/SuperAdmin
+    // only — see renderAgentProfileTable). A separate floating overlay
+    // stacked on top of the Account Management modal, not another mode of
+    // acctBody — reuses the same .edit-details-overlay/.edit-details-modal
+    // chrome the "🔄 Sync to Sheet" popup in threads.html already
+    // established, for a consistent look without duplicating CSS.
+    //
+    // Field-level permissions (matches the server's own enforcement in
+    // functions/api/admin/accounts.js — this is just the UI reflecting
+    // it, the server checks independently regardless of what this modal
+    // does or doesn't disable):
+    //   - Full Name / Agent PSD: Admin and SuperAdmin can edit.
+    //   - Role / Status(lock) / Office / Brands / Topic Access:
+    //     SuperAdmin only — Admin sees them as read-only.
+    const AGENT_PROFILE_MODULE_LIST = window.MODULES || [];
+
+    function openAgentProfileModal(username) {
+      const a = acctAccounts.find((acc) => acc.username === username);
+      if (!a) return;
+
+      const overlay = document.createElement("div");
+      overlay.className = "edit-details-overlay";
+      overlay.id = "agentProfileOverlay";
+
+      const office = a.officeId ? acctOfficesById[a.officeId] : null;
+      const officeOptions = acctOffices.map((o) => `<option value="${o.id}" ${o.id === a.officeId ? "selected" : ""}>${acctEsc(o.name)}</option>`).join("");
+      // Per-TARGET check, not a blanket "do I have Can-Edit at all" — the
+      // same viewer might be able to edit one account (ranked below them)
+      // but not another same-or-higher rank account (canManage() in
+      // functions/api/admin/accounts.js is a separate, still-active
+      // outrank rule, independent of Can-Edit access to agentProfile).
+      // Using canEditAdminSection() alone here (without the rank check)
+      // would show an editable UI that the server then rejects —
+      // confusing, and exactly the bug this guards against.
+      const targetRank = ROLE_RANK[a.role] ?? ROLE_RANK.agent;
+      const canManageAccess = canEditAdminSection("agentProfile") && myRank > targetRank;
+      const roleScope = Object.keys(ROLE_RANK).filter((r) => r !== "owner" && ROLE_RANK[r] < myRank);
+      const roleOptions = roleScope.map((r) => `<option value="${r}" ${r === a.role ? "selected" : ""}>${r}</option>`).join("");
+      const pwBy = a.lastPasswordChange
+        ? `${timeAgoLocal(a.lastPasswordChange.at)} by ${acctEsc(a.lastPasswordChange.by)}`
+        : "—";
+      const allBrandsSelected = a.allowedBrands === "all";
+      const brandPills = (window.BRANDS || []).map((b) => `<div class="brand-toggle-pill${allBrandsSelected || (a.allowedBrands || []).includes(b.name) ? " selected" : ""}" data-brand="${acctEsc(b.name)}">${acctEsc(b.name).toUpperCase()}</div>`).join("");
+      const allModulesSelected = a.allowedModules === "all" || a.allowedModules === undefined;
+      const moduleChecks = AGENT_PROFILE_MODULE_LIST.map((m) => `
+        <label class="agent-profile-module-check">
+          <input type="checkbox" value="${acctEsc(m.id)}" ${allModulesSelected || (Array.isArray(a.allowedModules) && a.allowedModules.includes(m.id)) ? "checked" : ""} ${canManageAccess ? "" : "disabled"} />
+          ${m.icon || ""} ${acctEsc(m.name)}
+        </label>`).join("");
+
+      // Account Management Access — Owner-only. Unset allowedAdminSections
+      // (never explicitly touched) now displays this target account's
+      // ROLE-BASED DEFAULT (ADMIN_SECTIONS_DEFAULT_SEEN/_EDIT above) as
+      // checked/unchecked, not "everything checked" — see the 2026-07-28
+      // security fix in canSeeAdminSection()/canEditAdminSection(). The
+      // Owner is still free to check/uncheck anything here; saving always
+      // writes an explicit list (or "all"), which from then on overrides
+      // the role default for this specific account either way.
+      const allSectionsSelected = a.allowedAdminSections === "all";
+      const defaultSeenForTarget = ADMIN_SECTIONS_DEFAULT_SEEN[a.role] || [];
+      const allEditSelected = a.adminSectionEditAccess === "all";
+      const defaultEditForTarget = ADMIN_SECTIONS_DEFAULT_EDIT[a.role] || [];
+      const adminSectionChecks = ADMIN_SECTIONS_LIST.map((s) => {
+        const isChecked = allSectionsSelected
+          || (Array.isArray(a.allowedAdminSections) ? a.allowedAdminSections.includes(s.id) : defaultSeenForTarget.includes(s.id));
+        const checkboxHtml = `
+        <label class="agent-profile-module-check">
+          <input type="checkbox" class="ap-admin-section-checkbox" value="${acctEsc(s.id)}" ${isChecked ? "checked" : ""} ${canManageOthersAdminAccess ? "" : "disabled"} />
+          ${s.icon} ${acctEsc(s.name)}
+        </label>`;
+        if (!EDITABLE_ADMIN_SECTIONS.includes(s.id)) return checkboxHtml;
+        const isEditChecked = allEditSelected
+          || (Array.isArray(a.adminSectionEditAccess) ? a.adminSectionEditAccess.includes(s.id) : defaultEditForTarget.includes(s.id));
+        return checkboxHtml + `
+        <div class="agent-profile-edit-level-row" data-for-section="${acctEsc(s.id)}" style="${isChecked ? "" : "display:none;"}">
+          <label><input type="radio" name="apEditLevel_${acctEsc(s.id)}" value="view" ${isEditChecked ? "" : "checked"} /> View only</label>
+          <label><input type="radio" name="apEditLevel_${acctEsc(s.id)}" value="edit" ${isEditChecked ? "checked" : ""} /> Can Edit</label>
+        </div>`;
+      }).join("");
+
+      overlay.innerHTML = `
+        <div class="edit-details-modal">
+          <button type="button" class="modal-close-btn" id="agentProfileClose" title="Close" aria-label="Close">✕</button>
+          <div class="edit-details-title">🪪 Agent personal profile</div>
+          <div class="edit-details-sub">Last active ${timeAgoLocal(a.lastActiveAt)} · Password changed ${pwBy}</div>
+
+          <div class="edit-details-fields">
+            <p class="agent-profile-section-label">Edit profile</p>
+            <div class="field"><label>Username</label><input type="text" value="${acctEsc(a.username)}" disabled /></div>
+            <div style="display:flex; gap:10px;">
+              <div class="field" style="flex:1;">
+                <label>Role</label>
+                ${canManageAccess ? `<select id="ap_role">${roleOptions}</select>` : `<input type="text" value="${acctEsc(a.role)}" disabled />`}
+              </div>
+              <div class="field" style="flex:1;">
+                <label>Status</label>
+                <div class="agent-profile-status-row">
+                  <span class="agent-profile-status-text ${a.locked ? "is-locked" : "is-active"}">${a.locked ? "🔒 Locked" : "Active"}</span>
+                  ${canManageAccess ? `<button type="button" class="icon-btn" id="ap_lockToggle" title="${a.locked ? "Unlock" : "Lock"} this account">${a.locked ? "🔓" : "🔒"}</button>` : ""}
+                </div>
+              </div>
+            </div>
+            <div class="field">
+              <label>Office</label>
+              ${canManageAccess ? `<select id="ap_office"><option value="">— none —</option>${officeOptions}</select>` : `<input type="text" value="${office ? acctEsc(office.name) : (a.role === "owner" ? "unrestricted, OK for Owner" : "—")}" disabled />`}
+            </div>
+            <div class="field">
+              <label>Brands</label>
+              <div class="brand-toggle-label"><span></span>${canManageAccess ? `<span class="select-all-btn" id="ap_selectAllBrands">${allBrandsSelected ? "✓ All Selected" : "Select All"}</span>` : ""}</div>
+              <div class="brand-toggle-grid" id="ap_brandGrid" style="${canManageAccess ? "" : "pointer-events:none; opacity:0.65;"}">${brandPills}</div>
+            </div>
+            <div class="field"><label>Full name</label><input type="text" id="ap_fullname" value="${acctEsc(a.fullName || "")}" autocomplete="off" /></div>
+            <div class="field"><label>Agent PSD</label><input type="text" id="ap_pid" value="${acctEsc(a.pid || "")}" placeholder="e.g. PSD-014" autocomplete="off" /></div>
+
+            <div class="agent-profile-section-divider" style="margin-top:14px;"></div>
+            <div class="agent-profile-collapsible">
+              <p class="agent-profile-section-label agent-profile-collapsible-header">
+                <span>🔒 Topic access ${canManageAccess ? "" : '<span class="agent-profile-locked-note">(SuperAdmin only, and only for accounts ranked below your own)</span>'}</span>
+                <span class="arrow">&rarr;</span>
+              </p>
+              <div class="agent-profile-module-list agent-profile-collapsible-body">${moduleChecks}</div>
+            </div>
+
+            ${canManageOthersAdminAccess ? `
+            <div class="agent-profile-section-divider" style="margin-top:14px;"></div>
+            <div class="agent-profile-collapsible">
+              <p class="agent-profile-section-label agent-profile-collapsible-header">
+                <span>🔒 Account Management Access</span>
+                <span class="arrow">&rarr;</span>
+              </p>
+              <div class="agent-profile-collapsible-body" style="flex-direction:column;">
+                <div class="agent-profile-admin-section-list">${adminSectionChecks}</div>
+                ${isRealOwner ? `
+                <div class="agent-profile-admin-delegate-row">
+                  <label class="agent-profile-module-check">
+                    <input type="checkbox" id="ap_canGrantAdminAccess" ${a.canGrantAdminAccess ? "checked" : ""} />
+                    Can manage Account Management Access for other accounts
+                  </label>
+                </div>
+                ` : ""}
+              </div>
+            </div>
+            ` : ""}
+          </div>
+
+          <div class="edit-details-status" id="agentProfileStatus"></div>
+          <div class="edit-details-actions">
+            <button type="button" class="icon-btn" id="agentProfileCancel" style="width:auto; height:auto; padding:14px 22px; font-size:14px; font-weight:800; display:flex; align-items:center; justify-content:center;">Cancel</button>
+            <button type="button" class="btn-submit" id="agentProfileSave" style="width:auto; padding:10px 22px;">Save</button>
+          </div>
+        </div>`;
+      document.body.appendChild(overlay);
+
+      if (canManageAccess) wireAgentProfileBrandPicker();
+      if (canManageOthersAdminAccess) wireAdminSectionEditToggles();
+      wireAgentProfileCollapsibles();
+
+      function close() { overlay.remove(); }
+      document.getElementById("agentProfileClose").addEventListener("click", close);
+      document.getElementById("agentProfileCancel").addEventListener("click", close);
+      overlay.addEventListener("click", (e) => { if (e.target === overlay) close(); });
+
+      const lockToggleBtn = document.getElementById("ap_lockToggle");
+      if (lockToggleBtn) {
+        lockToggleBtn.addEventListener("click", async () => {
+          await setAgentLock(a.username, !a.locked);
+          close();
+          openAgentProfileModal(a.username); // reopen with fresh state
+        });
+      }
+
+      document.getElementById("agentProfileSave").addEventListener("click", () => saveAgentProfileModal(a.username));
+    }
+
+    function wireAgentProfileBrandPicker() {
+      const grid = document.getElementById("ap_brandGrid");
+      const selectAllBtn = document.getElementById("ap_selectAllBrands");
+      const pills = Array.from(grid.querySelectorAll(".brand-toggle-pill"));
+      function sync() {
+        const allSelected = pills.length > 0 && pills.every((p) => p.classList.contains("selected"));
+        if (selectAllBtn) {
+          selectAllBtn.classList.toggle("active", allSelected);
+          selectAllBtn.textContent = allSelected ? "✓ All Selected" : "Select All";
+        }
+      }
+      pills.forEach((p) => p.addEventListener("click", () => { p.classList.toggle("selected"); sync(); }));
+      if (selectAllBtn) {
+        selectAllBtn.addEventListener("click", () => {
+          const allSelected = pills.every((p) => p.classList.contains("selected"));
+          pills.forEach((p) => p.classList.toggle("selected", !allSelected));
+          sync();
+        });
+      }
+    }
+
+    // Topic access / Account Management Access — collapsed by default,
+    // click the header to expand. Purely a display toggle: it never
+    // touches the checkboxes/radios inside, so nothing about what's
+    // checked or how saveAgentProfileModal() reads it changes.
+    function wireAgentProfileCollapsibles() {
+      document.querySelectorAll(".agent-profile-collapsible-header").forEach((header) => {
+        header.addEventListener("click", () => {
+          header.closest(".agent-profile-collapsible").classList.toggle("open");
+        });
+      });
+    }
+
+    function wireAdminSectionEditToggles() {
+      document.querySelectorAll(".ap-admin-section-checkbox").forEach((cb) => {
+        cb.addEventListener("change", () => {
+          const row = document.querySelector(`.agent-profile-edit-level-row[data-for-section="${cb.value}"]`);
+          if (!row) return;
+          row.style.display = cb.checked ? "" : "none";
+        });
+      });
+    }
+
+    async function saveAgentProfileModal(username) {
+      const statusEl = document.getElementById("agentProfileStatus");
+      const payload = {
+        action: "save",
+        username,
+        fullName: document.getElementById("ap_fullname").value.trim(),
+        pid: document.getElementById("ap_pid").value.trim(),
+      };
+      // Check whether #ap_role actually got RENDERED, not a global
+      // "do I have Can-Edit at all" flag — the same viewer might have
+      // full edit fields open for one target (ranked below them) and
+      // read-only fields for another (same-or-higher rank, canManage()'s
+      // outrank rule fails), so a global flag alone would try to read an
+      // input that was never put in the DOM for THIS particular target
+      // and throw.
+      if (document.getElementById("ap_role")) {
+        payload.role = document.getElementById("ap_role").value;
+        payload.officeId = document.getElementById("ap_office").value || null;
+        const pills = Array.from(document.querySelectorAll("#ap_brandGrid .brand-toggle-pill"));
+        const selected = pills.filter((p) => p.classList.contains("selected")).map((p) => p.dataset.brand);
+        payload.allowedBrands = pills.length > 0 && selected.length === pills.length ? "all" : selected;
+        const moduleChecks = Array.from(document.querySelectorAll(".agent-profile-module-list input[type=checkbox]"));
+        const selectedModules = moduleChecks.filter((c) => c.checked).map((c) => c.value);
+        payload.allowedModules = selectedModules.length === moduleChecks.length ? "all" : selectedModules;
+      }
+      // Account Management Access — separate block, rendered for the Owner
+      // OR a delegated account (canManageOthersAdminAccess), independent
+      // of canManageAccess above (a manager might be viewing a target they
+      // can't outrank-edit the profile of, but Account Management Access
+      // has its own gate — and, server-side, its own outrank check).
+      const adminSectionList = document.querySelector(".agent-profile-admin-section-list");
+      if (adminSectionList) {
+        // NOT "input[type=checkbox]" — that would also catch anything else
+        // that might live in this modal later. Use the dedicated class.
+        const adminChecks = Array.from(adminSectionList.querySelectorAll(".ap-admin-section-checkbox"));
+        const selectedSections = adminChecks.filter((c) => c.checked).map((c) => c.value);
+        payload.allowedAdminSections = selectedSections.length === adminChecks.length ? "all" : selectedSections;
+
+        const editSections = EDITABLE_ADMIN_SECTIONS.filter((id) => {
+          if (!selectedSections.includes(id)) return false;
+          const radio = adminSectionList.querySelector(`input[name="apEditLevel_${id}"]:checked`);
+          return radio && radio.value === "edit";
+        });
+        payload.adminSectionEditAccess = editSections.length === EDITABLE_ADMIN_SECTIONS.length ? "all" : editSections;
+      }
+      // "Can manage Account Management Access for other accounts" — only
+      // ever rendered for the real Owner (isRealOwner), so its presence in
+      // the DOM alone is enough to know it's safe to send; the server
+      // independently re-checks role === "owner" too either way.
+      const grantCheckbox = document.getElementById("ap_canGrantAdminAccess");
+      if (grantCheckbox) payload.canGrantAdminAccess = grantCheckbox.checked;
+      statusEl.textContent = "Saving…";
+      statusEl.className = "edit-details-status";
+      const res = await window.AgentAuth.authFetch("/api/admin/accounts", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const data = await res.json();
+      if (!data.ok) {
+        statusEl.textContent = data.error || "Save failed.";
+        statusEl.className = "edit-details-status err";
+        return;
+      }
+      document.getElementById("agentProfileOverlay")?.remove();
+      await loadAgentProfileTable();
+    }
+
+
+    function closeAcctModal() {
+      acctBackdrop.classList.remove("is-open");
+      // These are siblings, not children of #acctModalBackdrop — closing
+      // the main modal must explicitly take them down too, or they'd be
+      // left floating on screen with no modal behind them.
+      document.getElementById("ipaOfficeBackdrop").classList.remove("is-open");
+      document.getElementById("ipaRecordBackdrop").classList.remove("is-open");
+      acctMode = null;
+    }
+    document.getElementById("acctModalClose").addEventListener("click", closeAcctModal);
+    acctBackdrop.addEventListener("click", (e) => { if (e.target === acctBackdrop) closeAcctModal(); });
+
+    const ipaOfficeBackdrop = document.getElementById("ipaOfficeBackdrop");
+    document.getElementById("ipaOfficeClose").addEventListener("click", () => ipaOfficeBackdrop.classList.remove("is-open"));
+    ipaOfficeBackdrop.addEventListener("click", (e) => { if (e.target === ipaOfficeBackdrop) ipaOfficeBackdrop.classList.remove("is-open"); });
+
+    const ipaRecordBackdrop = document.getElementById("ipaRecordBackdrop");
+    document.getElementById("ipaRecordClose").addEventListener("click", () => ipaRecordBackdrop.classList.remove("is-open"));
+    ipaRecordBackdrop.addEventListener("click", (e) => { if (e.target === ipaRecordBackdrop) ipaRecordBackdrop.classList.remove("is-open"); });
+
+    document.getElementById("acctModalSave").addEventListener("click", async () => {
+      if (acctMode === "create") return acctSaveCreate();
+      if (acctMode === "reset") return isSenior ? acctSaveResetAdmin() : acctSaveResetSelf();
+    });
+
+    function wireBrandTogglePicker() {
+      const grid = document.getElementById("am_brandGrid");
+      const selectAllBtn = document.getElementById("am_selectAllBtn");
+      const pills = Array.from(grid.querySelectorAll(".brand-toggle-pill"));
+
+      function syncSelectAllBtn() {
+        const allSelected = pills.length > 0 && pills.every((p) => p.classList.contains("selected"));
+        selectAllBtn.classList.toggle("active", allSelected);
+        selectAllBtn.textContent = allSelected ? "✓ All Selected" : "Select All";
+      }
+
+      pills.forEach((p) => {
+        p.addEventListener("click", () => {
+          p.classList.toggle("selected");
+          syncSelectAllBtn();
+        });
+      });
+
+      selectAllBtn.addEventListener("click", () => {
+        const allSelected = pills.every((p) => p.classList.contains("selected"));
+        pills.forEach((p) => p.classList.toggle("selected", !allSelected));
+        syncSelectAllBtn();
+      });
+    }
+
+    // Reads the current selection out of the brand-toggle-grid: "all" if
+    // every pill is selected (stored the same way "all" already works
+    // server-side), otherwise the specific list of selected brand names.
+    function readBrandToggleSelection() {
+      const pills = Array.from(document.querySelectorAll("#am_brandGrid .brand-toggle-pill"));
+      const selected = pills.filter((p) => p.classList.contains("selected")).map((p) => p.dataset.brand);
+      return pills.length > 0 && selected.length === pills.length ? "all" : selected;
+    }
+
+    async function acctSaveCreate() {
+      const username = document.getElementById("am_username").value.trim();
+      const password = document.getElementById("am_password").value;
+      if (!username || !password) return setAcctNote("Username and password are required.", "err");
+      const allowedBrands = readBrandToggleSelection();
+      setAcctNote("Saving…");
+      const res = await window.AgentAuth.authFetch("/api/admin/accounts", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "save", username, password,
+          role: document.getElementById("am_role").value,
+          officeId: document.getElementById("am_office").value || null,
+          allowedBrands,
+          fullName: document.getElementById("am_fullname").value.trim(),
+          pid: document.getElementById("am_pid").value.trim(),
+        }),
+      });
+      const data = await res.json();
+      if (!data.ok) return setAcctNote(data.error || "Create failed.", "err");
+      setAcctNote("Create success.", "ok");
+      setTimeout(closeAcctModal, 700);
+    }
+
+    // ---- IP Access → "Manage offices" popup (functions retargeted from
+    // the old whitelist-mode footer Save/Delete to this popup's own
+    // buttons — same request bodies, just called from a different
+    // place now that the IP Access dashboard owns the main modal body). ----
+    async function ipaOfficeSave() {
+      const name = document.getElementById("ipa_office_name").value.trim();
+      if (!name) return ipaOfficeNote("Office name is required.", "err");
+      const allowedIPs = document.getElementById("ipa_office_ips").value.split("\n").map((s) => s.trim()).filter(Boolean);
+      const id = document.getElementById("ipa_office_picker").value || undefined;
+      ipaOfficeNote("Saving…");
+      const res = await window.AgentAuth.authFetch("/api/admin/offices", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "save", id, name, allowedIPs }),
+      });
+      const data = await res.json();
+      if (!data.ok) return ipaOfficeNote(data.error || "Save failed.", "err");
+      ipaOfficeNote("Save success.", "ok");
+      if (window.refreshIpAccessPanel) window.refreshIpAccessPanel();
+      await ipaLoadOfficePicker();
+    }
+
+    async function ipaOfficeDelete() {
+      const id = document.getElementById("ipa_office_picker").value;
+      const name = document.getElementById("ipa_office_name").value || "this office";
+      if (!id) return;
+      if (!confirm(`Delete office "${name}"? Accounts assigned to it will need a new office.`)) return;
+      ipaOfficeNote("Deleting…");
+      const res = await window.AgentAuth.authFetch("/api/admin/offices", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "delete", id }),
+      });
+      const data = await res.json();
+      if (!data.ok) return ipaOfficeNote(data.error || "Delete failed.", "err");
+      ipaOfficeNote("Delete success.", "ok");
+      if (window.refreshIpAccessPanel) window.refreshIpAccessPanel();
+      await ipaLoadOfficePicker();
+    }
+
+    function ipaOfficeNote(text, cls) {
+      const el = document.getElementById("ipaOfficeNote");
+      if (!el) return;
+      el.textContent = text;
+      el.className = "edit-modal-note" + (cls ? ` ${cls}` : "");
+    }
+
+    async function ipaLoadOfficePicker() {
+      const res = await window.AgentAuth.authFetch("/api/admin/offices");
+      const data = await res.json();
+      const offices = data.ok ? data.offices : [];
+      const picker = document.getElementById("ipa_office_picker");
+      if (!picker) return;
+      const current = picker.value;
+      picker.innerHTML = '<option value="">+ New Office</option>' + offices.map((o) => `<option value="${acctEsc(o.id)}">${acctEsc(o.name)}</option>`).join("");
+      picker.value = current;
+      picker.dataset.offices = JSON.stringify(offices);
+    }
+    document.addEventListener("change", (e) => {
+      if (e.target.id !== "ipa_office_picker") return;
+      const offices = JSON.parse(e.target.dataset.offices || "[]");
+      const office = offices.find((o) => o.id === e.target.value);
+      document.getElementById("ipa_office_name").value = office ? office.name : "";
+      document.getElementById("ipa_office_ips").value = office ? (office.allowedIPs || []).join("\n") : "";
+      const deleteBtn = document.getElementById("ipaOfficeDeleteBtn");
+      if (deleteBtn) deleteBtn.style.display = e.target.value ? "" : "none";
+    });
+    document.getElementById("ipaOfficeSaveBtn")?.addEventListener("click", ipaOfficeSave);
+    document.getElementById("ipaOfficeDeleteBtn")?.addEventListener("click", ipaOfficeDelete);
+
+    async function acctSaveResetAdmin() {
+      const username = document.getElementById("am_reset_account").value;
+      const newPass = document.getElementById("am_reset_newpass").value;
+      const confirmPass = document.getElementById("am_reset_confirm").value;
+      if (!newPass || newPass !== confirmPass) return setAcctNote("New passwords don't match.", "err");
+      const target = acctAccounts.find((a) => a.username === username);
+      if (!target) return setAcctNote("Account not found.", "err");
+      setAcctNote("Saving…");
+      const res = await window.AgentAuth.authFetch("/api/admin/accounts", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "save", username, password: newPass,
+          role: target.role, officeId: target.officeId, allowedBrands: target.allowedBrands,
+        }),
+      });
+      const data = await res.json();
+      if (!data.ok) return setAcctNote(data.error || "Reset failed.", "err");
+      setAcctNote("Reset success.", "ok");
+      setTimeout(closeAcctModal, 700);
+    }
+
+    async function acctSaveResetSelf() {
+      const currentPassword = document.getElementById("am_reset_current").value;
+      const newPass = document.getElementById("am_reset_newpass").value;
+      const confirmPass = document.getElementById("am_reset_confirm").value;
+      if (!currentPassword) return setAcctNote("Enter your current password.", "err");
+      if (!newPass || newPass !== confirmPass) return setAcctNote("New passwords don't match.", "err");
+      setAcctNote("Saving…");
+      const res = await window.AgentAuth.authFetch("/api/account/change-password", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ currentPassword, newPassword: newPass }),
+      });
+      const data = await res.json();
+      if (!data.ok) return setAcctNote(data.error || "Change failed.", "err");
+      window.AgentAuth.updateStoredToken(data.token);
+      setAcctNote("Change success.", "ok");
+      setTimeout(closeAcctModal, 700);
+    }
+  </script>
+  <script src="/assets/spa-shell.js?v=fbace9cf"></script>
+</body>
+</html>
