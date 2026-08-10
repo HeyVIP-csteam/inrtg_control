@@ -322,7 +322,7 @@
                [data-route] elements, so this is safe to wire with its
                own click handler (see openActiveAgentsModal below). -->
           <a href="#" class="tool-card" id="activeAgentsCard" style="--tool-accent:#34d399;display:none;">
-            <div class="t-icon" style="background:#34d39933;" id="activeAgentsCardIcon">🟢</div>
+            <div class="t-icon" style="background:#34d39933;" id="activeAgentsCardIcon">👥</div>
             <div class="t-name">Active Agents</div>
             <div class="t-desc">See who's online or offline right now</div>
             <div class="t-sub-stat" id="activeAgentsOnlineStat"></div>
@@ -613,7 +613,7 @@
       { id: "settings", name: "Settings", icon: "⚙️", floorRank: ROLE_RANK.admin },
       { id: "announcements", name: "Announcements", icon: "📢", floorRank: ROLE_RANK.admin },
       // Mirrors functions/_shared/accounts.js exactly — keep in sync.
-      { id: "activeAgents", name: "Active Agents", icon: "🟢", floorRank: ROLE_RANK.superadmin },
+      { id: "activeAgents", name: "Active Agents", icon: "👥", floorRank: ROLE_RANK.superadmin },
     ];
     const EDITABLE_ADMIN_SECTIONS = ["whitelistIp", "tgRoutes", "agentProfile", "depositSheets", "settings", "announcements"];
     // SECURITY FIX — 2026-07-28: role-based defaults for accounts the

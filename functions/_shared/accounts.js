@@ -123,7 +123,7 @@ export const ADMIN_SECTIONS_LIST = [
   // opt-in-only pattern as every other section. View-only concept (no
   // "edit" — it's a live dashboard, not an editable resource), so it's
   // deliberately absent from EDITABLE_ADMIN_SECTIONS below.
-  { id: "activeAgents", name: "Active Agents", icon: "🟢", floorRank: ROLE_RANK.superadmin },
+  { id: "activeAgents", name: "Active Agents", icon: "👥", floorRank: ROLE_RANK.superadmin },
 ];
 
 // Role-based defaults, used ONLY when the Owner has never explicitly set
