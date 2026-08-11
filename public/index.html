@@ -1619,7 +1619,7 @@
       const ownerTopicChecks = OWNER_TOPIC_ITEMS.map((t) => `
         <label class="agent-profile-module-check">
           <input type="checkbox" class="ap-owner-topic-checkbox" value="${acctEsc(t.id)}" ${Array.isArray(a.ownerTopicAccess) && a.ownerTopicAccess.includes(t.id) ? "checked" : ""} ${isRealOwner ? "" : "disabled"} />
-          ${t.icon} ${acctEsc(t.name)} <span class="agent-profile-locked-note">(Owner only)</span>
+          ${t.icon} ${acctEsc(t.name)}
         </label>`).join("");
 
       // Account Management Access — Owner-only. Unset allowedAdminSections
