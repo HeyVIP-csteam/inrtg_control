@@ -171,6 +171,13 @@ aspect-ratio、加宽…),但每次都忘了跑项目自带的
   ——效果比之前朴素,但用的全是最基础、最稳的 CSS 属性,不依赖任何浏览器
   差异较大的新特性
 
+**流动边框特效——业主确认后加回来了**:部署验证之后,卡片排列、大小
+都恢复正常,证明真正的 bug 是 `.hub-main .inner` 的 480px 容器限制,
+不是流动特效本身——`conic-gradient`/`mask-composite` 是被"错杀"的。
+业主要求把这个特效加回来,已经原样恢复:悬停时旋转的渐变边框光环
+(`::before`)+ 扫过卡片表面的光带(`::after`),跟外层容器的宽度修复
+互不冲突,同时保留。
+
 **涉及的文件(2 个)**:`public/assets/style.css`(`.tool-card` 整段
 重写 + 新增 `.t-open`/两个 `@keyframes`)、`public/index.html`(每张
 工具卡片加了 `<span class="t-open">Open →</span>`)。
