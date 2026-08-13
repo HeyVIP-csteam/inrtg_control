@@ -276,6 +276,7 @@
           <div class="sidebar-subitem" id="subWhitelistIp" style="display:none;--sub-accent:#60a5fa33;"><span class="sub-icon">🌐</span> IP Access</div>
           <div class="sidebar-subitem" id="subTgRoutes" style="display:none;--sub-accent:#38bdf833;"><span class="sub-icon">📡</span> TG Group / Channel</div>
           <div class="sidebar-subitem" id="subDepositSheets" style="display:none;--sub-accent:#2f6fed33;"><span class="sub-icon">🧾</span> Deposit Sheet Link</div>
+          <div class="sidebar-subitem" id="subBettingLinks" style="display:none;--sub-accent:#a78bfa33;"><span class="sub-icon">🔗</span> Betting Resources Links</div>
           <div class="sidebar-subitem" id="subSettings" style="display:none;--sub-accent:#f59e0b33;"><span class="sub-icon">⚙️</span> Settings</div>
           <div class="sidebar-subitem" id="subResetPassword" style="--sub-accent:#f3c46333;"><span class="sub-icon">🔑</span> Reset Password</div>
           <div class="sidebar-subitem" id="subAgentProfile" style="display:none;--sub-accent:#34d39933;"><span class="sub-icon">🪪</span> Agent Profile</div>
@@ -293,27 +294,38 @@
             <div class="t-name">TG Reply Threads</div>
             <div class="t-desc">Track Telegram replies to your form submissions in real-time</div>
             <div class="t-sub-stat" id="threadsUnsolvedStat"></div>
-          </a>
-          <a href="/promo.html" data-route="promo" class="tool-card" data-feature-item="promo_code_search" style="--tool-accent:#f472b6;">
-            <div class="t-icon" style="background:#f472b633;">🎟️</div>
-            <div class="t-name">Promo Code Search</div>
-            <div class="t-desc">Search multiple promo codes at once</div>
+            <span class="t-open">Open →</span>
           </a>
           <a href="/deposit-issue.html" data-route="depositIssue" class="tool-card" data-feature-item="deposit_issue" style="--tool-accent:#2f6fed;">
             <div class="t-icon" style="background:#2f6fed33;">💳</div>
             <div class="t-name">Deposit Issue</div>
             <div class="t-desc">Search Deposit Support records and update CS fields</div>
+            <span class="t-open">Open →</span>
           </a>
           <a href="/deposit-backup.html" data-route="depositBackup" class="tool-card" data-feature-item="deposit_backup" style="--tool-accent:#2f6fed;">
             <div class="t-icon" style="background:#2f6fed33;">💻</div>
             <div class="t-name">Deposit Backup</div>
             <div class="t-desc">Search This Month + Last Month backup sheets (read-only)</div>
+            <span class="t-open">Open →</span>
+          </a>
+          <a href="/promo.html" data-route="promo" class="tool-card" data-feature-item="promo_code_search" style="--tool-accent:#f472b6;">
+            <div class="t-icon" style="background:#f472b633;">🎟️</div>
+            <div class="t-name">Promo Code Search</div>
+            <div class="t-desc">Search multiple promo codes at once</div>
+            <span class="t-open">Open →</span>
           </a>
           <a href="/announcements.html" data-route="announcements" class="tool-card" id="announcementCard" style="--tool-accent:#f59e0b;display:none;">
             <div class="t-icon" style="background:#f59e0b33;" id="announcementCardIcon">📢</div>
             <div class="t-name">Announcement</div>
             <div class="t-desc">Create and schedule the site-wide REMINDER banner</div>
             <div class="t-sub-stat" id="announcementActiveStat"></div>
+            <span class="t-open">Open →</span>
+          </a>
+          <a href="/betting-resources.html" class="tool-card" id="bettingResourcesCard" data-feature-item="betting_resources" style="--tool-accent:#a78bfa;">
+            <div class="t-icon" style="background:#a78bfa33;">📋</div>
+            <div class="t-name">HeyVIP Betting Rules</div>
+            <div class="t-desc">Betting platforms & results finding websites</div>
+            <span class="t-open">Open →</span>
           </a>
           <!-- No data-route on purpose — this opens as a popup over the
                current page (see #aaModalBackdrop below), the same way
@@ -326,6 +338,7 @@
             <div class="t-name">Active Agents</div>
             <div class="t-desc">See who's online or offline right now</div>
             <div class="t-sub-stat" id="activeAgentsOnlineStat"></div>
+            <span class="t-open">Open →</span>
           </a>
         </div>
 
@@ -610,12 +623,13 @@
       { id: "tgRoutes", name: "TG Group / Channel", icon: "📡", floorRank: ROLE_RANK.admin },
       { id: "agentProfile", name: "Agent Profile", icon: "🪪", floorRank: ROLE_RANK.admin },
       { id: "depositSheets", name: "Deposit Sheet Link", icon: "🧾", floorRank: ROLE_RANK.superadmin },
+      { id: "bettingLinks", name: "Betting Resources Links", icon: "🔗", floorRank: ROLE_RANK.superadmin },
       { id: "settings", name: "Settings", icon: "⚙️", floorRank: ROLE_RANK.admin },
       // "announcements" and "activeAgents" USED to live here — moved to
       // OWNER_TOPIC_ITEMS below, 2026-08-10 (see the comment on that
       // constant, and on the matching one in functions/_shared/accounts.js).
     ];
-    const EDITABLE_ADMIN_SECTIONS = ["whitelistIp", "tgRoutes", "agentProfile", "depositSheets", "settings"];
+    const EDITABLE_ADMIN_SECTIONS = ["whitelistIp", "tgRoutes", "agentProfile", "depositSheets", "settings", "bettingLinks"];
     // SECURITY FIX — 2026-07-28: role-based defaults for accounts the
     // Owner has never explicitly touched. Mirrors
     // ADMIN_SECTIONS_DEFAULT_SEEN / ADMIN_SECTIONS_DEFAULT_EDIT in
@@ -629,13 +643,13 @@
       agent: [],
       senior: ["createAccount"],
       admin: ["whitelistIp"],
-      superadmin: ["createAccount", "whitelistIp", "tgRoutes", "agentProfile", "depositSheets", "settings"],
+      superadmin: ["createAccount", "whitelistIp", "tgRoutes", "agentProfile", "depositSheets", "settings", "bettingLinks"],
     };
     const ADMIN_SECTIONS_DEFAULT_EDIT = {
       agent: [],
       senior: [],
       admin: [], // Whitelist IP visible by default, but view-only
-      superadmin: ["whitelistIp", "tgRoutes", "agentProfile", "depositSheets", "settings"],
+      superadmin: ["whitelistIp", "tgRoutes", "agentProfile", "depositSheets", "settings", "bettingLinks"],
     };
 
     // ---- Owner Topics ("Topic access", Owner-gated items) ----
@@ -687,6 +701,7 @@
     document.getElementById("subTgRoutes").style.display = canSeeAdminSection("tgRoutes") ? "flex" : "none";
     document.getElementById("subAgentProfile").style.display = canSeeAdminSection("agentProfile") ? "flex" : "none";
     document.getElementById("subDepositSheets").style.display = canSeeAdminSection("depositSheets") ? "flex" : "none";
+    document.getElementById("subBettingLinks").style.display = canSeeAdminSection("bettingLinks") ? "flex" : "none";
     document.getElementById("subSettings").style.display = canSeeAdminSection("settings") ? "flex" : "none";
 
     // ---- Announcement tool card — same canSeeAdminSection gate as the
@@ -766,6 +781,7 @@
     document.getElementById("subWhitelistIp").addEventListener("click", () => openAcctModal("whitelist"));
     document.getElementById("subTgRoutes").addEventListener("click", () => openAcctModal("tgroutes"));
     document.getElementById("subDepositSheets").addEventListener("click", () => openAcctModal("depositsheets"));
+    document.getElementById("subBettingLinks").addEventListener("click", () => openAcctModal("bettinglinks"));
     document.getElementById("subSettings").addEventListener("click", () => openAcctModal("settings"));
     document.getElementById("subResetPassword").addEventListener("click", () => openAcctModal("reset"));
     document.getElementById("subAgentProfile").addEventListener("click", () => openAcctModal("profile"));
@@ -925,6 +941,11 @@
       if (mode === "settings") {
         acctTitle.textContent = "Settings";
         await loadFeatureSettings();
+      }
+
+      if (mode === "bettinglinks") {
+        acctTitle.textContent = "Betting Resources Links";
+        await loadBettingLinks();
       }
     }
 
@@ -1927,7 +1948,102 @@
     document.getElementById("acctModalSave").addEventListener("click", async () => {
       if (acctMode === "create") return acctSaveCreate();
       if (acctMode === "reset") return isSenior ? acctSaveResetAdmin() : acctSaveResetSelf();
+      if (acctMode === "bettinglinks") return acctSaveBettingLinks();
     });
+
+    // ---- Betting Resources Links (live-editable link list behind the
+    // "HeyVIP Betting Rules" home card) ----
+    // Whole-list save via the modal's normal footer Save button (unlike
+    // TG Group/Channel's per-row saves) — this list is short and edited
+    // as a batch, so one Save for the whole thing is simpler than wiring
+    // a save button per row. Left panel ("rules") is a single link;
+    // right panel ("results") is an array, both edited in the same form.
+    let acctBettingLinks = { rules: { name: "", url: "" }, results: [] };
+    const canEditBettingLinks = () => canEditAdminSection("bettingLinks");
+
+    async function loadBettingLinks() {
+      const res = await window.AgentAuth.authFetch("/api/betting-resources");
+      const data = await res.json();
+      if (!data.ok) {
+        acctBody.innerHTML = `<p class="edit-modal-note err">${acctEsc(data.error || "Failed to load.")}</p>`;
+        return;
+      }
+      acctBettingLinks = {
+        rules: data.data.rules || { name: "", url: "" },
+        results: Array.isArray(data.data.results) ? data.data.results : [],
+      };
+      renderBettingLinks();
+    }
+
+    function renderBettingLinks() {
+      const canEdit = canEditBettingLinks();
+      const roAttr = canEdit ? "" : "disabled";
+      const resultRowsHtml = acctBettingLinks.results.map((l, i) => `
+        <div class="link-edit-row" data-idx="${i}">
+          ${canEdit ? `<button type="button" class="remove-btn bl-remove" title="Remove">🗑</button>` : ""}
+          <div class="edit-field">
+            <label class="edit-label">Name</label>
+            <input type="text" class="bl-name" placeholder="显示名称,例如 Fotmob Football" value="${acctEsc(l.name)}" autocomplete="off" ${roAttr} />
+          </div>
+          <div class="edit-field">
+            <label class="edit-label">URL</label>
+            <input type="text" class="bl-url url-input" placeholder="https://..." value="${acctEsc(l.url)}" autocomplete="off" ${roAttr} />
+          </div>
+        </div>`).join("");
+
+      acctBody.innerHTML = `
+        <p class="edit-modal-note" style="margin-bottom:10px;">HeyVIP Betting Resources (left panel — single link)</p>
+        <div class="link-edit-row">
+          <div class="edit-field">
+            <label class="edit-label">Name</label>
+            <input type="text" id="bl_rules_name" placeholder="HeyVIP Betting Rules" value="${acctEsc(acctBettingLinks.rules.name)}" autocomplete="off" ${roAttr} />
+          </div>
+          <div class="edit-field">
+            <label class="edit-label">URL</label>
+            <input type="text" id="bl_rules_url" class="url-input" placeholder="https://..." value="${acctEsc(acctBettingLinks.rules.url)}" autocomplete="off" ${roAttr} />
+          </div>
+        </div>
+        <p class="edit-modal-note" style="margin:16px 0 10px;">Results Finding Websites (right panel — link list)</p>
+        <div id="bl_resultsList">${resultRowsHtml}</div>
+        ${canEdit ? `<button type="button" class="add-link-btn" id="bl_addRow">+ Add link</button>` : ""}
+        ${canEdit ? "" : '<p class="edit-modal-note">View only.</p>'}`;
+
+      if (canEdit) {
+        document.getElementById("bl_addRow").addEventListener("click", () => {
+          acctBettingLinks.results.push({ name: "", url: "" });
+          renderBettingLinks();
+        });
+        acctBody.querySelectorAll(".bl-remove").forEach((btn) => {
+          btn.addEventListener("click", () => {
+            const idx = Number(btn.closest(".link-edit-row").dataset.idx);
+            acctBettingLinks.results.splice(idx, 1);
+            renderBettingLinks();
+          });
+        });
+      }
+    }
+
+    async function acctSaveBettingLinks() {
+      if (!canEditBettingLinks()) return;
+      const rules = {
+        name: document.getElementById("bl_rules_name").value.trim(),
+        url: document.getElementById("bl_rules_url").value.trim(),
+      };
+      const results = Array.from(acctBody.querySelectorAll("#bl_resultsList .link-edit-row")).map((row) => ({
+        name: row.querySelector(".bl-name").value.trim(),
+        url: row.querySelector(".bl-url").value.trim(),
+      }));
+      setAcctNote("Saving…");
+      const res = await window.AgentAuth.authFetch("/api/admin/betting-resources", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ rules, results }),
+      });
+      const data = await res.json();
+      if (!data.ok) return setAcctNote(data.error || "Save failed.", "err");
+      acctBettingLinks = { rules: data.data.rules, results: data.data.results };
+      setAcctNote("Saved.", "ok");
+      renderBettingLinks();
+    }
 
     function wireBrandTogglePicker() {
       const grid = document.getElementById("am_brandGrid");

@@ -954,11 +954,12 @@ body.hub-page .topbar { flex-shrink: 0; }
 
 .tool-cards {
   display: grid;
-  grid-template-columns: repeat(2, 1fr);
+  grid-template-columns: repeat(3, 1fr);
   gap: 14px;
-  max-width: 520px;
+  max-width: 780px;
 }
 .tool-card {
+  position: relative;
   display: block;
   text-align: left;
   background: var(--card-bg);
@@ -966,14 +967,79 @@ body.hub-page .topbar { flex-shrink: 0; }
   border-radius: 16px;
   padding: 18px 18px 16px;
   box-shadow: var(--shadow);
-  transition: transform 0.15s ease, border-color 0.15s ease;
+  overflow: hidden;
+  isolation: isolate;
+  transition: transform 0.25s ease, box-shadow 0.25s ease;
 }
-.tool-card:hover { transform: translateY(-2px); border-color: var(--tool-accent, var(--accent-gold)); }
+/* Rotating conic-gradient ring, masked down to a thin border — only
+   spins while hovered (animation-play-state), so it costs nothing at
+   rest across a whole grid of cards. */
+.tool-card::before {
+  content: "";
+  position: absolute;
+  inset: -2px;
+  border-radius: 17px;
+  padding: 2px;
+  background: conic-gradient(from 0deg, var(--tool-accent, var(--accent-gold)), transparent 30%, transparent 70%, var(--tool-accent, var(--accent-gold)));
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  opacity: 0;
+  transition: opacity 0.25s ease;
+  animation: tool-card-spin 3.5s linear infinite;
+  animation-play-state: paused;
+  z-index: 0;
+  pointer-events: none;
+}
+/* Flowing light sweep across the surface, fired once per hover. */
+.tool-card::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(115deg, transparent 30%, rgba(255,255,255,0.08) 45%, rgba(255,255,255,0.14) 50%, rgba(255,255,255,0.08) 55%, transparent 70%);
+  background-size: 220% 100%;
+  background-position: 130% 0;
+  opacity: 0;
+  transition: opacity 0.25s ease;
+  z-index: 0;
+  pointer-events: none;
+}
+.tool-card > * { position: relative; z-index: 1; }
+.tool-card:hover {
+  transform: translateY(-6px);
+  box-shadow: 0 26px 50px -18px rgba(0,0,0,0.65), 0 0 0 1px var(--tool-accent, var(--accent-gold)) inset;
+}
+.tool-card:hover::before { opacity: 1; animation-play-state: running; }
+.tool-card:hover::after { opacity: 1; animation: tool-card-sweep 1.4s ease forwards; }
+@keyframes tool-card-spin { to { transform: rotate(360deg); } }
+@keyframes tool-card-sweep { from { background-position: 130% 0; } to { background-position: -30% 0; } }
+@media (prefers-reduced-motion: reduce) {
+  .tool-card::before, .tool-card::after { animation: none !important; transition: none !important; opacity: 0 !important; }
+  .tool-card:hover { transform: none; }
+}
 .tool-card .t-icon {
   position: relative;
   width: 36px; height: 36px; border-radius: 10px;
   display: flex; align-items: center; justify-content: center;
   font-size: 16px; margin-bottom: 12px;
+}
+.t-open {
+  display: inline-flex; align-items: center; gap: 5px;
+  margin-top: 12px;
+  background: var(--tool-accent, var(--accent-gold));
+  color: #0c1024;
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 11.5px;
+  padding: 6px 12px;
+  border-radius: 999px;
+  opacity: 0;
+  transform: translateY(6px);
+  transition: opacity 0.2s ease, transform 0.2s ease;
+}
+.tool-card:hover .t-open { opacity: 1; transform: translateY(0); }
+@media (prefers-reduced-motion: reduce) {
+  .t-open { transition: none; }
 }
 .t-badge {
   position: absolute;
@@ -1003,6 +1069,9 @@ body.hub-page .topbar { flex-shrink: 0; }
    announcement is currently active). Same keyframe as .has-unsolved
    above, just usable on any element directly. */
 .breathing { animation: breathe 1.8s ease-in-out infinite; }
+@media (max-width: 860px) {
+  .tool-cards { grid-template-columns: repeat(2, 1fr); }
+}
 @media (max-width: 560px) {
   .tool-cards { grid-template-columns: 1fr; }
 }
@@ -1497,6 +1566,44 @@ h1 {
   border-top: 1px solid var(--border);
   margin: 0 0 20px;
 }
+
+/* Betting Resources Links panel (Account Management → Betting
+   Resources Links) — each link is its own bordered card with labeled
+   Name/URL fields, rather than two bare stacked inputs, so a list of
+   many links stays readable. See renderBettingLinks() in index.html. */
+.link-edit-row {
+  position: relative;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 12px 40px 10px 12px;
+  margin-bottom: 10px;
+  background: var(--field-bg);
+}
+.link-edit-row .edit-field { margin-bottom: 8px; }
+.link-edit-row .edit-field:last-of-type { margin-bottom: 0; }
+.link-edit-row .edit-label {
+  display: block; font-size: 10.5px; font-weight: 700; letter-spacing: 0.03em;
+  text-transform: uppercase; color: var(--ink-soft); margin-bottom: 4px;
+}
+.link-edit-row input {
+  width: 100%; background: var(--card-bg); border: 1px solid var(--border);
+  border-radius: 8px; padding: 8px 10px; font-size: 12.5px; color: var(--ink); font-family: inherit;
+}
+.link-edit-row input:focus { outline: none; border-color: var(--accent-gold); }
+.link-edit-row input.url-input { font-family: var(--font-mono); font-size: 11.5px; }
+.link-edit-row input[disabled] { background: var(--border); color: var(--ink-soft); }
+.link-edit-row .remove-btn {
+  position: absolute; top: 10px; right: 10px;
+  width: 26px; height: 26px; border-radius: 7px;
+  border: 1px solid var(--border); background: var(--card-bg); color: var(--required); cursor: pointer;
+  font-size: 12px; line-height: 1;
+}
+.add-link-btn {
+  width: 100%; padding: 9px; margin-top: 2px; margin-bottom: 6px;
+  border: 1px dashed var(--border); background: none; border-radius: 8px;
+  color: var(--ink-soft); font-size: 12.5px; cursor: pointer; font-family: inherit;
+}
+.add-link-btn:hover { border-color: var(--accent-gold); color: var(--accent-gold); }
 
 .field { margin-bottom: 18px; }
 

@@ -54,6 +54,7 @@ export const FEATURE_STATUS_ITEMS = [
   { id: "promo_code_search", emoji: "🎟️", name: "Promo Code Search" },
   { id: "deposit_issue", emoji: "💳", name: "Deposit Issue" },
   { id: "deposit_backup", emoji: "💻", name: "Deposit Backup" },
+  { id: "betting_resources", emoji: "📋", name: "HeyVIP Betting Rules" },
   // Not a tool card — governs the REMINDER banner itself (see
   // _shared/announcements.js + api/announcements.js). Switching this to
   // Maintenance/Coming-soon just makes the banner endpoint return an

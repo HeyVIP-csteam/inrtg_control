@@ -109,6 +109,11 @@ export const ADMIN_SECTIONS_LIST = [
   // Admin/Senior never see it at all unless individually granted via
   // allowedAdminSections, same opt-in-only pattern as the others.
   { id: "depositSheets", name: "Deposit Sheet Link", icon: "🧾", floorRank: ROLE_RANK.superadmin },
+  // Live-editable link list behind the "HeyVIP Betting Rules" home card
+  // (public/betting-resources.html) — SuperAdmin-tier, same shape as
+  // tgRoutes: reading the page itself is open to any logged-in agent,
+  // only EDITING the link list is gated here.
+  { id: "bettingLinks", name: "Betting Resources Links", icon: "🔗", floorRank: ROLE_RANK.superadmin },
   // NOTE — "announcements" and "activeAgents" USED to live here (both
   // superadmin-tier, Owner-controlled Account Management Access items).
   // Moved out, 2026-08-10 — they're now OWNER_TOPIC_ITEMS below, living
@@ -129,13 +134,13 @@ export const ADMIN_SECTIONS_DEFAULT_SEEN = {
   agent: [],
   senior: ["createAccount"],
   admin: ["whitelistIp"],
-  superadmin: ["createAccount", "whitelistIp", "tgRoutes", "agentProfile", "depositSheets", "settings"],
+  superadmin: ["createAccount", "whitelistIp", "tgRoutes", "agentProfile", "depositSheets", "settings", "bettingLinks"],
 };
 export const ADMIN_SECTIONS_DEFAULT_EDIT = {
   agent: [],
   senior: [],
   admin: [], // Whitelist IP visible but view-only by default
-  superadmin: ["whitelistIp", "tgRoutes", "agentProfile", "depositSheets", "settings"],
+  superadmin: ["whitelistIp", "tgRoutes", "agentProfile", "depositSheets", "settings", "bettingLinks"],
 };
 
 // ---- Owner Topics ("Topic access", Owner-gated items) ----
@@ -228,7 +233,7 @@ export function canManageOthersAdminAccess(account) {
 // View-only. (The separate "actor must outrank the TARGET account" rule
 // for Agent Profile edits, in functions/api/admin/accounts.js, is a
 // different, still-active protection — not replaced by this.)
-export const EDITABLE_ADMIN_SECTIONS = ["whitelistIp", "tgRoutes", "agentProfile", "depositSheets", "settings"];
+export const EDITABLE_ADMIN_SECTIONS = ["whitelistIp", "tgRoutes", "agentProfile", "depositSheets", "settings", "bettingLinks"];
 
 export function canEditAdminSection(account, sectionId) {
   if (!account) return true; // bootstrap mode
