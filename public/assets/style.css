@@ -842,7 +842,7 @@ body.hub-page .topbar { flex-shrink: 0; }
   justify-content: center;
   text-align: center;
 }
-.hub-main .inner { max-width: 480px; }
+.hub-main .inner { max-width: 980px; }
 /* #spaMount (spa-shell.js's SPA mount point) lives INSIDE .hub-main as a
    sibling of .inner, so the persistent sidebar stays visible while a
    routed view (threads/promo/deposit-issue/deposit-backup/announcements)
@@ -959,7 +959,6 @@ body.hub-page .topbar { flex-shrink: 0; }
   max-width: 960px;
 }
 .tool-card {
-  position: relative;
   display: flex;
   flex-direction: column;
   text-align: left;
@@ -968,56 +967,16 @@ body.hub-page .topbar { flex-shrink: 0; }
   border-radius: 12px;
   padding: 12px 14px;
   box-shadow: var(--shadow);
-  overflow: hidden;
-  isolation: isolate;
-  transition: transform 0.25s ease, box-shadow 0.25s ease;
-  aspect-ratio: 2.5;
-  min-height: 92px;
+  min-height: 108px;
+  transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
 }
-/* Rotating conic-gradient ring, masked down to a thin border — only
-   spins while hovered (animation-play-state), so it costs nothing at
-   rest across a whole grid of cards. */
-.tool-card::before {
-  content: "";
-  position: absolute;
-  inset: -2px;
-  border-radius: 13px;
-  padding: 2px;
-  background: conic-gradient(from 0deg, var(--tool-accent, var(--accent-gold)), transparent 30%, transparent 70%, var(--tool-accent, var(--accent-gold)));
-  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
-  -webkit-mask-composite: xor;
-  mask-composite: exclude;
-  opacity: 0;
-  transition: opacity 0.25s ease;
-  animation: tool-card-spin 3.5s linear infinite;
-  animation-play-state: paused;
-  z-index: 0;
-  pointer-events: none;
-}
-/* Flowing light sweep across the surface, fired once per hover. */
-.tool-card::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  background: linear-gradient(115deg, transparent 30%, rgba(255,255,255,0.08) 45%, rgba(255,255,255,0.14) 50%, rgba(255,255,255,0.08) 55%, transparent 70%);
-  background-size: 220% 100%;
-  background-position: 130% 0;
-  opacity: 0;
-  transition: opacity 0.25s ease;
-  z-index: 0;
-  pointer-events: none;
-}
-.tool-card > * { position: relative; z-index: 1; }
 .tool-card:hover {
-  transform: translateY(-6px);
-  box-shadow: 0 26px 50px -18px rgba(0,0,0,0.65), 0 0 0 1px var(--tool-accent, var(--accent-gold)) inset;
+  transform: translateY(-4px);
+  border-color: var(--tool-accent, var(--accent-gold));
+  box-shadow: var(--shadow), 0 0 0 1px var(--tool-accent, var(--accent-gold));
 }
-.tool-card:hover::before { opacity: 1; animation-play-state: running; }
-.tool-card:hover::after { opacity: 1; animation: tool-card-sweep 1.4s ease forwards; }
-@keyframes tool-card-spin { to { transform: rotate(360deg); } }
-@keyframes tool-card-sweep { from { background-position: 130% 0; } to { background-position: -30% 0; } }
 @media (prefers-reduced-motion: reduce) {
-  .tool-card::before, .tool-card::after { animation: none !important; transition: none !important; opacity: 0 !important; }
+  .tool-card { transition: none; }
   .tool-card:hover { transform: none; }
 }
 .t-head { display: flex; align-items: center; gap: 9px; margin-bottom: 4px; }
@@ -1039,12 +998,11 @@ body.hub-page .topbar { flex-shrink: 0; }
   padding: 4px 10px;
   border-radius: 999px;
   opacity: 0;
-  transform: translateY(4px);
-  transition: opacity 0.2s ease, transform 0.2s ease;
+  transition: opacity 0.2s ease;
   margin-left: auto;
   white-space: nowrap;
 }
-.tool-card:hover .t-open { opacity: 1; transform: translateY(0); }
+.tool-card:hover .t-open { opacity: 1; }
 @media (prefers-reduced-motion: reduce) {
   .t-open { transition: none; }
 }
