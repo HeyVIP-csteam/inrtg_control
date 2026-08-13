@@ -76,6 +76,19 @@ bug,只是没有走跟其他卡片一样的"原地切换"效果。
 `.tool-card` 加了 `min-height: 92px`,让内容少的卡片(比如 Deposit
 Issue)不再显得空荡荡、跟内容多的卡片高度差一大截。
 
+**溢出重叠 bug 修复**:真实站上 TG Reply Threads 卡片全部处理完时,
+`threadsUnsolvedStat` 会显示 "All caught up ✓"——这行字比预览时测过的
+"2 unsolved"/"7 online" 都长,在紧凑卡片宽度下换行,撞上了固定位置的
+"Open →" 按钮(業主截图发现)。修复:`.t-sub-stat` 加
+`white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+flex: 1 1 auto; min-width: 0;`,太长就截断成省略号,不再换行；
+`.t-open` 加 `flex-shrink: 0`,确保按钮永远不被挤压/覆盖。
+
+**卡片加宽**:业主反馈想要卡片再宽一些——`.tool-cards` 的
+`max-width` 从 780px 加到 960px(单卡宽度约 252px → 约 312px),3列→2列
+的响应式断点同步从 860px 调到 1020px,保持"容器变窄到放不下 3 张原尺寸
+卡片时才降级"的逻辑不变。
+
 **涉及的文件(2 个)**:`public/assets/style.css`(`.tool-card` 整段
 重写 + 新增 `.t-open`/两个 `@keyframes`)、`public/index.html`(每张
 工具卡片加了 `<span class="t-open">Open →</span>`)。
