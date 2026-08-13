@@ -29,7 +29,7 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
 <link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;600&display=swap" onload="this.onload=null;this.rel='stylesheet'" />
 <noscript><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;600&display=swap" /></noscript>
-<link rel="stylesheet" href="/assets/style.css?v=529df5e9" />
+<link rel="stylesheet" href="/assets/style.css?v=2ac72704" />
 <script src="/assets/theme.js?v=5b27e630"></script>
 <script src="/assets/starfield.js?v=b6e92821" defer></script>
 <script src="/assets/authguard.js?v=9dba9c0c"></script>
@@ -138,12 +138,12 @@
 
       const rules = data.data.rules;
       rulesPanel.innerHTML = (rules && rules.url)
-        ? `<a class="br-link-row" href="${esc(rules.url)}" target="_blank" rel="noopener">📄 ${esc(rules.name || rules.url)}<span class="go">↗</span></a>`
+        ? `<a class="br-link-row" href="${esc(rules.url)}" target="_blank" rel="noopener">${esc(rules.icon || "📄")} ${esc(rules.name || rules.url)}<span class="go">↗</span></a>`
         : `<p class="br-empty">No link set yet.</p>`;
 
       const results = Array.isArray(data.data.results) ? data.data.results : [];
       resultsPanel.innerHTML = results.length
-        ? results.map((l) => `<a class="br-link-row" href="${esc(l.url)}" target="_blank" rel="noopener">🔗 ${esc(l.name || l.url)}<span class="go">↗</span></a>`).join("")
+        ? results.map((l) => `<a class="br-link-row" href="${esc(l.url)}" target="_blank" rel="noopener">${esc(l.icon || "🔗")} ${esc(l.name || l.url)}<span class="go">↗</span></a>`).join("")
         : `<p class="br-empty">No links set yet.</p>`;
     }
 

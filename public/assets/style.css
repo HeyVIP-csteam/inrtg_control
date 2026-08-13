@@ -1595,6 +1595,8 @@ h1 {
 }
 .link-edit-row .edit-fields-row { display: flex; align-items: flex-start; gap: 8px; }
 .link-edit-row .edit-field { flex: 1; min-width: 0; }
+.link-edit-row .edit-field.icon-field { flex: 0 0 56px; }
+.link-edit-row .edit-field.icon-field input { text-align: center; font-size: 16px; padding: 7px 4px; }
 .link-edit-row .edit-label {
   display: block; font-size: 10.5px; font-weight: 700; letter-spacing: 0.03em;
   text-transform: uppercase; color: var(--ink-soft); margin-bottom: 4px;

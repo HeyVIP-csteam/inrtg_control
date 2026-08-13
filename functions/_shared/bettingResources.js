@@ -9,17 +9,22 @@
  * other KV-backed feature in this hub already uses — no new binding
  * needed) under one fixed key. Shape:
  *   {
- *     rules: { name: string, url: string },        // single link, left panel
- *     results: [{ name: string, url: string }, …],  // link list, right panel
+ *     rules: { name: string, url: string, icon?: string },        // single link, left panel
+ *     results: [{ name: string, url: string, icon?: string }, …],  // link list, right panel
  *     updatedAt: ISO string,
  *     updatedBy: username
  *   }
+ * `icon` is a single emoji, editable per-link from the admin panel
+ * (e.g. 🌐 for a football site, 🏏 for cricket, 📺 for a live tracker) —
+ * optional, falls back to a generic 🔗/📄 default when not set.
  */
 
 const KV_KEY = "betting-resources:config";
+const DEFAULT_RULES_ICON = "📄";
+const DEFAULT_RESULT_ICON = "🔗";
 
 const DEFAULT_CONFIG = {
-  rules: { name: "HeyVIP Betting Rules", url: "" },
+  rules: { name: "HeyVIP Betting Rules", url: "", icon: DEFAULT_RULES_ICON },
   results: [],
   updatedAt: null,
   updatedBy: null,
@@ -32,9 +37,10 @@ export async function getBettingResources(env) {
     const raw = await kv.get(KV_KEY);
     if (!raw) return DEFAULT_CONFIG;
     const parsed = JSON.parse(raw);
+    const rules = parsed.rules && typeof parsed.rules === "object" ? parsed.rules : DEFAULT_CONFIG.rules;
     return {
-      rules: parsed.rules && typeof parsed.rules === "object" ? parsed.rules : DEFAULT_CONFIG.rules,
-      results: Array.isArray(parsed.results) ? parsed.results : [],
+      rules: { ...rules, icon: rules.icon || DEFAULT_RULES_ICON },
+      results: (Array.isArray(parsed.results) ? parsed.results : []).map((l) => ({ ...l, icon: l.icon || DEFAULT_RESULT_ICON })),
       updatedAt: parsed.updatedAt || null,
       updatedBy: parsed.updatedBy || null,
     };
@@ -50,9 +56,14 @@ export async function saveBettingResources(env, { rules, results, updatedBy }) {
   const cleanRules = {
     name: String((rules && rules.name) || "").trim(),
     url: String((rules && rules.url) || "").trim(),
+    icon: String((rules && rules.icon) || "").trim() || DEFAULT_RULES_ICON,
   };
   const cleanResults = (Array.isArray(results) ? results : [])
-    .map((l) => ({ name: String((l && l.name) || "").trim(), url: String((l && l.url) || "").trim() }))
+    .map((l) => ({
+      name: String((l && l.name) || "").trim(),
+      url: String((l && l.url) || "").trim(),
+      icon: String((l && l.icon) || "").trim() || DEFAULT_RESULT_ICON,
+    }))
     .filter((l) => l.name && l.url);
 
   const config = {

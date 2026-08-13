@@ -190,6 +190,18 @@ aspect-ratio、加宽…),但每次都忘了跑项目自带的
    (避免手机上挤在一起看不清)。这次改动同时应用到左边"HeyVIP Betting
    Resources"单条链接的表单和右边"Results Finding Websites"每一条
    链接卡片。
+3. **每条链接可以自定义图标(emoji)**:业主发现最早的参考截图里,链接
+   按类型有不同图标(足球类 🌐、板球类 🏏、直播追踪 📺),但当时的实现
+   给所有 Results 链接统一写死了同一个 🔗。现在数据模型加了一个可选的
+   `icon` 字段(单个 emoji),管理面板每一行新增一个窄的 Icon 输入框
+   (最前面,Name/URL 左边),不填就退回默认——`rules` 默认 📄,
+   `results` 每条默认 🔗。`betting-resources.html` 页面渲染时优先用
+   每条链接自己存的 `icon`。涉及
+   `functions/_shared/bettingResources.js`(读写都带上 `icon`,并做了
+   默认值兜底,老数据没存过 `icon` 字段也不会报错)、
+   `public/betting-resources.html`(渲染换成 `l.icon || "🔗"`)、
+   `public/index.html`(表单加字段 + 输入监听)、
+   `public/assets/style.css`(新增 `.icon-field` 窄输入框样式)。
 
 **涉及的文件(2 个)**:`public/assets/style.css`(`.tool-card` 整段
 重写 + 新增 `.t-open`/两个 `@keyframes`)、`public/index.html`(每张

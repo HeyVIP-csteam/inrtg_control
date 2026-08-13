@@ -74,7 +74,7 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
 <link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;600&display=swap" onload="this.onload=null;this.rel='stylesheet'" />
 <noscript><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;600&display=swap" /></noscript>
-<link rel="stylesheet" href="/assets/style.css?v=529df5e9" />
+<link rel="stylesheet" href="/assets/style.css?v=2ac72704" />
 <link rel="stylesheet" href="/assets/maintenance-breathing-light.css?v=b3446084" />
 <link rel="stylesheet" href="/assets/settings-dropdown.css?v=ff5b816c" />
 <script src="/assets/theme.js?v=5b27e630"></script>
@@ -2030,6 +2030,10 @@
             <div class="tgroute-mod-name">📄 Single link — shown in the left panel</div>
             <div class="link-edit-row" style="border:none; background:none; padding:0;">
               <div class="edit-fields-row">
+                <div class="edit-field icon-field">
+                  <label class="edit-label">Icon</label>
+                  <input type="text" id="bl_rules_icon" placeholder="📄" value="${acctEsc(acctBettingLinks.rules.icon || "")}" autocomplete="off" maxlength="4" ${roAttr} />
+                </div>
                 <div class="edit-field">
                   <label class="edit-label">Name</label>
                   <input type="text" id="bl_rules_name" placeholder="HeyVIP Betting Rules" value="${acctEsc(acctBettingLinks.rules.name)}" autocomplete="off" ${roAttr} />
@@ -2046,6 +2050,10 @@
           <div class="link-edit-row" data-idx="${i}">
             ${canEdit ? `<button type="button" class="remove-btn bl-remove" title="Remove">🗑</button>` : ""}
             <div class="edit-fields-row">
+              <div class="edit-field icon-field">
+                <label class="edit-label">Icon</label>
+                <input type="text" class="bl-icon" placeholder="🔗" value="${acctEsc(l.icon || "")}" autocomplete="off" maxlength="4" ${roAttr} />
+              </div>
               <div class="edit-field">
                 <label class="edit-label">Name</label>
                 <input type="text" class="bl-name" placeholder="Display name, e.g. Fotmob Football" value="${acctEsc(l.name)}" autocomplete="off" ${roAttr} />
@@ -2078,6 +2086,7 @@
       });
 
       if (acctBettingLinksSection === "rules" && canEdit) {
+        document.getElementById("bl_rules_icon").addEventListener("input", (e) => { acctBettingLinks.rules.icon = e.target.value; });
         document.getElementById("bl_rules_name").addEventListener("input", (e) => { acctBettingLinks.rules.name = e.target.value; });
         document.getElementById("bl_rules_url").addEventListener("input", (e) => { acctBettingLinks.rules.url = e.target.value; });
       }
@@ -2085,7 +2094,7 @@
       if (acctBettingLinksSection === "results" && canEdit) {
         const addBtn = document.getElementById("bl_addRow");
         if (addBtn) addBtn.addEventListener("click", () => {
-          acctBettingLinks.results.push({ name: "", url: "" });
+          acctBettingLinks.results.push({ name: "", url: "", icon: "" });
           renderBettingLinks();
         });
         acctBody.querySelectorAll(".bl-remove").forEach((btn) => {
@@ -2097,6 +2106,7 @@
         });
         acctBody.querySelectorAll("#bl_resultsList .link-edit-row").forEach((row) => {
           const idx = Number(row.dataset.idx);
+          row.querySelector(".bl-icon").addEventListener("input", (e) => { acctBettingLinks.results[idx].icon = e.target.value; });
           row.querySelector(".bl-name").addEventListener("input", (e) => { acctBettingLinks.results[idx].name = e.target.value; });
           row.querySelector(".bl-url").addEventListener("input", (e) => { acctBettingLinks.results[idx].url = e.target.value; });
         });
