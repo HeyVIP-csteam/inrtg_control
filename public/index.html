@@ -74,7 +74,7 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
 <link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;600&display=swap" onload="this.onload=null;this.rel='stylesheet'" />
 <noscript><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;600&display=swap" /></noscript>
-<link rel="stylesheet" href="/assets/style.css?v=e2edf377" />
+<link rel="stylesheet" href="/assets/style.css?v=529df5e9" />
 <link rel="stylesheet" href="/assets/maintenance-breathing-light.css?v=b3446084" />
 <link rel="stylesheet" href="/assets/settings-dropdown.css?v=ff5b816c" />
 <script src="/assets/theme.js?v=5b27e630"></script>
@@ -2029,13 +2029,15 @@
           <div class="tgroute-row">
             <div class="tgroute-mod-name">📄 Single link — shown in the left panel</div>
             <div class="link-edit-row" style="border:none; background:none; padding:0;">
-              <div class="edit-field">
-                <label class="edit-label">Name</label>
-                <input type="text" id="bl_rules_name" placeholder="HeyVIP Betting Rules" value="${acctEsc(acctBettingLinks.rules.name)}" autocomplete="off" ${roAttr} />
-              </div>
-              <div class="edit-field">
-                <label class="edit-label">URL</label>
-                <input type="text" id="bl_rules_url" class="url-input" placeholder="https://..." value="${acctEsc(acctBettingLinks.rules.url)}" autocomplete="off" ${roAttr} />
+              <div class="edit-fields-row">
+                <div class="edit-field">
+                  <label class="edit-label">Name</label>
+                  <input type="text" id="bl_rules_name" placeholder="HeyVIP Betting Rules" value="${acctEsc(acctBettingLinks.rules.name)}" autocomplete="off" ${roAttr} />
+                </div>
+                <div class="edit-field">
+                  <label class="edit-label">URL</label>
+                  <input type="text" id="bl_rules_url" class="url-input" placeholder="https://..." value="${acctEsc(acctBettingLinks.rules.url)}" autocomplete="off" ${roAttr} />
+                </div>
               </div>
             </div>
           </div>`;
@@ -2043,13 +2045,15 @@
         const resultRowsHtml = acctBettingLinks.results.map((l, i) => `
           <div class="link-edit-row" data-idx="${i}">
             ${canEdit ? `<button type="button" class="remove-btn bl-remove" title="Remove">🗑</button>` : ""}
-            <div class="edit-field">
-              <label class="edit-label">Name</label>
-              <input type="text" class="bl-name" placeholder="显示名称,例如 Fotmob Football" value="${acctEsc(l.name)}" autocomplete="off" ${roAttr} />
-            </div>
-            <div class="edit-field">
-              <label class="edit-label">URL</label>
-              <input type="text" class="bl-url url-input" placeholder="https://..." value="${acctEsc(l.url)}" autocomplete="off" ${roAttr} />
+            <div class="edit-fields-row">
+              <div class="edit-field">
+                <label class="edit-label">Name</label>
+                <input type="text" class="bl-name" placeholder="Display name, e.g. Fotmob Football" value="${acctEsc(l.name)}" autocomplete="off" ${roAttr} />
+              </div>
+              <div class="edit-field">
+                <label class="edit-label">URL</label>
+                <input type="text" class="bl-url url-input" placeholder="https://..." value="${acctEsc(l.url)}" autocomplete="off" ${roAttr} />
+              </div>
             </div>
           </div>`).join("");
         rightHtml = `

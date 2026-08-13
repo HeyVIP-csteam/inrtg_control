@@ -178,6 +178,19 @@ aspect-ratio、加宽…),但每次都忘了跑项目自带的
 (`::before`)+ 扫过卡片表面的光带(`::after`),跟外层容器的宽度修复
 互不冲突,同时保留。
 
+## Betting Resources Links 面板 — 两处收尾修正
+
+1. **中文占位符换成英文**:`bl-name` 输入框的 placeholder 之前写成了
+   中文"显示名称,例如 Fotmob Football",跟其余界面语言不一致,换成
+   `Display name, e.g. Fotmob Football`。
+2. **Name / URL 改成左右并排**:之前每一行是 Name 在上、URL 在下堆叠
+   显示;业主要求参照 TG Group / Channel 的 Chat ID / Topic ID 那种
+   同一行并排布局——`.link-edit-row` 新增 `.edit-fields-row`(flex
+   row,两个字段各占一半宽度),480px 以下的窄屏幕会自动改回上下堆叠
+   (避免手机上挤在一起看不清)。这次改动同时应用到左边"HeyVIP Betting
+   Resources"单条链接的表单和右边"Results Finding Websites"每一条
+   链接卡片。
+
 **涉及的文件(2 个)**:`public/assets/style.css`(`.tool-card` 整段
 重写 + 新增 `.t-open`/两个 `@keyframes`)、`public/index.html`(每张
 工具卡片加了 `<span class="t-open">Open →</span>`)。
