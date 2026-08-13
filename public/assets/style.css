@@ -971,6 +971,7 @@ body.hub-page .topbar { flex-shrink: 0; }
   overflow: hidden;
   isolation: isolate;
   transition: transform 0.25s ease, box-shadow 0.25s ease;
+  aspect-ratio: 2.5;
   min-height: 92px;
 }
 /* Rotating conic-gradient ring, masked down to a thin border — only

@@ -867,7 +867,7 @@
       acctBody.innerHTML = '<p class="edit-modal-note">Loading…</p>';
       acctBackdrop.classList.add("is-open");
       const modalEl = acctBackdrop.querySelector(".edit-modal");
-      modalEl.classList.toggle("wide", mode === "profile" || mode === "tgroutes" || mode === "depositsheets" || mode === "settings" || mode === "whitelist");
+      modalEl.classList.toggle("wide", mode === "profile" || mode === "tgroutes" || mode === "depositsheets" || mode === "settings" || mode === "whitelist" || mode === "bettinglinks");
       // "profile", "tgroutes", "depositsheets", and "settings" all use
       // per-row inline save buttons instead of one global footer Save
       // (too many independently-editable rows for a single "Save" to
@@ -1985,12 +1985,19 @@
 
     // ---- Betting Resources Links (live-editable link list behind the
     // "HeyVIP Betting Rules" home card) ----
-    // Whole-list save via the modal's normal footer Save button (unlike
-    // TG Group/Channel's per-row saves) — this list is short and edited
-    // as a batch, so one Save for the whole thing is simpler than wiring
-    // a save button per row. Left panel ("rules") is a single link;
-    // right panel ("results") is an array, both edited in the same form.
+    // Left/right box layout, reusing the exact same .tgroute-layout/
+    // .tgroute-brands/.tgroute-brand/.tgroute-modules CSS as TG Group /
+    // Channel above (same "pick a category on the left, edit its rows
+    // on the right" shape) — left column has 2 fixed pseudo-"brands"
+    // (rules / results) instead of real brands. Whole-list save via the
+    // modal's normal footer Save button (unlike TG Group/Channel's
+    // per-row saves) — this list is short and edited as a batch, so one
+    // Save for the whole thing is simpler than wiring a save button per
+    // row. Data lives in acctBettingLinks the whole time (updated on
+    // every input via oninput below), so switching between the two
+    // left-column sections never loses an unsaved edit in the other one.
     let acctBettingLinks = { rules: { name: "", url: "" }, results: [] };
+    let acctBettingLinksSection = "rules"; // "rules" | "results"
     const canEditBettingLinks = () => canEditAdminSection("bettingLinks");
 
     async function loadBettingLinks() {
@@ -2004,44 +2011,76 @@
         rules: data.data.rules || { name: "", url: "" },
         results: Array.isArray(data.data.results) ? data.data.results : [],
       };
+      acctBettingLinksSection = "rules";
       renderBettingLinks();
     }
 
     function renderBettingLinks() {
       const canEdit = canEditBettingLinks();
       const roAttr = canEdit ? "" : "disabled";
-      const resultRowsHtml = acctBettingLinks.results.map((l, i) => `
-        <div class="link-edit-row" data-idx="${i}">
-          ${canEdit ? `<button type="button" class="remove-btn bl-remove" title="Remove">🗑</button>` : ""}
-          <div class="edit-field">
-            <label class="edit-label">Name</label>
-            <input type="text" class="bl-name" placeholder="显示名称,例如 Fotmob Football" value="${acctEsc(l.name)}" autocomplete="off" ${roAttr} />
-          </div>
-          <div class="edit-field">
-            <label class="edit-label">URL</label>
-            <input type="text" class="bl-url url-input" placeholder="https://..." value="${acctEsc(l.url)}" autocomplete="off" ${roAttr} />
-          </div>
-        </div>`).join("");
+
+      const sectionListHtml = `
+        <div class="tgroute-brand${acctBettingLinksSection === "rules" ? " selected" : ""}" data-section="rules">HeyVIP Betting Resources</div>
+        <div class="tgroute-brand${acctBettingLinksSection === "results" ? " selected" : ""}" data-section="results">Results Finding Websites</div>`;
+
+      let rightHtml;
+      if (acctBettingLinksSection === "rules") {
+        rightHtml = `
+          <div class="tgroute-row">
+            <div class="tgroute-mod-name">📄 Single link — shown in the left panel</div>
+            <div class="link-edit-row" style="border:none; background:none; padding:0;">
+              <div class="edit-field">
+                <label class="edit-label">Name</label>
+                <input type="text" id="bl_rules_name" placeholder="HeyVIP Betting Rules" value="${acctEsc(acctBettingLinks.rules.name)}" autocomplete="off" ${roAttr} />
+              </div>
+              <div class="edit-field">
+                <label class="edit-label">URL</label>
+                <input type="text" id="bl_rules_url" class="url-input" placeholder="https://..." value="${acctEsc(acctBettingLinks.rules.url)}" autocomplete="off" ${roAttr} />
+              </div>
+            </div>
+          </div>`;
+      } else {
+        const resultRowsHtml = acctBettingLinks.results.map((l, i) => `
+          <div class="link-edit-row" data-idx="${i}">
+            ${canEdit ? `<button type="button" class="remove-btn bl-remove" title="Remove">🗑</button>` : ""}
+            <div class="edit-field">
+              <label class="edit-label">Name</label>
+              <input type="text" class="bl-name" placeholder="显示名称,例如 Fotmob Football" value="${acctEsc(l.name)}" autocomplete="off" ${roAttr} />
+            </div>
+            <div class="edit-field">
+              <label class="edit-label">URL</label>
+              <input type="text" class="bl-url url-input" placeholder="https://..." value="${acctEsc(l.url)}" autocomplete="off" ${roAttr} />
+            </div>
+          </div>`).join("");
+        rightHtml = `
+          <div id="bl_resultsList">${resultRowsHtml || '<p class="edit-modal-note">No links yet.</p>'}</div>
+          ${canEdit ? `<button type="button" class="add-link-btn" id="bl_addRow">+ Add link</button>` : ""}`;
+      }
 
       acctBody.innerHTML = `
-        <p class="edit-modal-note" style="margin-bottom:10px;">HeyVIP Betting Resources (left panel — single link)</p>
-        <div class="link-edit-row">
-          <div class="edit-field">
-            <label class="edit-label">Name</label>
-            <input type="text" id="bl_rules_name" placeholder="HeyVIP Betting Rules" value="${acctEsc(acctBettingLinks.rules.name)}" autocomplete="off" ${roAttr} />
-          </div>
-          <div class="edit-field">
-            <label class="edit-label">URL</label>
-            <input type="text" id="bl_rules_url" class="url-input" placeholder="https://..." value="${acctEsc(acctBettingLinks.rules.url)}" autocomplete="off" ${roAttr} />
-          </div>
+        <div class="tgroute-layout">
+          <div class="tgroute-brands">${sectionListHtml}</div>
+          <div class="tgroute-modules">${rightHtml}</div>
         </div>
-        <p class="edit-modal-note" style="margin:16px 0 10px;">Results Finding Websites (right panel — link list)</p>
-        <div id="bl_resultsList">${resultRowsHtml}</div>
-        ${canEdit ? `<button type="button" class="add-link-btn" id="bl_addRow">+ Add link</button>` : ""}
-        ${canEdit ? "" : '<p class="edit-modal-note">View only.</p>'}`;
+        <hr class="tgroute-divider" />
+        ${canEdit ? "" : '<p class="edit-modal-note">View only.</p>'}
+        <p class="edit-modal-note tgroute-footnote">Powers the "HeyVIP Betting Rules" home card — left panel is a single link, right panel is the link list. Click Save (bottom) to publish changes to both sections at once.</p>`;
 
-      if (canEdit) {
-        document.getElementById("bl_addRow").addEventListener("click", () => {
+      acctBody.querySelectorAll(".tgroute-brand").forEach((el) => {
+        el.addEventListener("click", () => {
+          acctBettingLinksSection = el.dataset.section;
+          renderBettingLinks();
+        });
+      });
+
+      if (acctBettingLinksSection === "rules" && canEdit) {
+        document.getElementById("bl_rules_name").addEventListener("input", (e) => { acctBettingLinks.rules.name = e.target.value; });
+        document.getElementById("bl_rules_url").addEventListener("input", (e) => { acctBettingLinks.rules.url = e.target.value; });
+      }
+
+      if (acctBettingLinksSection === "results" && canEdit) {
+        const addBtn = document.getElementById("bl_addRow");
+        if (addBtn) addBtn.addEventListener("click", () => {
           acctBettingLinks.results.push({ name: "", url: "" });
           renderBettingLinks();
         });
@@ -2052,23 +2091,20 @@
             renderBettingLinks();
           });
         });
+        acctBody.querySelectorAll("#bl_resultsList .link-edit-row").forEach((row) => {
+          const idx = Number(row.dataset.idx);
+          row.querySelector(".bl-name").addEventListener("input", (e) => { acctBettingLinks.results[idx].name = e.target.value; });
+          row.querySelector(".bl-url").addEventListener("input", (e) => { acctBettingLinks.results[idx].url = e.target.value; });
+        });
       }
     }
 
     async function acctSaveBettingLinks() {
       if (!canEditBettingLinks()) return;
-      const rules = {
-        name: document.getElementById("bl_rules_name").value.trim(),
-        url: document.getElementById("bl_rules_url").value.trim(),
-      };
-      const results = Array.from(acctBody.querySelectorAll("#bl_resultsList .link-edit-row")).map((row) => ({
-        name: row.querySelector(".bl-name").value.trim(),
-        url: row.querySelector(".bl-url").value.trim(),
-      }));
       setAcctNote("Saving…");
       const res = await window.AgentAuth.authFetch("/api/admin/betting-resources", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ rules, results }),
+        body: JSON.stringify({ rules: acctBettingLinks.rules, results: acctBettingLinks.results }),
       });
       const data = await res.json();
       if (!data.ok) return setAcctNote(data.error || "Save failed.", "err");
