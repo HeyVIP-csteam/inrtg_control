@@ -955,21 +955,23 @@ body.hub-page .topbar { flex-shrink: 0; }
 .tool-cards {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
-  gap: 14px;
+  gap: 12px;
   max-width: 780px;
 }
 .tool-card {
   position: relative;
-  display: block;
+  display: flex;
+  flex-direction: column;
   text-align: left;
   background: var(--card-bg);
   border: 1px solid var(--panel-border);
-  border-radius: 16px;
-  padding: 18px 18px 16px;
+  border-radius: 12px;
+  padding: 12px 14px;
   box-shadow: var(--shadow);
   overflow: hidden;
   isolation: isolate;
   transition: transform 0.25s ease, box-shadow 0.25s ease;
+  min-height: 92px;
 }
 /* Rotating conic-gradient ring, masked down to a thin border — only
    spins while hovered (animation-play-state), so it costs nothing at
@@ -978,7 +980,7 @@ body.hub-page .topbar { flex-shrink: 0; }
   content: "";
   position: absolute;
   inset: -2px;
-  border-radius: 17px;
+  border-radius: 13px;
   padding: 2px;
   background: conic-gradient(from 0deg, var(--tool-accent, var(--accent-gold)), transparent 30%, transparent 70%, var(--tool-accent, var(--accent-gold)));
   -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
@@ -1017,25 +1019,28 @@ body.hub-page .topbar { flex-shrink: 0; }
   .tool-card::before, .tool-card::after { animation: none !important; transition: none !important; opacity: 0 !important; }
   .tool-card:hover { transform: none; }
 }
+.t-head { display: flex; align-items: center; gap: 9px; margin-bottom: 4px; }
 .tool-card .t-icon {
   position: relative;
-  width: 36px; height: 36px; border-radius: 10px;
+  width: 26px; height: 26px; border-radius: 8px;
   display: flex; align-items: center; justify-content: center;
-  font-size: 16px; margin-bottom: 12px;
+  font-size: 13px; flex-shrink: 0;
 }
+.t-bottom-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: auto; padding-top: 8px; }
 .t-open {
-  display: inline-flex; align-items: center; gap: 5px;
-  margin-top: 12px;
+  display: inline-flex; align-items: center; gap: 4px;
   background: var(--tool-accent, var(--accent-gold));
   color: #0c1024;
   font-family: var(--font-display);
   font-weight: 700;
-  font-size: 11.5px;
-  padding: 6px 12px;
+  font-size: 10.5px;
+  padding: 4px 10px;
   border-radius: 999px;
   opacity: 0;
-  transform: translateY(6px);
+  transform: translateY(4px);
   transition: opacity 0.2s ease, transform 0.2s ease;
+  margin-left: auto;
+  white-space: nowrap;
 }
 .tool-card:hover .t-open { opacity: 1; transform: translateY(0); }
 @media (prefers-reduced-motion: reduce) {
@@ -1043,20 +1048,23 @@ body.hub-page .topbar { flex-shrink: 0; }
 }
 .t-badge {
   position: absolute;
-  top: -6px; right: -6px;
-  min-width: 17px; height: 17px;
-  padding: 0 4px;
+  top: -5px; right: -5px;
+  min-width: 15px; height: 15px;
+  padding: 0 3px;
   border-radius: 999px;
   background: #ef4a72;
   color: #fff;
-  font-size: 10px;
+  font-size: 9px;
   font-weight: 800;
   display: flex; align-items: center; justify-content: center;
 }
 .t-badge:empty { display: none; }
-.tool-card .t-name { font-family: var(--font-display); font-weight: 600; font-size: 14.5px; color: var(--ink); margin-bottom: 4px; }
-.tool-card .t-desc { font-size: 11.5px; color: var(--ink-soft); line-height: 1.4; }
-.t-sub-stat { font-size: 10.5px; font-weight: 700; color: var(--tool-accent, var(--ink-soft)); margin-top: 8px; }
+.tool-card .t-name { font-family: var(--font-display); font-weight: 600; font-size: 13px; color: var(--ink); line-height: 1.25; }
+.tool-card .t-desc {
+  font-size: 11px; color: var(--ink-soft); line-height: 1.4;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+}
+.t-sub-stat { font-size: 10px; font-weight: 700; color: var(--tool-accent, var(--ink-soft)); }
 .t-sub-stat:empty { display: none; }
 .t-sub-stat.has-unsolved {
   color: #ef4a72;

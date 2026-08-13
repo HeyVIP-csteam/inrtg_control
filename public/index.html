@@ -290,42 +290,70 @@
         <div class="inner" id="viewHome">
           <div class="tool-cards">
           <a href="/threads.html" data-route="threads" class="tool-card" id="threadsCard" data-feature-item="tg_reply_threads" style="--tool-accent:#38bdf8;">
-            <div class="t-icon" style="background:#38bdf833;">💬<span class="t-badge" id="threadsUnreadBadge"></span></div>
-            <div class="t-name">TG Reply Threads</div>
+            <div class="t-head">
+              <div class="t-icon" style="background:#38bdf833;">💬<span class="t-badge" id="threadsUnreadBadge"></span></div>
+              <div class="t-name">TG Reply Threads</div>
+            </div>
             <div class="t-desc">Track Telegram replies to your form submissions in real-time</div>
-            <div class="t-sub-stat" id="threadsUnsolvedStat"></div>
-            <span class="t-open">Open →</span>
+            <div class="t-bottom-row">
+              <div class="t-sub-stat" id="threadsUnsolvedStat"></div>
+              <span class="t-open">Open →</span>
+            </div>
           </a>
           <a href="/deposit-issue.html" data-route="depositIssue" class="tool-card" data-feature-item="deposit_issue" style="--tool-accent:#2f6fed;">
-            <div class="t-icon" style="background:#2f6fed33;">💳</div>
-            <div class="t-name">Deposit Issue</div>
+            <div class="t-head">
+              <div class="t-icon" style="background:#2f6fed33;">💳</div>
+              <div class="t-name">Deposit Issue</div>
+            </div>
             <div class="t-desc">Search Deposit Support records and update CS fields</div>
-            <span class="t-open">Open →</span>
+            <div class="t-bottom-row">
+              <div class="t-sub-stat"></div>
+              <span class="t-open">Open →</span>
+            </div>
           </a>
           <a href="/deposit-backup.html" data-route="depositBackup" class="tool-card" data-feature-item="deposit_backup" style="--tool-accent:#2f6fed;">
-            <div class="t-icon" style="background:#2f6fed33;">💻</div>
-            <div class="t-name">Deposit Backup</div>
+            <div class="t-head">
+              <div class="t-icon" style="background:#2f6fed33;">💻</div>
+              <div class="t-name">Deposit Backup</div>
+            </div>
             <div class="t-desc">Search This Month + Last Month backup sheets (read-only)</div>
-            <span class="t-open">Open →</span>
+            <div class="t-bottom-row">
+              <div class="t-sub-stat"></div>
+              <span class="t-open">Open →</span>
+            </div>
           </a>
           <a href="/promo.html" data-route="promo" class="tool-card" data-feature-item="promo_code_search" style="--tool-accent:#f472b6;">
-            <div class="t-icon" style="background:#f472b633;">🎟️</div>
-            <div class="t-name">Promo Code Search</div>
+            <div class="t-head">
+              <div class="t-icon" style="background:#f472b633;">🎟️</div>
+              <div class="t-name">Promo Code Search</div>
+            </div>
             <div class="t-desc">Search multiple promo codes at once</div>
-            <span class="t-open">Open →</span>
+            <div class="t-bottom-row">
+              <div class="t-sub-stat"></div>
+              <span class="t-open">Open →</span>
+            </div>
           </a>
           <a href="/announcements.html" data-route="announcements" class="tool-card" id="announcementCard" style="--tool-accent:#f59e0b;display:none;">
-            <div class="t-icon" style="background:#f59e0b33;" id="announcementCardIcon">📢</div>
-            <div class="t-name">Announcement</div>
+            <div class="t-head">
+              <div class="t-icon" style="background:#f59e0b33;" id="announcementCardIcon">📢</div>
+              <div class="t-name">Announcement</div>
+            </div>
             <div class="t-desc">Create and schedule the site-wide REMINDER banner</div>
-            <div class="t-sub-stat" id="announcementActiveStat"></div>
-            <span class="t-open">Open →</span>
+            <div class="t-bottom-row">
+              <div class="t-sub-stat" id="announcementActiveStat"></div>
+              <span class="t-open">Open →</span>
+            </div>
           </a>
           <a href="/betting-resources.html" class="tool-card" id="bettingResourcesCard" data-feature-item="betting_resources" style="--tool-accent:#a78bfa;">
-            <div class="t-icon" style="background:#a78bfa33;">📋</div>
-            <div class="t-name">HeyVIP Betting Rules</div>
+            <div class="t-head">
+              <div class="t-icon" style="background:#a78bfa33;">📋</div>
+              <div class="t-name">HeyVIP Betting Rules</div>
+            </div>
             <div class="t-desc">Betting platforms & results finding websites</div>
-            <span class="t-open">Open →</span>
+            <div class="t-bottom-row">
+              <div class="t-sub-stat"></div>
+              <span class="t-open">Open →</span>
+            </div>
           </a>
           <!-- No data-route on purpose — this opens as a popup over the
                current page (see #aaModalBackdrop below), the same way
@@ -334,11 +362,15 @@
                [data-route] elements, so this is safe to wire with its
                own click handler (see openActiveAgentsModal below). -->
           <a href="#" class="tool-card" id="activeAgentsCard" style="--tool-accent:#34d399;display:none;">
-            <div class="t-icon" style="background:#34d39933;" id="activeAgentsCardIcon">👥</div>
-            <div class="t-name">Active Agents</div>
+            <div class="t-head">
+              <div class="t-icon" style="background:#34d39933;" id="activeAgentsCardIcon">👥</div>
+              <div class="t-name">Active Agents</div>
+            </div>
             <div class="t-desc">See who's online or offline right now</div>
-            <div class="t-sub-stat" id="activeAgentsOnlineStat"></div>
-            <span class="t-open">Open →</span>
+            <div class="t-bottom-row">
+              <div class="t-sub-stat" id="activeAgentsOnlineStat"></div>
+              <span class="t-open">Open →</span>
+            </div>
           </a>
         </div>
 

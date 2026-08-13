@@ -68,6 +68,14 @@ bug,只是没有走跟其他卡片一样的"原地切换"效果。
 - 加了 `prefers-reduced-motion` 兜底,系统开了"减弱动态效果"就直接
   关掉这些动画,只保留卡片本身可点
 
+**紧凑化修订(同一天,业主反馈"卡片太高")**:图标从 36px 缩到 26px,
+跟标题挪到同一行(新增 `.t-head` 包一层);描述文字最多显示 2 行、超出
+省略(`-webkit-line-clamp`),不会把矮卡片撑得比高卡片矮很多;
+"Open →" 按钮从单独一行挪到统计数字(unsolved/active/online)同一行、
+右对齐(新增 `.t-bottom-row`,靠 `margin-top:auto` 固定在卡片底部);
+`.tool-card` 加了 `min-height: 92px`,让内容少的卡片(比如 Deposit
+Issue)不再显得空荡荡、跟内容多的卡片高度差一大截。
+
 **涉及的文件(2 个)**:`public/assets/style.css`(`.tool-card` 整段
 重写 + 新增 `.t-open`/两个 `@keyframes`)、`public/index.html`(每张
 工具卡片加了 `<span class="t-open">Open →</span>`)。
