@@ -43,7 +43,7 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
 <link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;600&display=swap" onload="this.onload=null;this.rel='stylesheet'" />
 <noscript><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;600&display=swap" /></noscript>
-<link rel="stylesheet" href="/assets/style.css?v=4102c368" />
+<link rel="stylesheet" href="/assets/style.css?v=53f5d5bf" />
 <script src="/assets/theme.js?v=5b27e630"></script>
 <script src="/assets/starfield.js?v=b6e92821" defer></script>
 <script src="/assets/authguard.js?v=9dba9c0c"></script>
@@ -474,9 +474,24 @@
     // document flow. This means opening a 1600-thread tab costs the same
     // ~20-30 DOM nodes as opening a 1-thread tab — the 1600 only affects
     // the sizer's height (one number), never how many nodes get built.
-    let ROW_HEIGHT = 74;         // best estimate; self-corrects once below, see rowHeightCalibrated
-    let rowHeightCalibrated = false;
-    const OVERSCAN_ROWS = 8;     // extra rows rendered just outside the viewport so fast scrolling doesn't show blank gaps for a frame
+    //
+    // CARD_HEIGHT is forced onto every row via inline style (height +
+    // overflow:hidden + box-sizing:border-box) rather than measured from
+    // a real rendered row — an earlier version tried to *measure* one
+    // row and use that as ROW_HEIGHT, which produced the empty-looking
+    // gaps between cards: the measurement ran before twemoji.parse()
+    // had finished swapping emoji characters for <img> tags, so it
+    // sometimes captured a slightly-too-short pre-emoji height, then
+    // positioned every row that height apart while the real (post-
+    // emoji) row was taller — the gap between cards WAS real leftover
+    // space, not an illusion. Forcing a fixed height instead makes every
+    // row's on-screen size a deterministic constant instead of something
+    // dependent on measurement timing, so there's nothing left to get
+    // out of sync.
+    const CARD_HEIGHT = 66; // .thread-item's own content (icon/text) comfortably fits within this — padding(11*2) + max(icon 36, two lines of text ~33) ≈ 58, plus a few px of breathing room
+    const ROW_GAP = 8;      // visual gap between cards, replaces the old flex `gap` (absolutely-positioned rows don't get flex gap for free)
+    const ROW_HEIGHT = CARD_HEIGHT + ROW_GAP;
+    const OVERSCAN_ROWS = 8; // extra rows rendered just outside the viewport so fast scrolling doesn't show blank gaps for a frame
     let sizerEl = null;          // the element whose height makes #threadList's scrollbar correct; null whenever the scaffold needs rebuilding
     let currentVirtualItems = []; // the array the scroll listener re-renders against — always the tab's items array from the most recent renderVirtualList() call
 
@@ -528,6 +543,9 @@
           entry.el.style.position = "absolute";
           entry.el.style.left = "0";
           entry.el.style.right = "0";
+          entry.el.style.height = CARD_HEIGHT + "px";
+          entry.el.style.overflow = "hidden";
+          entry.el.style.boxSizing = "border-box";
           renderedItemEls.set(item.id, entry);
           touchedEls.push(entry.el);
         }
@@ -544,21 +562,6 @@
       for (const [id, entry] of renderedItemEls) {
         if (windowIds.has(id)) continue;
         if (entry.el.parentNode === threadList) entry.el.remove();
-      }
-
-      // ROW_HEIGHT above is an estimate — self-correct once against a
-      // real rendered row's actual height rather than trusting the
-      // guess forever. Wrong height wouldn't break anything critical,
-      // just show visible gaps or slight overlap between cards, so this
-      // runs once and re-renders with the corrected number.
-      if (!rowHeightCalibrated && touchedEls.length) {
-        rowHeightCalibrated = true;
-        const measured = Math.round(touchedEls[0].getBoundingClientRect().height) + 8; // +8 = the visual gap the old flex `gap` used to provide
-        if (measured > 20 && Math.abs(measured - ROW_HEIGHT) > 4) {
-          ROW_HEIGHT = measured;
-          renderVirtualWindow();
-          return;
-        }
       }
 
       if (touchedEls.length) polishEmoji(threadList);

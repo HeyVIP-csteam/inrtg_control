@@ -925,10 +925,33 @@ body.hub-page .topbar { flex-shrink: 0; }
    maximized window doesn't. data-view="threads" (set in spa-shell.js's
    mount()) scopes this to Threads specifically — announcements.html is
    also spa-fullbleed but doesn't have this 3-column space problem, so
-   it keeps its nav regardless of width. */
+   it keeps its nav regardless of width.
+   Reuses the exact off-canvas drawer mechanics the ≤720px mobile
+   breakpoint already has below (position:fixed + translateX slide +
+   the hamburger toggle button) instead of a bare `display:none` — a
+   plain display:none has no way back in; this keeps the sidebar
+   reachable via the same toggle button mobile already uses, just
+   triggered at a wider breakpoint too when Threads is the active view. */
 @media (max-width: 1300px) {
-  body:has(#spaMount[data-view="threads"]) .sidebar { display: none; }
+  body:has(#spaMount[data-view="threads"]) .sidebar-toggle-btn {
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px;
+    width: 34px; height: 34px; border: none; background: none; cursor: pointer; margin-right: 4px; padding: 0;
+  }
+  body:has(#spaMount[data-view="threads"]) .sidebar-toggle-btn span {
+    display: block; width: 19px; height: 2px; border-radius: 2px; background: var(--ink);
+  }
+  body:has(#spaMount[data-view="threads"]) .sidebar {
+    position: fixed; top: 61px; left: 0; bottom: 0; z-index: 45;
+    width: 290px; max-width: 82vw; max-height: none;
+    border-right: 1px solid var(--panel-border); border-bottom: none;
+    background: var(--card-bg); box-shadow: var(--shadow);
+    transform: translateX(-100%);
+    transition: transform 0.22s ease;
+  }
+  body:has(#spaMount[data-view="threads"]) .sidebar.open { transform: translateX(0); }
+  body:has(#spaMount[data-view="threads"]) .sidebar-backdrop.open { display: block; opacity: 1; pointer-events: auto; }
 }
+
 .status-badge-corner {
   display: inline-flex;
   margin-top: 14px;
@@ -1216,7 +1239,11 @@ body.hub-page .topbar { flex-shrink: 0; }
 .threads-tab.active .dot { background: rgba(255, 255, 255, 0.22); color: #fff; }
 .threads-tab.active .tab-count { background: rgba(255, 255, 255, 0.2); color: #fff; }
 
-.threads-header { display: flex; align-items: center; gap: 10px; padding: 2px 2px 14px; }
+.threads-header {
+  display: flex; align-items: flex-start; gap: 10px;
+  padding: 12px; margin-bottom: 14px;
+  background: var(--sidebar-item-bg); border: 1px solid var(--panel-border); border-radius: 14px;
+}
 .threads-header .bubble-icon {
   width: 34px; height: 34px; border-radius: 10px; flex-shrink: 0;
   background: rgba(56, 189, 248, 0.14); color: #38bdf8;
