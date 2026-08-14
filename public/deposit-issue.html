@@ -541,7 +541,15 @@
     document.querySelectorAll('.dep-btn-ed').forEach(function(b){ b.classList.remove('active'); });
     gi('depHint').style.display = 'block';
     gi('depEF').style.display = 'none';
-    gi('depT').style.display = 'none';
+    // #depT no longer exists — showT() now routes through the shared
+    // window.showToast() instead of a page-local banner element (see
+    // CHANGES-toast-unification.md), but this leftover reference to the
+    // now-deleted element wasn't cleaned up at the time. Left in, this
+    // threw "Cannot read properties of null (reading 'style')" on every
+    // call to resetEditPanel() — including the one selectBrand('', ...)
+    // makes on page load — which aborted the rest of that script before
+    // showBrandDirectory() ever got a chance to run, which is the actual
+    // reason the "All Brands" directory list never appeared.
   }
 
   // "All Brands" is a directory, not a search — see doDep()'s guard
