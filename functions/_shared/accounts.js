@@ -176,9 +176,18 @@ export const ADMIN_SECTIONS_DEFAULT_EDIT = {
 // EMPTY array for every account, new or pre-existing — nobody is
 // grandfathered in; the Owner has to explicitly check the box for each
 // account, same "opt-in-only" principle the rest of this file uses.
+//
+// No rank floor, on purpose (2026-08-14 — previously had one, see git
+// history): the Owner checking the box for an account IS the access
+// decision, full stop — an `agent`-ranked account the Owner has
+// deliberately opted in to Active Agents gets it, same as an admin
+// would. Layering a rank requirement on top of an explicit per-account
+// grant just means the Owner's own click can silently not take effect
+// depending on the target's role, which defeats the point of a
+// per-account opt-in list in the first place.
 export const OWNER_TOPIC_ITEMS = [
-  { id: "announcements", name: "Announcements", icon: "📢", floorRank: ROLE_RANK.admin },
-  { id: "activeAgents", name: "Active Agents", icon: "👥", floorRank: ROLE_RANK.superadmin },
+  { id: "announcements", name: "Announcements", icon: "📢" },
+  { id: "activeAgents", name: "Active Agents", icon: "👥" },
 ];
 
 export function canAccessOwnerTopic(account, topicId) {
@@ -186,10 +195,9 @@ export function canAccessOwnerTopic(account, topicId) {
   if (account.role === "owner") return true;
   const topic = OWNER_TOPIC_ITEMS.find((t) => t.id === topicId);
   if (!topic) return false;
-  if (rankOf(account.role) < topic.floorRank) return false;
-  // No "all" shortcut and no rank>=admin blanket bypass on purpose (see
-  // the comment above) — explicit membership in ownerTopicAccess is the
-  // ONLY way in, regardless of rank or of what allowedModules holds.
+  // No "all" shortcut either (see the comment above) — explicit
+  // membership in ownerTopicAccess is the ONLY way in, regardless of
+  // rank or of what allowedModules holds.
   return Array.isArray(account.ownerTopicAccess) && account.ownerTopicAccess.includes(topicId);
 }
 
