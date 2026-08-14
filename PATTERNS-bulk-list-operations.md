@@ -93,7 +93,7 @@ async function bulkRunLimited(ids, worker, batchSize = 20) {
 变了的那几条"：
 
 ```js
-function createReconciler({ getId, computeKey, renderItem }) {
+function createReconciler({ getId, computeKey, renderItem, syncTransientState }) {
   const rendered = new Map(); // id -> { el, key }
 
   return function reconcile(container, items) {
@@ -111,6 +111,9 @@ function createReconciler({ getId, computeKey, renderItem }) {
         rendered.set(id, entry);
         touched.push(entry.el); // 只有真的重建的节点才需要后续处理
       }
+      // 结构不变、代价极低的状态（选中/勾选之类）在这里同步 —— 不进 key，
+      // 每条都无条件跑一遍。原因见下面「⚠️ 常见陷阱」。
+      if (syncTransientState) syncTransientState(entry, item);
 
       const wantPos = prevEl ? prevEl.nextSibling : container.firstChild;
       if (entry.el.parentNode !== container || entry.el !== wantPos) {
@@ -138,8 +141,13 @@ function createReconciler({ getId, computeKey, renderItem }) {
 ```js
 const reconcileThreadList = createReconciler({
   getId: (t) => t.id,
-  computeKey: (t) => [t.title, t.updatedAt, t.status, isSelected(t.id)].join("|"),
+  // ⚠️ 注意：isSelected(t.id) 不在这里 —— 见下面的陷阱说明
+  computeKey: (t) => [t.title, t.updatedAt, t.status].join("|"),
   renderItem: (t) => buildThreadRowElement(t),
+  syncTransientState: (entry, t) => {
+    const checked = isSelected(t.id);
+    entry.el.classList.toggle("checked", checked); // 只改 class，不碰结构
+  },
 });
 
 function render() {
@@ -148,8 +156,28 @@ function render() {
 }
 ```
 
+### ⚠️ 常见陷阱：选中/勾选状态千万别塞进 key
+
+这是这套模式里**最容易踩、后果最隐蔽**的坑，踩中之后的症状恰好是
+"平时不卡，一点全选就卡"——因为：
+
+- "是否被选中"每次点击都会变，尤其是点"全选/取消全选"时会让**一整批行
+  同时**从"未选中"变成"选中"（或反过来）。
+- 如果这个状态在 `computeKey` 里，点一次全选 = 一整个列表的 key **同时**
+  全部失效 = 触发对所有行的"删除 + 重建 + 重新绑定事件监听器"，在同一个
+  同步 tick 里跑完 —— 这正是技术点 3 本来想避免的那种全量重建，只是换了
+  个触发方式，效果一样卡，而且比"从来没做过 diff"更难排查（因为大部分
+  操作看起来都是好的，只有全选才炸）。
+
+**正确做法**：凡是"只改一个 class / 一个 checkbox 的 `.checked` 属性，
+不改变这一行 DOM 结构"的状态，一律不进 key，单独用一个 `syncTransientState`
+之类的函数、在每一行**无条件**同步一遍（不用判断 key 是否变化，因为这个
+同步本身足够便宜：不创建节点、不解析 innerHTML、不重新绑定事件）。
+
 **项目里的参照实现**：`public/threads.html` 的 `renderedItemEls` /
-`itemRenderKey` / `reconcileSection`（含 twemoji 只对 `touchedEls` 重新解析）。
+`itemRenderKey`（注释里明确写了"故意排除 `checkedThreadIds.has(t.id)`，
+原因就是上面这个坑"）/ `syncCheckedState`（对应这里的 `syncTransientState`）
+/ `reconcileSection`（含 twemoji 只对 `touchedEls` 重新解析）。
 
 ---
 
