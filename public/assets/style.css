@@ -1261,9 +1261,17 @@ body.hub-page .topbar { flex-shrink: 0; }
 .thread-item .t-sub .submitter { color: #38bdf8; font-weight: 600; }
 .thread-item .t-done { color: #34d399; font-size: 12px; flex-shrink: 0; }
 .badge-new {
-  flex-shrink: 0; font-size: 9.5px; font-weight: 800; letter-spacing: 0.02em;
-  padding: 2px 8px; border-radius: 999px;
-  background: rgba(56, 189, 248, 0.16); color: #38bdf8;
+  flex-shrink: 0;
+  min-width: 19px; height: 19px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: #ef4a72;
+  color: #fff;
+  font-size: 10.5px;
+  font-weight: 800;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 .thread-kebab {
   flex-shrink: 0; color: var(--ink-soft); font-size: 15px; letter-spacing: 1px; line-height: 1;
