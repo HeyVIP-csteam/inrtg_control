@@ -43,7 +43,7 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
 <link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;600&display=swap" onload="this.onload=null;this.rel='stylesheet'" />
 <noscript><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;600&display=swap" /></noscript>
-<link rel="stylesheet" href="/assets/style.css?v=e2edf377" />
+<link rel="stylesheet" href="/assets/style.css?v=756598a9" />
 <script src="/assets/theme.js?v=5b27e630"></script>
 <script src="/assets/starfield.js?v=b6e92821" defer></script>
 </head>
@@ -122,6 +122,7 @@
         localStorage.setItem("agentAuth", JSON.stringify({
           username: data.account.username, token: data.token, role: data.account.role, allowedBrands: data.account.allowedBrands, allowedModules: data.account.allowedModules,
           allowedAdminSections: data.account.allowedAdminSections, adminSectionEditAccess: data.account.adminSectionEditAccess, canGrantAdminAccess: data.account.canGrantAdminAccess,
+          ownerTopicAccess: data.account.ownerTopicAccess,
         }));
         localStorage.setItem("agentLastActivity", String(Date.now()));
         location.href = redirectTo;

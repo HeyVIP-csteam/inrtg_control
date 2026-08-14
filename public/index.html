@@ -74,7 +74,7 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
 <link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;600&display=swap" onload="this.onload=null;this.rel='stylesheet'" />
 <noscript><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;600&display=swap" /></noscript>
-<link rel="stylesheet" href="/assets/style.css?v=2ac72704" />
+<link rel="stylesheet" href="/assets/style.css?v=756598a9" />
 <link rel="stylesheet" href="/assets/maintenance-breathing-light.css?v=b3446084" />
 <link rel="stylesheet" href="/assets/settings-dropdown.css?v=ff5b816c" />
 <script src="/assets/theme.js?v=5b27e630"></script>
@@ -691,17 +691,18 @@
     // "Topic access" list (see openAgentProfileModal below), but backed
     // by their own `ownerTopicAccess` field — NOT allowedModules — and
     // STRICTLY Owner-editable (no canGrantAdminAccess delegation, unlike
-    // Account Management Access above).
+    // Account Management Access above). No rank floor — see the comment
+    // on OWNER_TOPIC_ITEMS in _shared/accounts.js for why: the Owner's
+    // explicit per-account grant IS the access decision.
     const OWNER_TOPIC_ITEMS = [
-      { id: "announcements", name: "Announcements", icon: "📢", floorRank: ROLE_RANK.admin },
-      { id: "activeAgents", name: "Active Agents", icon: "👥", floorRank: ROLE_RANK.superadmin },
+      { id: "announcements", name: "Announcements", icon: "📢" },
+      { id: "activeAgents", name: "Active Agents", icon: "👥" },
     ];
     function canAccessOwnerTopic(topicId) {
       if (!authInfo) return false;
       if (authInfo.role === "owner") return true;
       const topic = OWNER_TOPIC_ITEMS.find((t) => t.id === topicId);
       if (!topic) return false;
-      if (myRank < topic.floorRank) return false;
       return Array.isArray(authInfo.ownerTopicAccess) && authInfo.ownerTopicAccess.includes(topicId);
     }
     function canSeeAdminSection(sectionId) {

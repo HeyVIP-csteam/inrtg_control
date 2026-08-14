@@ -43,11 +43,11 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
 <link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;600&display=swap" onload="this.onload=null;this.rel='stylesheet'" />
 <noscript><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;600&display=swap" /></noscript>
-<link rel="stylesheet" href="/assets/style.css?v=538cb382" />
+<link rel="stylesheet" href="/assets/style.css?v=756598a9" />
 <script src="/assets/theme.js?v=5b27e630"></script>
 <script src="/assets/starfield.js?v=b6e92821" defer></script>
 <script src="/assets/authguard.js?v=9dba9c0c"></script>
-<script src="/assets/presence-heartbeat.js?v=1"></script>
+<script src="/assets/presence-heartbeat.js?v=921f46cb"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/twemoji.min.js"></script>
 <script src="/assets/schemas.js?v=b5c55f4a"></script>
 </head>
@@ -78,35 +78,40 @@
 
   <div class="threads-shell" id="threadsShell">
     <aside class="threads-sidebar">
-      <div class="threads-search">
+      <div class="threads-tabs" id="threadsTabs"></div>
+
+      <div class="threads-back-link" id="threadsBackLink">← Back to Active / Solved</div>
+
+      <div class="threads-header" id="threadsHeader">
+        <div class="bubble-icon" id="threadsHeaderIcon">💬</div>
+        <div class="text">
+          <div class="title" id="threadsHeaderTitle">All Threads</div>
+          <div class="subtitle" id="threadsHeaderSubtitle"></div>
+        </div>
+        <div class="count-badge" id="threadsHeaderCount">0</div>
+        <div class="select-btn" id="threadsSelectToggleBtn">Select</div>
+      </div>
+
+      <div class="threads-search" id="threadsSearchBar">
         <span>🔍</span>
         <input type="text" id="threadSearch" placeholder="Search username, TID, UID..." autocomplete="off" />
       </div>
 
-      <div class="threads-select-bar" id="threadsSelectBar">
-        <div class="sel-top-row">
-          <span class="sel-count" id="selCount">0</span>
-          <span class="sel-cancel" id="selCancelBtn">Cancel</span>
-        </div>
+      <div class="threads-select-all-row" id="threadsSelectAllRow">
+        <input type="checkbox" class="select-all-checkbox" id="threadsSelectAll" />
+        <span>Select all</span>
+        <div class="spacer"></div>
         <div class="sel-actions">
           <button type="button" id="selMarkReadBtn"><span style="color:#38bdf8;">✓</span> Mark as read</button>
           <button type="button" id="selSolveBtn"><span style="color:#34d399;">✅</span> Solved</button>
         </div>
       </div>
 
-      <div class="threads-section" id="activeSection">
-        <div class="threads-section-title" data-target="activeList"><span><input type="checkbox" class="select-all-checkbox" id="activeSelectAll" style="display:none;" /><span class="chev">▾</span> Active Threads</span><span class="count" id="activeCount">0</span></div>
-        <div class="thread-list" id="activeList"></div>
-      </div>
+      <div class="thread-list" id="threadList"></div>
 
-      <div class="threads-section collapsed" id="solvedSection">
-        <div class="threads-section-title collapsed" data-target="solvedList"><span><input type="checkbox" class="select-all-checkbox" id="solvedSelectAll" style="display:none;" /><span class="chev">▾</span> Solved Chat History</span><span class="count" id="solvedCount">0</span></div>
-        <div class="thread-list" id="solvedList"></div>
-      </div>
-
-      <div class="threads-section recall collapsed" id="recallSection" style="display:none;">
-        <div class="threads-section-title collapsed" data-target="recallList"><span><span class="chev">▾</span> Recall Chat History</span><span class="count" id="recallCount">0</span></div>
-        <div class="thread-list" id="recallList"></div>
+      <div class="threads-select-bar" id="threadsSelectBar">
+        <span class="sel-cancel" id="selCancelBtn">Cancel</span>
+        <span class="sel-count"><b id="selCount">0</b> selected</span>
       </div>
     </aside>
 
@@ -114,6 +119,7 @@
       <div class="threads-placeholder">Pick a thread on the left, or submit a form to start one.</div>
     </main>
   </div>
+
 
   <script>
     window.initThemeToggle();
@@ -134,15 +140,14 @@
 
     function bootDashboard() {
       const auth = getAuth();
-      // Recall Chat History (the old hidden deletion-log dot) is a normal
-      // section now, but still admin-or-above only — the server 401s it
-      // for anyone else regardless, this just avoids showing a dead-end
-      // section to an agent/senior who'd get nothing useful out of it.
+      // Recall Chat History is now a tab, but still admin-or-above only —
+      // the server 401s the endpoint for anyone else regardless, this
+      // just avoids showing a tab that leads nowhere for an agent/senior.
       // Rank-based (not a literal "admin" string match) so SuperAdmin
       // sees it too — matches functions/_shared/accounts.js ROLE_RANK.
       const ROLE_RANK = { agent: 0, senior: 1, admin: 2, superadmin: 3, owner: 4 };
-      const isAdmin = (ROLE_RANK[auth.role] ?? 0) >= ROLE_RANK.admin;
-      document.getElementById("recallSection").style.display = isAdmin ? "" : "none";
+      isAdmin = (ROLE_RANK[auth.role] ?? 0) >= ROLE_RANK.admin;
+      renderTabs();
       loadList();
       if (isAdmin) loadRecallLog();
       polishEmoji();
@@ -175,6 +180,9 @@
     let pollTimer = null;
     let listPollTimer = null;
     let searchTimer = null;
+    let isAdmin = false;              // set once in bootDashboard(), read by renderTabs()
+    let currentTab = "active";        // "active" | "solved" | "recall" — which of the
+                                       // formerly-stacked sections is showing right now
 
     // ---- Select mode (bulk Mark as read / Solved) ---------------------
     let selectMode = false;
@@ -234,18 +242,18 @@
       }
     }
 
-    const activeList = document.getElementById("activeList");
-    const solvedList = document.getElementById("solvedList");
-    const activeCount = document.getElementById("activeCount");
-    const solvedCount = document.getElementById("solvedCount");
+    const threadList = document.getElementById("threadList");
     const main = document.getElementById("threadsMain");
-
-    document.querySelectorAll(".threads-section-title").forEach((el) => {
-      el.addEventListener("click", () => {
-        el.classList.toggle("collapsed");
-        document.getElementById(el.dataset.target).closest(".threads-section").classList.toggle("collapsed");
-      });
-    });
+    const threadsTabs = document.getElementById("threadsTabs");
+    const threadsBackLink = document.getElementById("threadsBackLink");
+    const threadsHeaderIcon = document.getElementById("threadsHeaderIcon");
+    const threadsHeaderTitle = document.getElementById("threadsHeaderTitle");
+    const threadsHeaderSubtitle = document.getElementById("threadsHeaderSubtitle");
+    const threadsHeaderCount = document.getElementById("threadsHeaderCount");
+    const threadsSelectToggleBtn = document.getElementById("threadsSelectToggleBtn");
+    const threadsSearchBar = document.getElementById("threadsSearchBar");
+    const threadsSelectAllRow = document.getElementById("threadsSelectAllRow");
+    const threadsSelectAll = document.getElementById("threadsSelectAll");
 
     const RECALL_TYPE_META = {
       "delete-thread": { icon: "🗑", badge: "Deleted" },
@@ -253,9 +261,10 @@
       "recall-reply": { icon: "↩️", badge: "Recalled reply" },
     };
 
-    // Admin-only — the whole #recallSection is display:none for non-admins
-    // (set in bootDashboard), and the server 401s this endpoint for them
-    // too, so this never actually runs for a non-admin account.
+    // Admin-only — loadRecallLog() is only ever called when isAdmin is
+    // true (see bootDashboard/switchTab), and the server 401s the
+    // endpoint for anyone else regardless, so this never actually runs
+    // for a non-admin account even if something called it directly.
     async function loadRecallLog() {
       try {
         const res = await authFetch("/api/deletion-log", { cache: "no-store" });
@@ -263,27 +272,36 @@
         const data = await res.json();
         if (!data.ok) return;
         recallEntries = data.entries || [];
-        renderRecallList();
+        renderTabs(); // Recall tab's count badge needs to reflect the fresh entry count
+        if (currentTab === "recall") renderRecallList();
       } catch {
         // Network hiccup — leave the list as-is, try again next poll.
       }
     }
 
+    // Renders straight into the shared #threadList container — same one
+    // Active/Solved use — since only one of the three is ever visible at
+    // a time now (see switchTab). Deliberately NOT run through
+    // reconcileSection: this list is a low-frequency audit log, not a
+    // live queue agents are bulk-acting on, so the "only rebuild what
+    // changed" machinery in PATTERNS-bulk-list-operations.md buys
+    // nothing here that a plain innerHTML replace doesn't already give.
     function renderRecallList() {
-      document.getElementById("recallCount").textContent = recallEntries.length;
-      const list = document.getElementById("recallList");
       if (!recallEntries.length) {
-        list.innerHTML = '<div class="threads-empty">No deletions logged yet.</div>';
+        threadList.innerHTML = '<div class="threads-empty">No deletions logged yet.</div>';
         return;
       }
-      list.innerHTML = recallEntries.map((e) => {
+      threadList.innerHTML = recallEntries.map((e) => {
         const meta = RECALL_TYPE_META[e.type] || { icon: "🗑", badge: e.type };
         return `
           <div class="thread-item recall-item">
             <div class="icon">${meta.icon}</div>
             <div class="meta">
-              <div class="t-title"><span class="badge">${escapeHtml(meta.badge)}</span>${escapeHtml(e.threadTitle || "")}</div>
-              <div class="t-sub">${escapeHtml(e.by || "unknown")} · ${timeAgo(e.ts)}${e.brand ? " · " + escapeHtml(e.brand) : ""}</div>
+              <div class="top-line">
+                <div class="t-title"><span class="r-badge">${escapeHtml(meta.badge)}</span>${escapeHtml(e.threadTitle || "")}</div>
+                <div class="t-time">${timeAgo(e.ts)}</div>
+              </div>
+              <div class="bottom-line"><div class="t-sub">${escapeHtml(e.by || "unknown")}${e.brand ? " · " + escapeHtml(e.brand) : ""}</div></div>
               <div class="t-content">${escapeHtml((e.content || "").slice(0, 120))}</div>
             </div>
           </div>`;
@@ -474,14 +492,21 @@
       el.style.setProperty("--thread-accent", t.accent || "#7c6cf0");
       const unread = Math.max(0, (t.replyCount || 0) - getSeenCount(t.id));
       el.innerHTML = `
-        ${selectMode ? `<input type="checkbox" class="thread-item-checkbox" ${isChecked ? "checked" : ""} />` : ""}
-        <div class="icon" style="background:${(t.accent || "#7c6cf0")}33;">${t.icon || "🔔"}</div>
+        ${selectMode
+          ? `<div class="check"><input type="checkbox" class="thread-item-checkbox" ${isChecked ? "checked" : ""} /></div>`
+          : `<div class="icon" style="background:${(t.accent || "#7c6cf0")}33;">${t.icon || "🔔"}</div>`
+        }
         <div class="meta">
-          <div class="t-title">${escapeHtml(t.title)}</div>
-          <div class="t-sub">${escapeHtml(t.submitter)} · ${timeAgo(t.lastActivity)}${t.replyCount ? " · " + t.replyCount + " reply" : ""}</div>
+          <div class="top-line">
+            <div class="t-title">${escapeHtml(t.title)}</div>
+            <div class="t-time">${timeAgo(t.lastActivity)}</div>
+          </div>
+          <div class="bottom-line">
+            <div class="t-sub">${escapeHtml(t.submitter)}${t.replyCount ? " · " + t.replyCount + " reply" : ""}</div>
+            ${unread > 0 ? `<span class="badge-new">${unread > 99 ? "99+" : unread}</span>` : ""}
+            ${t.solved ? '<span class="t-done">✓</span>' : ""}
+          </div>
         </div>
-        ${unread > 0 ? `<span class="unread-badge">${unread > 99 ? "99+" : unread}</span>` : ""}
-        ${t.solved ? '<span class="t-done">✓</span>' : ""}
         ${!selectMode ? '<span class="thread-kebab">⋮</span>' : ""}
       `;
       if (selectMode) {
@@ -568,17 +593,89 @@
       if (selectedId === id) { selectedThread = data.thread; updateThreadContent(selectedThread, true); }
     }
 
+    // ---- Tabs (Active / Solved / Recall) — replaces the old three
+    // stacked collapsible sections. Only one of the three is ever
+    // visible/rendered into #threadList at a time.
+    function currentItems() {
+      return currentTab === "active" ? activeThreads : currentTab === "solved" ? solvedThreads : [];
+    }
+
+    function renderTabs() {
+      const tabs = [
+        { id: "active", label: "Active", count: activeThreads.length, dot: "💬" },
+        { id: "solved", label: "Solved", count: solvedThreads.length, dot: "✓" },
+      ];
+      // Recall only ever appears here when isAdmin is true — a non-admin's
+      // tab list simply never gets a third entry, same as #recallSection
+      // used to be display:none for them. No "locked" state to design
+      // for; it's just absent, and the server 401s the endpoint anyway.
+      if (isAdmin) tabs.push({ id: "recall", label: "Recall", count: recallEntries.length, dot: "↩️" });
+      threadsTabs.innerHTML = tabs.map((t) => `
+        <div class="threads-tab${currentTab === t.id ? " active" : ""}${t.id === "recall" ? " recall" : ""}" data-tab="${t.id}">
+          <span class="dot">${t.dot}</span>
+          ${t.label} <span class="tab-count">${t.count}</span>
+        </div>
+      `).join("");
+      threadsTabs.querySelectorAll("[data-tab]").forEach((el) => {
+        el.addEventListener("click", () => switchTab(el.dataset.tab));
+      });
+    }
+
+    function switchTab(tab) {
+      if (tab === currentTab) return;
+      if (selectMode) exitSelectMode(); // leaving mid bulk-select cancels it, same as hitting Cancel
+      currentTab = tab;
+      if (currentTab === "recall") { renderTabs(); renderHeader(); renderRecallList(); }
+      else renderLists(); // renderLists() calls renderTabs() + renderHeader() itself
+    }
+
+    function renderHeader() {
+      if (currentTab === "recall") {
+        threadsHeaderIcon.textContent = "↩️";
+        threadsHeaderTitle.textContent = "Recall Chat History";
+        threadsHeaderSubtitle.textContent = "Deleted and recalled messages";
+        threadsHeaderCount.textContent = recallEntries.length;
+        threadsSelectToggleBtn.style.display = "none"; // recall entries aren't bulk-actionable
+        threadsSearchBar.style.display = "none";
+        threadsBackLink.classList.add("open");
+        return;
+      }
+      threadsHeaderIcon.textContent = "💬";
+      threadsHeaderTitle.textContent = "All Threads";
+      threadsSelectToggleBtn.style.display = "";
+      threadsSearchBar.style.display = "";
+      threadsBackLink.classList.remove("open");
+      const items = currentItems();
+      threadsHeaderCount.textContent = items.length;
+      if (currentTab === "active") {
+        const unreadCount = items.filter((t) => Math.max(0, (t.replyCount || 0) - getSeenCount(t.id)) > 0).length;
+        threadsHeaderSubtitle.innerHTML = `Active threads · <span class="new-count">${unreadCount} new repl${unreadCount === 1 ? "y" : "ies"}</span>`;
+      } else {
+        threadsHeaderSubtitle.textContent = "Solved threads";
+      }
+    }
+
+    threadsBackLink.addEventListener("click", () => switchTab("active"));
+    threadsSelectToggleBtn.addEventListener("click", () => {
+      selectMode ? exitSelectMode() : enterSelectMode(null);
+    });
+
     // ---- Select mode (bulk actions) ------------------------------------
     function enterSelectMode(preselectId) {
       selectMode = true;
       checkedThreadIds.clear();
       if (preselectId) checkedThreadIds.add(preselectId);
+      threadsSelectToggleBtn.textContent = "Cancel";
+      threadsSelectAllRow.classList.add("open");
       renderLists();
       updateSelectBar();
     }
     function exitSelectMode() {
       selectMode = false;
       checkedThreadIds.clear();
+      threadsSelectToggleBtn.textContent = "Select";
+      threadsSelectAllRow.classList.remove("open");
+      threadsSelectAll.checked = false;
       renderLists();
       updateSelectBar();
     }
@@ -592,32 +689,36 @@
       const bar = document.getElementById("threadsSelectBar");
       bar.classList.toggle("open", selectMode);
       document.getElementById("selCount").textContent = `${checkedThreadIds.size}`;
-      const checkedThreads = [...activeThreads, ...solvedThreads].filter((t) => checkedThreadIds.has(t.id));
+      const items = currentItems();
+      threadsSelectAll.checked = selectMode && items.length > 0 && items.every((t) => checkedThreadIds.has(t.id));
+      const checkedThreads = items.filter((t) => checkedThreadIds.has(t.id));
       // Mark as read / Mark as unread — "Mark as read" if any checked
       // thread still has unread replies, otherwise (every checked thread
       // is already fully read) "Mark as unread" to bulk-reset them
       // instead. Mirrors the single-row kebab menu's own toggle.
       const anyUnread = checkedThreads.some((t) => Math.max(0, (t.replyCount || 0) - getSeenCount(t.id)) > 0);
       const readBtn = document.getElementById("selMarkReadBtn");
-      readBtn.innerHTML = anyUnread
+      readBtn.innerHTML = anyUnread || !checkedThreads.length
         ? '<span style="color:#38bdf8;">✓</span> Mark as read'
         : '<span style="color:#9aa3c4;">○</span> Mark as unread';
       readBtn.dataset.makeRead = anyUnread ? "1" : "0";
+      readBtn.disabled = !checkedThreads.length;
       // Solved button label — "Solved" if any checked thread still needs
       // solving, otherwise (every checked thread is already solved)
       // "Not solved" to bulk-reopen them instead. Mirrors the single-row
       // kebab menu's own Solved/Not-solved toggle.
       const anyUnsolved = checkedThreads.some((t) => !t.solved);
       const solveBtn = document.getElementById("selSolveBtn");
-      solveBtn.innerHTML = anyUnsolved
+      solveBtn.innerHTML = anyUnsolved || !checkedThreads.length
         ? '<span style="color:#34d399;">✅</span> Solved'
         : '<span style="color:#f87171;">✕</span> Not solved';
       solveBtn.dataset.makeSolved = anyUnsolved ? "1" : "0";
+      solveBtn.disabled = !checkedThreads.length;
     }
     document.getElementById("selCancelBtn").addEventListener("click", exitSelectMode);
     document.getElementById("selMarkReadBtn").addEventListener("click", () => {
       const makeRead = document.getElementById("selMarkReadBtn").dataset.makeRead === "1";
-      const checkedThreads = [...activeThreads, ...solvedThreads].filter((t) => checkedThreadIds.has(t.id));
+      const checkedThreads = currentItems().filter((t) => checkedThreadIds.has(t.id));
       checkedThreads.forEach((t) => markSeen(t.id, makeRead ? (t.replyCount || 0) : 0));
       exitSelectMode();
     });
@@ -627,48 +728,53 @@
       await Promise.all(ids.map((id) => toggleThreadSolvedById(id, makeSolved)));
       exitSelectMode();
     });
-    ["activeSelectAll", "solvedSelectAll"].forEach((elId) => {
-      document.getElementById(elId).addEventListener("click", (e) => {
-        e.stopPropagation();
-        const isActive = elId === "activeSelectAll";
-        const list = isActive ? activeThreads : solvedThreads;
-        if (!selectMode) enterSelectMode(null);
-        const allChecked = list.every((t) => checkedThreadIds.has(t.id));
-        list.forEach((t) => { if (allChecked) checkedThreadIds.delete(t.id); else checkedThreadIds.add(t.id); });
-        renderLists();
-        updateSelectBar();
-      });
+    threadsSelectAll.addEventListener("click", (e) => {
+      e.stopPropagation();
+      const items = currentItems();
+      const allChecked = items.length > 0 && items.every((t) => checkedThreadIds.has(t.id));
+      items.forEach((t) => { if (allChecked) checkedThreadIds.delete(t.id); else checkedThreadIds.add(t.id); });
+      renderLists();
+      updateSelectBar();
     });
 
     function polishEmoji(root) {
       if (window.twemoji) window.twemoji.parse(root || document.body, { folder: "svg", ext: ".svg" });
     }
 
+    // Reconciles the single #threadList container to whichever of
+    // Active/Solved is the current tab (Recall has its own render path,
+    // renderRecallList(), and never calls this). See
+    // PATTERNS-bulk-list-operations.md for why "checked" stays out of
+    // itemRenderKey() above — that's what keeps Select All on a big list
+    // from freezing the tab, independent of this function.
     function renderLists() {
-      activeCount.textContent = activeThreads.length;
-      solvedCount.textContent = solvedThreads.length;
-      const activeSelectAll = document.getElementById("activeSelectAll");
-      const solvedSelectAll = document.getElementById("solvedSelectAll");
-      activeSelectAll.style.display = selectMode ? "inline-block" : "none";
-      solvedSelectAll.style.display = selectMode ? "inline-block" : "none";
-      activeSelectAll.checked = selectMode && activeThreads.length > 0 && activeThreads.every((t) => checkedThreadIds.has(t.id));
-      solvedSelectAll.checked = selectMode && solvedThreads.length > 0 && solvedThreads.every((t) => checkedThreadIds.has(t.id));
+      renderTabs();   // keeps the Active/Solved pill counts current on every data refresh, not just on tab switches
+      renderHeader();
+      const items = currentItems();
       const touchedEls = [];
 
       // Empty state is placeholder DOM, not a data item — handled outside
       // renderedItemEls (see sidebar-diffed-rendering.md §3.4).
-      let activeEmptyEl = activeList.querySelector(".threads-empty");
-      if (!activeThreads.length) {
-        if (!activeEmptyEl) activeList.innerHTML = '<div class="threads-empty">No active threads.<br/>Submit a form to start one.</div>';
+      let emptyEl = threadList.querySelector(".threads-empty");
+      if (!items.length) {
+        if (!emptyEl) {
+          threadList.innerHTML = currentTab === "active"
+            ? '<div class="threads-empty">No active threads.<br/>Submit a form to start one.</div>'
+            : '<div class="threads-empty">No solved threads yet.</div>';
+        }
       } else {
-        if (activeEmptyEl) activeEmptyEl.remove();
-        reconcileSection(activeList, activeThreads, touchedEls);
+        if (emptyEl) emptyEl.remove();
+        reconcileSection(threadList, items, touchedEls);
       }
-      reconcileSection(solvedList, solvedThreads, touchedEls);
 
-      // Sweep any node whose thread no longer exists in either list
-      // (deleted, or filtered out by the current search term).
-      const currentIds = new Set([...activeThreads, ...solvedThreads].map((t) => t.id));
+      // Sweep any node whose thread isn't in the tab currently showing —
+      // covers real deletions/search-filtering, and also "this used to be
+      // the other tab's row" when switchTab() just ran (switching tabs is
+      // an infrequent, deliberate action, so paying for a rebuild of the
+      // destination tab here is fine — this isn't the hot path the
+      // reconciler is protecting against, that's Select All/bulk-toggle
+      // *within* the tab you're already looking at).
+      const currentIds = new Set(items.map((t) => t.id));
       for (const [id, entry] of renderedItemEls) {
         if (!currentIds.has(id)) {
           entry.el.remove();
