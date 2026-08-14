@@ -43,7 +43,7 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
 <link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;600&display=swap" onload="this.onload=null;this.rel='stylesheet'" />
 <noscript><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;600&display=swap" /></noscript>
-<link rel="stylesheet" href="/assets/style.css?v=0b63d764" />
+<link rel="stylesheet" href="/assets/style.css?v=4102c368" />
 <script src="/assets/theme.js?v=5b27e630"></script>
 <script src="/assets/starfield.js?v=b6e92821" defer></script>
 <script src="/assets/authguard.js?v=9dba9c0c"></script>
@@ -281,12 +281,21 @@
 
     // Renders straight into the shared #threadList container — same one
     // Active/Solved use — since only one of the three is ever visible at
-    // a time now (see switchTab). Deliberately NOT run through
-    // reconcileSection: this list is a low-frequency audit log, not a
-    // live queue agents are bulk-acting on, so the "only rebuild what
-    // changed" machinery in PATTERNS-bulk-list-operations.md buys
-    // nothing here that a plain innerHTML replace doesn't already give.
+    // a time now (see switchTab). Deliberately NOT run through the
+    // virtualized renderer above: this list is a low-frequency audit
+    // log, not a live queue agents are bulk-acting on and not something
+    // that grows into the thousands, so a plain innerHTML replace is
+    // simpler and gives up nothing worth having here.
     function renderRecallList() {
+      // Both branches below replace #threadList's entire innerHTML,
+      // which destroys the virtualized-list scaffold's sizer element
+      // (see renderVirtualList/ensureVirtualScaffold above) without
+      // telling it — if `sizerEl` still pointed at that now-detached
+      // node, switching back to Active/Solved afterward would silently
+      // stop updating the *real* scroll height (rows would still
+      // render, but the scrollbar/scroll math would be wrong). Resetting
+      // it here forces a clean rebuild next time this tab has items.
+      sizerEl = null;
       if (!recallEntries.length) {
         threadList.innerHTML = '<div class="threads-empty">No deletions logged yet.</div>';
         return;
@@ -447,43 +456,117 @@
       }
     }
 
-    // Syncs one section container (activeList/solvedList) to match `items`.
-    // touchedEls collects nodes that were actually (re)built this pass, so
-    // callers can scope follow-up work (e.g. emoji parsing) to just those.
-    function reconcileSection(container, items, touchedEls) {
-      let prevEl = null;
-      items.forEach((item) => {
+    // ---- Virtualized list rendering ---------------------------------
+    // Replaces the old reconcileSection(), which built a real DOM node
+    // for every single item every time — fine for Active (usually a
+    // handful of threads) but the actual cost behind "clicking Solved
+    // (1600+ threads) is laggy every time", including after a full page
+    // reload (Home → back into Threads), where the renderedItemEls
+    // cache from a previous tab-switch has nothing to reuse anyway.
+    //
+    // The fix: only the rows physically inside (plus a small overscan
+    // buffer around) #threadList's visible viewport ever become real
+    // DOM nodes. Everything else exists purely as `items[i]` — a single
+    // absolutely-positioned "sizer" element gives #threadList the
+    // correct total scrollHeight so the scrollbar/scrolling feel exactly
+    // like a normal list, and each visible row is positioned with an
+    // explicit `top: i * ROW_HEIGHT` instead of relying on normal
+    // document flow. This means opening a 1600-thread tab costs the same
+    // ~20-30 DOM nodes as opening a 1-thread tab — the 1600 only affects
+    // the sizer's height (one number), never how many nodes get built.
+    let ROW_HEIGHT = 74;         // best estimate; self-corrects once below, see rowHeightCalibrated
+    let rowHeightCalibrated = false;
+    const OVERSCAN_ROWS = 8;     // extra rows rendered just outside the viewport so fast scrolling doesn't show blank gaps for a frame
+    let sizerEl = null;          // the element whose height makes #threadList's scrollbar correct; null whenever the scaffold needs rebuilding
+    let currentVirtualItems = []; // the array the scroll listener re-renders against — always the tab's items array from the most recent renderVirtualList() call
+
+    function ensureVirtualScaffold() {
+      if (sizerEl) return;
+      threadList.innerHTML = "";
+      sizerEl = document.createElement("div");
+      sizerEl.setAttribute("aria-hidden", "true");
+      sizerEl.style.cssText = "position:absolute;top:0;left:0;width:1px;pointer-events:none;visibility:hidden;";
+      threadList.appendChild(sizerEl);
+    }
+
+    function renderVirtualList(items) {
+      currentVirtualItems = items;
+      ensureVirtualScaffold();
+      renderVirtualWindow();
+    }
+
+    let virtualRafPending = false;
+    function scheduleVirtualWindowRender() {
+      if (virtualRafPending) return;
+      virtualRafPending = true;
+      requestAnimationFrame(() => { virtualRafPending = false; renderVirtualWindow(); });
+    }
+
+    function renderVirtualWindow() {
+      const items = currentVirtualItems;
+      if (!items.length || !sizerEl) return;
+      sizerEl.style.height = (items.length * ROW_HEIGHT) + "px";
+
+      const scrollTop = threadList.scrollTop;
+      const viewportH = threadList.clientHeight || 500;
+      let start = Math.floor(scrollTop / ROW_HEIGHT) - OVERSCAN_ROWS;
+      let end = Math.ceil((scrollTop + viewportH) / ROW_HEIGHT) + OVERSCAN_ROWS;
+      start = Math.max(0, start);
+      end = Math.min(items.length, end);
+
+      const touchedEls = [];
+      const windowIds = new Set();
+
+      for (let i = start; i < end; i++) {
+        const item = items[i];
+        windowIds.add(item.id);
         const key = itemRenderKey(item);
         let entry = renderedItemEls.get(item.id);
         if (!entry || entry.key !== key) {
-          // Detach the stale node BEFORE swapping the Map pointer to the
-          // new one. Without this, the old element (still physically in
-          // the DOM wherever it was last positioned) loses its only
-          // reference the moment the Map entry is overwritten — it's no
-          // longer reachable by the cleanup sweep below (which only walks
-          // *current* Map entries), so it never gets removed. It just sits
-          // there as a permanent duplicate row. This bites hardest on
-          // threads that update often (new replies bump replyCount /
-          // lastActivity, which are in the fingerprint), so busy tickets
-          // pile up ghost copies the fastest — exactly what a growing
-          // "same TID shows up N times" list looks like.
-          if (entry) entry.el.remove();
+          if (entry && entry.el.parentNode) entry.el.remove();
           entry = { el: renderItem(item), key };
+          entry.el.style.position = "absolute";
+          entry.el.style.left = "0";
+          entry.el.style.right = "0";
           renderedItemEls.set(item.id, entry);
           touchedEls.push(entry.el);
         }
+        entry.el.style.top = (i * ROW_HEIGHT) + "px"; // every row's top, reused or not — its index can shift even when its own data didn't change (e.g. a new thread landed above it)
         syncCheckedState(entry, item);
-        // Wanted position: right after the previously-placed node. If it's
-        // already there, insertBefore is a no-op; if not (new row, or the
-        // row moved sections/order), it actually relocates the existing
-        // node — no destroy+recreate, event listeners stay intact.
-        const wantPos = prevEl ? prevEl.nextSibling : container.firstChild;
-        if (entry.el.parentNode !== container || entry.el !== wantPos) {
-          container.insertBefore(entry.el, wantPos); // auto-detaches from old parent if it was in the other section
+        if (entry.el.parentNode !== threadList) threadList.appendChild(entry.el);
+      }
+
+      // Detach anything that scrolled out of the window (or belonged to
+      // a tab switched away from) this pass. Left IN renderedItemEls —
+      // scrolling back, or switching tabs back, finds the cached
+      // { el, key } and reuses it outright instead of rebuilding, same
+      // principle as everywhere else in this file.
+      for (const [id, entry] of renderedItemEls) {
+        if (windowIds.has(id)) continue;
+        if (entry.el.parentNode === threadList) entry.el.remove();
+      }
+
+      // ROW_HEIGHT above is an estimate — self-correct once against a
+      // real rendered row's actual height rather than trusting the
+      // guess forever. Wrong height wouldn't break anything critical,
+      // just show visible gaps or slight overlap between cards, so this
+      // runs once and re-renders with the corrected number.
+      if (!rowHeightCalibrated && touchedEls.length) {
+        rowHeightCalibrated = true;
+        const measured = Math.round(touchedEls[0].getBoundingClientRect().height) + 8; // +8 = the visual gap the old flex `gap` used to provide
+        if (measured > 20 && Math.abs(measured - ROW_HEIGHT) > 4) {
+          ROW_HEIGHT = measured;
+          renderVirtualWindow();
+          return;
         }
-        prevEl = entry.el;
-      });
+      }
+
+      if (touchedEls.length) polishEmoji(threadList);
     }
+
+    threadList.addEventListener("scroll", scheduleVirtualWindowRender, { passive: true });
+
+
 
     function renderItem(t) {
       const el = document.createElement("div");
@@ -746,56 +829,43 @@
     // renderRecallList(), and never calls this). See
     // PATTERNS-bulk-list-operations.md for why "checked" stays out of
     // itemRenderKey() above — that's what keeps Select All on a big list
-    // from freezing the tab, independent of this function.
+    // from freezing the tab, independent of this function. Actual row
+    // building now happens through renderVirtualList() (see above) —
+    // only the visible window ever becomes real DOM, regardless of how
+    // many thousand threads are in `items`.
     function renderLists() {
       renderTabs();   // keeps the Active/Solved pill counts current on every data refresh, not just on tab switches
       renderHeader();
       const items = currentItems();
-      const touchedEls = [];
 
       // Empty state is placeholder DOM, not a data item — handled outside
       // renderedItemEls (see sidebar-diffed-rendering.md §3.4).
-      let emptyEl = threadList.querySelector(".threads-empty");
+      const emptyEl = threadList.querySelector(".threads-empty");
       if (!items.length) {
         if (!emptyEl) {
           threadList.innerHTML = currentTab === "active"
             ? '<div class="threads-empty">No active threads.<br/>Submit a form to start one.</div>'
             : '<div class="threads-empty">No solved threads yet.</div>';
+          sizerEl = null; // the innerHTML assignment above just destroyed the virtual scaffold, if one existed — forces a clean rebuild next time this tab has items again
         }
       } else {
         if (emptyEl) emptyEl.remove();
-        reconcileSection(threadList, items, touchedEls);
+        renderVirtualList(items);
       }
 
-      // Detach (don't delete) nodes for threads that aren't on THIS tab
-      // but still exist on the other one — e.g. switching from Active to
-      // a 1600+-thread Solved tab used to mean *every single row* got
-      // rebuilt from scratch on every visit, because the previous
-      // sweep unconditionally deleted the Map entry the moment a thread
-      // wasn't in the tab currently showing. That's the "clicking Solved
-      // is slow every time" complaint — 1600 fresh DOM nodes, fresh
-      // event listeners, fresh emoji parsing, on every single click.
-      // Now: only threads that are genuinely gone (deleted, or filtered
-      // out by search) get their Map entry removed. A thread that's just
-      // "on the other tab right now" keeps its cached { el, key } —
-      // detached from the DOM (so it costs nothing while not visible)
-      // but still in renderedItemEls, so reconcileSection() recognizes
-      // it next time this tab is revisited and reuses the node outright
-      // (skips rebuild entirely, unless the thread's own data actually
-      // changed in the meantime, in which case the key mismatch catches
-      // that correctly same as always). First visit to a huge Solved
-      // list is still a real cost — that part's unavoidable without
-      // pagination/virtualization — but every visit after the first is
-      // now near-instant.
-      const currentIds = new Set(items.map((t) => t.id));
+      // Fully forget threads that don't exist ANYWHERE anymore (deleted,
+      // or filtered out by search) — keeps renderedItemEls from growing
+      // forever over a long session. Threads that still exist but are
+      // just scrolled out of view, or on the other tab right now, are
+      // left alone here — see renderVirtualWindow(), which only detaches
+      // those (never deletes), which is what makes scrolling back or
+      // switching tabs back a cache hit instead of a rebuild.
       const allKnownIds = new Set([...activeThreads, ...solvedThreads].map((t) => t.id));
       for (const [id, entry] of renderedItemEls) {
-        if (currentIds.has(id)) continue;
-        entry.el.remove(); // always detach — it shouldn't be sitting in the DOM for a tab it's not part of
-        if (!allKnownIds.has(id)) renderedItemEls.delete(id); // only truly forget it if it's gone everywhere
+        if (allKnownIds.has(id)) continue;
+        entry.el.remove();
+        renderedItemEls.delete(id);
       }
-
-      touchedEls.forEach((el) => polishEmoji(el));
     }
 
     async function loadList(q) {

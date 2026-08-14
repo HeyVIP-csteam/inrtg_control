@@ -912,6 +912,23 @@ body.hub-page .topbar { flex-shrink: 0; }
   flex: 1;
   min-height: 0;
 }
+/* Auto-hide the persistent ISSUE SUBMISSION nav sidebar while Threads
+   is open, but ONLY below this width. Threads already brings its own
+   440px sidebar; stacked with this one's 290px, a narrower/half window
+   leaves barely any room for the actual conversation pane (business
+   owner's real complaint — a half-width browser window made the chat
+   itself unreadably narrow). At full window width there's plenty of
+   room for all three columns, so the nav stays put there — this is a
+   width-triggered collapse, not "always hide on Threads". 1300px is
+   comfortably below a full 1920px window but above a genuine half-split
+   of one, so a half-screen window reliably falls under it while a
+   maximized window doesn't. data-view="threads" (set in spa-shell.js's
+   mount()) scopes this to Threads specifically — announcements.html is
+   also spa-fullbleed but doesn't have this 3-column space problem, so
+   it keeps its nav regardless of width. */
+@media (max-width: 1300px) {
+  body:has(#spaMount[data-view="threads"]) .sidebar { display: none; }
+}
 .status-badge-corner {
   display: inline-flex;
   margin-top: 14px;
@@ -1122,9 +1139,9 @@ body.hub-page .topbar { flex-shrink: 0; }
   flex-shrink: 0;
   border-right: 1px solid var(--panel-border);
   padding: 18px 14px 0;
-  overflow-y: auto;
   display: flex;
   flex-direction: column;
+  min-height: 0;
 }
 .threads-search {
   display: flex; align-items: center; gap: 8px;
@@ -1228,7 +1245,10 @@ body.hub-page .topbar { flex-shrink: 0; }
 
 .threads-empty { font-size: 12px; color: var(--ink-soft); text-align: center; padding: 24px 10px; }
 .thread-list {
-  display: flex; flex-direction: column; gap: 8px;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  position: relative;
   padding: 0 0 6px;
 }
 

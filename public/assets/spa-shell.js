@@ -167,6 +167,7 @@
       currentView = "home";
       mountEl.style.display = "none";
       mountEl.classList.remove("spa-mounted", "spa-fullbleed");
+      mountEl.removeAttribute("data-view");
       mountEl.innerHTML = "";
       homeEl.style.display = "";
       if (pushUrl) history.pushState({ view: "home" }, "", SHELL_PATH);
@@ -178,6 +179,12 @@
     mountEl.classList.add("spa-mounted");
     const cfg = ROUTES[view];
     mountEl.classList.toggle("spa-fullbleed", !!cfg.fullBleed);
+    // Which exact view is mounted (not just "is it fullBleed") — needed
+    // so CSS can single out just threads (e.g. auto-collapsing the
+    // persistent ISSUE SUBMISSION sidebar on narrower windows) without
+    // also catching announcements, the other fullBleed route, which
+    // doesn't have the same "not enough width for a 3rd column" problem.
+    mountEl.setAttribute("data-view", view);
     mountEl.innerHTML = '<div class="spa-loading" style="padding:40px; text-align:center; color:var(--ink-soft);">Loading…</div>';
 
     const docPromise = getDoc(view);
