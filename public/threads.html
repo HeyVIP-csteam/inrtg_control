@@ -43,7 +43,7 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
 <link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;600&display=swap" onload="this.onload=null;this.rel='stylesheet'" />
 <noscript><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;600&display=swap" /></noscript>
-<link rel="stylesheet" href="/assets/style.css?v=756598a9" />
+<link rel="stylesheet" href="/assets/style.css?v=0b63d764" />
 <script src="/assets/theme.js?v=5b27e630"></script>
 <script src="/assets/starfield.js?v=b6e92821" defer></script>
 <script src="/assets/authguard.js?v=9dba9c0c"></script>
@@ -767,19 +767,32 @@
         reconcileSection(threadList, items, touchedEls);
       }
 
-      // Sweep any node whose thread isn't in the tab currently showing —
-      // covers real deletions/search-filtering, and also "this used to be
-      // the other tab's row" when switchTab() just ran (switching tabs is
-      // an infrequent, deliberate action, so paying for a rebuild of the
-      // destination tab here is fine — this isn't the hot path the
-      // reconciler is protecting against, that's Select All/bulk-toggle
-      // *within* the tab you're already looking at).
+      // Detach (don't delete) nodes for threads that aren't on THIS tab
+      // but still exist on the other one — e.g. switching from Active to
+      // a 1600+-thread Solved tab used to mean *every single row* got
+      // rebuilt from scratch on every visit, because the previous
+      // sweep unconditionally deleted the Map entry the moment a thread
+      // wasn't in the tab currently showing. That's the "clicking Solved
+      // is slow every time" complaint — 1600 fresh DOM nodes, fresh
+      // event listeners, fresh emoji parsing, on every single click.
+      // Now: only threads that are genuinely gone (deleted, or filtered
+      // out by search) get their Map entry removed. A thread that's just
+      // "on the other tab right now" keeps its cached { el, key } —
+      // detached from the DOM (so it costs nothing while not visible)
+      // but still in renderedItemEls, so reconcileSection() recognizes
+      // it next time this tab is revisited and reuses the node outright
+      // (skips rebuild entirely, unless the thread's own data actually
+      // changed in the meantime, in which case the key mismatch catches
+      // that correctly same as always). First visit to a huge Solved
+      // list is still a real cost — that part's unavoidable without
+      // pagination/virtualization — but every visit after the first is
+      // now near-instant.
       const currentIds = new Set(items.map((t) => t.id));
+      const allKnownIds = new Set([...activeThreads, ...solvedThreads].map((t) => t.id));
       for (const [id, entry] of renderedItemEls) {
-        if (!currentIds.has(id)) {
-          entry.el.remove();
-          renderedItemEls.delete(id);
-        }
+        if (currentIds.has(id)) continue;
+        entry.el.remove(); // always detach — it shouldn't be sitting in the DOM for a tab it's not part of
+        if (!allKnownIds.has(id)) renderedItemEls.delete(id); // only truly forget it if it's gone everywhere
       }
 
       touchedEls.forEach((el) => polishEmoji(el));
@@ -1007,11 +1020,11 @@
     function renderDetail() {
       const t = selectedThread;
       if (!t) return;
+      lastRenderedThreadFingerprint = threadContentFingerprint(t); // this IS the on-screen state now — keeps the very next poll's comparison honest
       main.innerHTML = `
         <div class="thread-top-fixed" id="threadTopFixed">${buildHeaderHTML(t)}</div>
         <div class="thread-scroll-area" id="threadScrollArea">${buildSummaryHTML(t)}${buildConversationHTML(t)}</div>
-        <div class="thread-reply-fixed">
-          <div id="replyTargetBanner"></div>
+        <div class="thread-reply-fixed">          <div id="replyTargetBanner"></div>
           <div class="reply-attach-preview" id="replyAttachPreview"></div>
           <div class="reply-box">
             <div class="reply-input-wrap">
@@ -1055,7 +1068,37 @@
     // send, edit, recall). Only touches the top info block and the
     // conversation; the reply box (and whatever the agent is mid-typing)
     // is never rebuilt, so focus/cursor/draft text all survive.
+    //
+    // BUT: until this fingerprint check was added, it still did a full
+    // `innerHTML = ...` rebuild of the header + every message on EVERY
+    // poll — even the (overwhelming majority of) polls where the server
+    // returned back the exact same thread. That's the same "tear down
+    // and recreate everything" anti-pattern PATTERNS-bulk-list-
+    // operations.md covers for the sidebar list, just here it's the
+    // conversation pane: rebuilding nodes that didn't actually change
+    // makes twemoji re-parse (swaps emoji for fresh <img> tags) and
+    // inline attachments re-fetch on a stable 6-second heartbeat, which
+    // is what reads as the page "moving" every few seconds even while
+    // someone's mid-typing a reply — the reply box itself was never
+    // touched, but everything visually around it kept flickering for no
+    // reason. Comparing a cheap fingerprint of the incoming data against
+    // what's already on screen, and bailing out before touching the DOM
+    // at all when nothing changed, is the fix — same principle as
+    // itemRenderKey() upstream, just one level deeper (per-thread
+    // instead of per-row).
+    let lastRenderedThreadFingerprint = null;
+    function threadContentFingerprint(t) {
+      // Deliberately the whole object, not a hand-picked field list —
+      // cheap (a single ticket's JSON is tiny next to a DOM rebuild +
+      // emoji re-parse) and can't silently miss a field that later turns
+      // out to affect rendering, the way a curated list of "the fields
+      // that matter" eventually would.
+      return t ? JSON.stringify(t) : "";
+    }
     function updateThreadContent(t, forceScroll) {
+      const fingerprint = threadContentFingerprint(t);
+      if (!forceScroll && fingerprint === lastRenderedThreadFingerprint) return; // nothing actually changed — don't touch the DOM at all
+      lastRenderedThreadFingerprint = fingerprint;
       const topFixed = document.getElementById("threadTopFixed");
       const scrollArea = document.getElementById("threadScrollArea");
       if (!topFixed || !scrollArea) { renderDetail(); return; }

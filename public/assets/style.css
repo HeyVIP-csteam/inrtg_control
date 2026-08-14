@@ -1118,7 +1118,7 @@ body.hub-page .topbar { flex-shrink: 0; }
 /* ---- TG Reply Threads ---- */
 .threads-shell { display: flex; height: calc(100vh - 61px); }
 .threads-sidebar {
-  width: 380px;
+  width: 440px;
   flex-shrink: 0;
   border-right: 1px solid var(--panel-border);
   padding: 18px 14px 0;
@@ -1146,8 +1146,9 @@ body.hub-page .topbar { flex-shrink: 0; }
 .threads-tabs { display: flex; gap: 8px; margin-bottom: 14px; }
 .threads-tab {
   flex: 1; display: flex; align-items: center; justify-content: center; gap: 7px;
-  padding: 10px 10px; border-radius: 14px;
+  padding: 10px 8px; border-radius: 14px;
   font-family: var(--font-display); font-weight: 700; font-size: 12.5px;
+  white-space: nowrap;
   border: 1px solid var(--panel-border); background: var(--sidebar-item-bg);
   color: var(--ink-soft); cursor: pointer; user-select: none;
 }
@@ -1155,17 +1156,47 @@ body.hub-page .topbar { flex-shrink: 0; }
   width: 18px; height: 18px; border-radius: 6px;
   display: flex; align-items: center; justify-content: center; font-size: 10px;
   background: rgba(255, 255, 255, 0.06);
+  flex-shrink: 0;
 }
-.threads-tab.active {
-  background: linear-gradient(135deg, #1c63e0 0%, #2ea8f2 100%);
-  border-color: transparent; color: #fff;
-}
-.threads-tab.active .dot { background: rgba(255, 255, 255, 0.22); }
-.threads-tab.recall:not(.active) .dot { background: rgba(239, 68, 68, 0.16); color: #f87171; }
 .threads-tab .tab-count {
   font-size: 10.5px; font-weight: 800; padding: 1px 7px; border-radius: 999px;
   background: rgba(255, 255, 255, 0.06); color: var(--ink-soft);
 }
+
+/* Resting color per tab identity — Active orange, Solved green, Recall
+   red — so the three read as distinct at rest, not just as generic gray
+   buttons. Whichever one is actually selected overrides all of this
+   with the blue "active" style below (that always wins, regardless of
+   which tab it is), so color here only shows up on the two tabs you're
+   NOT currently looking at. */
+.threads-tab[data-tab="active"]:not(.active) {
+  background: rgba(251, 146, 60, 0.14); color: #fb923c; border-color: transparent;
+}
+.threads-tab[data-tab="active"]:not(.active) .dot { background: rgba(251, 146, 60, 0.22); }
+.threads-tab[data-tab="active"]:not(.active) .tab-count { background: rgba(251, 146, 60, 0.2); color: #fb923c; }
+
+.threads-tab[data-tab="solved"]:not(.active) {
+  background: rgba(52, 211, 153, 0.14); color: #34d399; border-color: transparent;
+}
+.threads-tab[data-tab="solved"]:not(.active) .dot { background: rgba(52, 211, 153, 0.22); }
+.threads-tab[data-tab="solved"]:not(.active) .tab-count { background: rgba(52, 211, 153, 0.2); color: #34d399; }
+
+.threads-tab[data-tab="recall"]:not(.active) {
+  background: rgba(239, 68, 68, 0.14); color: #f87171; border-color: transparent;
+}
+.threads-tab[data-tab="recall"]:not(.active) .dot { background: rgba(239, 68, 68, 0.22); }
+.threads-tab[data-tab="recall"]:not(.active) .tab-count { background: rgba(239, 68, 68, 0.2); color: #f87171; }
+
+/* Selected tab — always blue, regardless of which of the three it is.
+   Comes after the per-identity rules above so it wins on specificity
+   order for the one case both could apply to (impossible in practice
+   since :not(.active) above already excludes it, but kept last for
+   clarity — this block is the "you are here" state, not a topic color). */
+.threads-tab.active {
+  background: linear-gradient(135deg, #1c63e0 0%, #2ea8f2 100%);
+  border-color: transparent; color: #fff;
+}
+.threads-tab.active .dot { background: rgba(255, 255, 255, 0.22); color: #fff; }
 .threads-tab.active .tab-count { background: rgba(255, 255, 255, 0.2); color: #fff; }
 
 .threads-header { display: flex; align-items: center; gap: 10px; padding: 2px 2px 14px; }
