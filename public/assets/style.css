@@ -1169,7 +1169,7 @@ body.hub-page .topbar { flex-shrink: 0; }
 .threads-search {
   display: flex; align-items: center; gap: 8px;
   background: var(--field-bg); border: 1.5px solid var(--border);
-  border-radius: 12px; padding: 9px 12px; margin-bottom: 14px;
+  border-radius: 12px; padding: 9px 12px; margin-bottom: 10px;
 }
 .threads-search input {
   flex: 1; border: none; background: none; outline: none;
@@ -1241,13 +1241,13 @@ body.hub-page .topbar { flex-shrink: 0; }
 
 .threads-header {
   display: flex; align-items: flex-start; gap: 10px;
-  padding: 12px; margin-bottom: 14px;
+  padding: 9px 10px; margin-bottom: 10px;
   background: var(--sidebar-item-bg); border: 1px solid var(--panel-border); border-radius: 14px;
 }
 .threads-header .bubble-icon {
-  width: 34px; height: 34px; border-radius: 10px; flex-shrink: 0;
+  width: 30px; height: 30px; border-radius: 9px; flex-shrink: 0;
   background: rgba(56, 189, 248, 0.14); color: #38bdf8;
-  display: flex; align-items: center; justify-content: center; font-size: 15px;
+  display: flex; align-items: center; justify-content: center; font-size: 14px;
 }
 .threads-header .text { flex: 1; min-width: 0; }
 .threads-header .title { font-family: var(--font-display); font-weight: 700; font-size: 14.5px; color: var(--ink); }
@@ -1312,13 +1312,13 @@ body.hub-page .topbar { flex-shrink: 0; }
 
 .thread-item {
   display: flex; align-items: flex-start; gap: 12px;
-  padding: 11px; border-radius: 14px;
+  padding: 9px; border-radius: 14px;
   border: 1px solid transparent;
   cursor: pointer;
   background: var(--sidebar-item-bg);
   transition: background 0.15s ease, border-color 0.15s ease;
   content-visibility: auto;
-  contain-intrinsic-size: 0 66px;
+  contain-intrinsic-size: 0 60px;
 }
 .thread-item:hover { background: var(--sidebar-item-hover); }
 .thread-item.selected { background: var(--sidebar-item-hover); border-color: var(--thread-accent, var(--accent-gold)); }

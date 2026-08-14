@@ -43,7 +43,7 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
 <link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;600&display=swap" onload="this.onload=null;this.rel='stylesheet'" />
 <noscript><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;600&display=swap" /></noscript>
-<link rel="stylesheet" href="/assets/style.css?v=53f5d5bf" />
+<link rel="stylesheet" href="/assets/style.css?v=63a5348a" />
 <script src="/assets/theme.js?v=5b27e630"></script>
 <script src="/assets/starfield.js?v=b6e92821" defer></script>
 <script src="/assets/authguard.js?v=9dba9c0c"></script>
@@ -488,8 +488,8 @@
     // row's on-screen size a deterministic constant instead of something
     // dependent on measurement timing, so there's nothing left to get
     // out of sync.
-    const CARD_HEIGHT = 66; // .thread-item's own content (icon/text) comfortably fits within this — padding(11*2) + max(icon 36, two lines of text ~33) ≈ 58, plus a few px of breathing room
-    const ROW_GAP = 8;      // visual gap between cards, replaces the old flex `gap` (absolutely-positioned rows don't get flex gap for free)
+    const CARD_HEIGHT = 60; // .thread-item's own content (icon/text) comfortably fits within this — padding(9*2) + max(icon 36, two lines of text ~33) ≈ 54, plus a few px of breathing room
+    const ROW_GAP = 6;      // visual gap between cards, replaces the old flex `gap` (absolutely-positioned rows don't get flex gap for free)
     const ROW_HEIGHT = CARD_HEIGHT + ROW_GAP;
     const OVERSCAN_ROWS = 8; // extra rows rendered just outside the viewport so fast scrolling doesn't show blank gaps for a frame
     let sizerEl = null;          // the element whose height makes #threadList's scrollbar correct; null whenever the scaffold needs rebuilding
