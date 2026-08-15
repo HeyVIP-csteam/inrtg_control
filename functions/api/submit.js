@@ -9,7 +9,6 @@ import { createThread } from "../_shared/threads.js";
 import { verifyRequest, canSeeBrand, canSeeModule } from "../_shared/accounts.js";
 import { getRouteOverride } from "../_shared/routes.js";
 import { compressImageForTelegram } from "../_shared/telegramImageCompress.js";
-import { getIssueSheetOverride, resolveWriteTab, promotionModuleId } from "../_shared/issueSubmissionSheets.js";
 
 const VALID_MODULES = Object.keys(MODULE_META);
 
@@ -202,41 +201,21 @@ async function handleSubmit({ request, env }) {
   const sheetAttempted = moduleId === "promotion_request"
     ? !!(RECORD_TO_SHEET[moduleId] && promoConfig)
     : !!(RECORD_TO_SHEET[moduleId] && brand.sheetId);
-
-  // Live-editable sheet/tab (Integration Portal → Issue Submission Gsheet
-  // admin page) takes priority over the hardcoded routing.js default —
-  // see _shared/issueSubmissionSheets.js. Only ever affects WHERE a row
-  // is written (sheetId + tab); startColumn/columns below always stay the
-  // hardcoded ones, since an overridden sheet is still assumed to have
-  // the same column layout as the original. Empty/unset KV means every
-  // module writes exactly where it always has.
-  const issueSheetOverride = sheetAttempted
-    ? await getIssueSheetOverride(env, brandId, moduleId === "promotion_request" ? promotionModuleId(fieldMap.promotion) : moduleId)
-    : null;
-
   if (sheetAttempted) {
     try {
       if (moduleId === "promotion_request") {
-        const effectiveSheetId = issueSheetOverride?.sheetId || promoConfig.sheetId;
-        const effectiveTab = issueSheetOverride
-          ? (await resolveWriteTab(env, effectiveSheetId, issueSheetOverride.tabNames)) || promoConfig.tab
-          : promoConfig.tab;
         const values = resolveColumnValues(promoConfig.columns, { fieldMap, brand, reporter, screenshotLink, attachmentLinks });
-        const { row } = await appendRowByColumns(env, effectiveSheetId, effectiveTab, promoConfig.startColumn, values);
-        if (row) sheetRef = { sheetId: effectiveSheetId, tab: effectiveTab, startColumn: promoConfig.startColumn, columns: promoConfig.columns, row };
+        const { row } = await appendRowByColumns(env, promoConfig.sheetId, promoConfig.tab, promoConfig.startColumn, values);
+        if (row) sheetRef = { sheetId: promoConfig.sheetId, tab: promoConfig.tab, startColumn: promoConfig.startColumn, columns: promoConfig.columns, row };
       } else {
         const layoutEntry = SHEET_LAYOUT[moduleId];
-        const effectiveSheetId = issueSheetOverride?.sheetId || brand.sheetId;
         if (layoutEntry && layoutEntry.pairByDate) {
-          const effectiveTab = issueSheetOverride
-            ? (await resolveWriteTab(env, effectiveSheetId, issueSheetOverride.tabNames)) || layoutEntry.tab
-            : layoutEntry.tab;
           const values = resolveColumnValues(layoutEntry.columns, { fieldMap, brand, reporter, screenshotLink, attachmentLinks });
           const dateValue = formatDateDDMMYYYY(fieldMap.reportDate || fieldMap.date);
           const shiftValue = fieldMap[layoutEntry.selectorField];
           const activeSide = shiftValue === layoutEntry.rightBlock.shiftValue ? "right" : "left";
           const activeBlock = activeSide === "right" ? layoutEntry.rightBlock : layoutEntry.leftBlock;
-          const { row } = await writeRowForDate(env, effectiveSheetId, effectiveTab, {
+          const { row } = await writeRowForDate(env, brand.sheetId, layoutEntry.tab, {
             leftBlock: layoutEntry.leftBlock,
             rightBlock: layoutEntry.rightBlock,
             activeSide,
@@ -250,16 +229,13 @@ async function handleSubmit({ request, env }) {
           // `startColumn` is fixed to THIS shift's own block, so a later
           // editDetails() on this specific ticket only ever touches this
           // shift's own columns — never the other shift's half of the row.
-          if (row) sheetRef = { sheetId: effectiveSheetId, tab: effectiveTab, startColumn: activeBlock.startColumn, columns: layoutEntry.columns, row };
+          if (row) sheetRef = { sheetId: brand.sheetId, tab: layoutEntry.tab, startColumn: activeBlock.startColumn, columns: layoutEntry.columns, row };
         } else {
           const layout = resolveSheetLayout(layoutEntry, fieldMap);
           if (layout) {
-            const effectiveTab = issueSheetOverride
-              ? (await resolveWriteTab(env, effectiveSheetId, issueSheetOverride.tabNames)) || layout.tab
-              : layout.tab;
             const values = resolveColumnValues(layout.columns, { fieldMap, brand, reporter, screenshotLink, attachmentLinks });
-            const { row } = await appendRowByColumns(env, effectiveSheetId, effectiveTab, layout.startColumn, values);
-            if (row) sheetRef = { sheetId: effectiveSheetId, tab: effectiveTab, startColumn: layout.startColumn, columns: layout.columns, row };
+            const { row } = await appendRowByColumns(env, brand.sheetId, layout.tab, layout.startColumn, values);
+            if (row) sheetRef = { sheetId: brand.sheetId, tab: layout.tab, startColumn: layout.startColumn, columns: layout.columns, row };
           } else {
             const row = {
               timestamp,

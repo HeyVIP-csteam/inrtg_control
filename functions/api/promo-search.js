@@ -23,40 +23,40 @@
  */
 import { batchGetValues, getSheetTabTitles } from "../_shared/googleSheets.js";
 import { verifyRequest } from "../_shared/accounts.js";
-import { PROMO_CODE_SHEET_DEFAULT, getPromoCodeSheetOverride } from "../_shared/promoCodeSheetOverride.js";
 
-const RANGE = "A2:N1000";
+const PROMO_CODE_SHEET = {
+  sheetId: "1VYKwdGyoa5qxCScHWyKrYPQYvQPl8igrBzK1mk2RT98",
+  range: "A2:N1000",
+  tabs: [
+    "Welcome Call Team",
+    "Retention team (Outsource)",
+    "Retention Team (BDT)",
+    "Retention Team (PKR)",
+    "Retention Team (INR)",
+    "Retention Team (PHP)",
+    "Retention Team FT & TIRESIAS (BDT)",
+    "Retention Team (VND)",
+    "Retention Team (NPR)",
+    "LIVE Streaming",
+    "FB Ads (BDT)",
+  ],
+};
 
-function sheetEditUrl(sheetId) {
-  return `https://docs.google.com/spreadsheets/d/${sheetId}/edit`;
+function sheetEditUrl() {
+  return `https://docs.google.com/spreadsheets/d/${PROMO_CODE_SHEET.sheetId}/edit`;
 }
 
 // Real tab titles rarely change, so cache them for a few minutes per Worker
-// isolate instead of re-fetching metadata on every single search. Keyed by
-// sheetId (not just a single slot) because the Promo Code Gsheet admin
-// page (see functions/api/admin/promo-code-sheet.js) can swap the active
-// sheetId via a KV override — a stale cache for the OLD sheet must never
-// get served once a new one is saved.
-const tabTitleCache = new Map(); // sheetId -> { titles, expiresAt }
+// isolate instead of re-fetching metadata on every single search.
+let cachedTabTitles = null; // { titles, expiresAt }
 const TAB_CACHE_MS = 5 * 60 * 1000;
 
-async function resolveExistingTabs(env, sheetId) {
+async function resolveExistingTabs(env) {
   const now = Date.now();
-  const cached = tabTitleCache.get(sheetId);
-  if (cached && cached.expiresAt > now) return cached.titles;
-  const titles = await getSheetTabTitles(env, sheetId);
-  tabTitleCache.set(sheetId, { titles, expiresAt: now + TAB_CACHE_MS });
+  if (cachedTabTitles && cachedTabTitles.expiresAt > now) return cachedTabTitles.titles;
+  const titles = await getSheetTabTitles(env, PROMO_CODE_SHEET.sheetId);
+  cachedTabTitles = { titles, expiresAt: now + TAB_CACHE_MS };
   return titles;
-}
-
-// Live-editable (Integration Portal → Promo Code Gsheet admin page) takes
-// priority over the hardcoded default — see _shared/promoCodeSheetOverride.js.
-// An empty/unset KV means this resolves to exactly the same sheet/tabs this
-// endpoint always used, so shipping this override capability can't change
-// anything until someone actually saves a new sheet in the admin page.
-async function resolveActiveSheet(env) {
-  const override = await getPromoCodeSheetOverride(env);
-  return override || PROMO_CODE_SHEET_DEFAULT;
 }
 
 // Normalizes a tab name for comparison so invisible differences — non-
@@ -86,8 +86,6 @@ async function handleSearch({ request, env }) {
   const account = await verifyRequest(request, env);
   if (!account) return json({ ok: false, error: "Login required." }, 401);
 
-  const activeSheet = await resolveActiveSheet(env);
-
   const codes = (new URL(request.url).searchParams.get("codes") || "")
     .split(",")
     .map((c) => c.trim())
@@ -96,7 +94,7 @@ async function handleSearch({ request, env }) {
   // No search yet (e.g. the page's initial load, just to fetch sheetUrl
   // for the "Open Sheet" button) — nothing to look up.
   if (!codes.length) {
-    return json({ ok: true, groups: [], sheetUrl: sheetEditUrl(activeSheet.sheetId) });
+    return json({ ok: true, groups: [], sheetUrl: sheetEditUrl() });
   }
 
   if (!env.GOOGLE_SERVICE_ACCOUNT_EMAIL || !env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY) {
@@ -111,7 +109,7 @@ async function handleSearch({ request, env }) {
   // a missing tab becomes a warning in the response, not a hard failure.
   let realTitles;
   try {
-    realTitles = await resolveExistingTabs(env, activeSheet.sheetId);
+    realTitles = await resolveExistingTabs(env);
   } catch (e) {
     return json({ ok: false, error: String(e.message || e) }, 502);
   }
@@ -122,7 +120,7 @@ async function handleSearch({ request, env }) {
 
   const tabsToQuery = []; // { configured, real }
   const missingTabs = [];
-  for (const configured of activeSheet.tabNames) {
+  for (const configured of PROMO_CODE_SHEET.tabs) {
     const real = realByNormalized.get(normalizeTabName(configured));
     if (real) tabsToQuery.push({ configured, real });
     else missingTabs.push(configured);
@@ -131,8 +129,8 @@ async function handleSearch({ request, env }) {
   let valueRanges = [];
   if (tabsToQuery.length) {
     try {
-      const ranges = tabsToQuery.map(({ real }) => `'${real.replace(/'/g, "''")}'!${RANGE}`);
-      valueRanges = await batchGetValues(env, activeSheet.sheetId, ranges);
+      const ranges = tabsToQuery.map(({ real }) => `'${real.replace(/'/g, "''")}'!${PROMO_CODE_SHEET.range}`);
+      valueRanges = await batchGetValues(env, PROMO_CODE_SHEET.sheetId, ranges);
     } catch (e) {
       return json({ ok: false, error: String(e.message || e) }, 502);
     }
@@ -172,7 +170,7 @@ async function handleSearch({ request, env }) {
   return json({
     ok: true,
     groups,
-    sheetUrl: sheetEditUrl(activeSheet.sheetId),
+    sheetUrl: sheetEditUrl(),
     missingTabs: missingTabs.length ? missingTabs : undefined,
     // Only included when something's missing — lets whoever's debugging
     // this see the sheet's real tab names side-by-side with what's
