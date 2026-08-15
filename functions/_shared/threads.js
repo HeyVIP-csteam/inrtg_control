@@ -844,12 +844,24 @@ export async function getMentionCandidates(env, brandId, moduleId) {
 // feature shipped, so anyone who only ever replied BEFORE that has no
 // entry yet even though their messages are sitting right there in each
 // thread's own history. Walks every existing thread and folds their
-// handles in. Paginated (100 threads/call, driven by the KV list()
-// cursor) — a single huge KV scan+get loop risks running into the
-// Worker's execution time limit on an account with a lot of ticket
+// handles in. Paginated (BACKFILL_PAGE_SIZE threads/call, driven by the
+// KV list() cursor) — a single huge KV scan+get loop risks running into
+// the Worker's execution time limit on an account with a lot of ticket
 // history, so the admin panel calls this repeatedly until `done`.
+//
+// PAGE SIZE — 500, raised from 100 on 2026-08-15 now that the account is
+// on the Workers PAID plan: CPU time per request goes from 10ms (free)
+// to a default 30s, and the subrequest cap from 50 to 10,000 — the 100
+// figure was sized conservatively for the free-tier ceiling, which no
+// longer applies. 500 concurrent getThread() calls (well under both the
+// new CPU and subrequest budgets even accounting for JSON parsing +
+// mention extraction on each) cuts the number of round trips ~5x for a
+// large ticket history. If this project ever moves back to the free
+// plan, drop this back down.
+const BACKFILL_PAGE_SIZE = 500;
+
 export async function backfillMentionRegistryPage(env, cursor) {
-  const page = await env.THREADS_KV.list({ prefix: "thread:", cursor: cursor || undefined, limit: 100 });
+  const page = await env.THREADS_KV.list({ prefix: "thread:", cursor: cursor || undefined, limit: BACKFILL_PAGE_SIZE });
   const partial = {}; // regKey -> { handle: {from, lastSeen} }
   // Read all 100 threads in this page concurrently instead of one at a
   // time — this is a plain read-only fan-out (unlike the KV WRITES
