@@ -659,6 +659,11 @@
     const OWNER_TOPIC_ITEMS = [
       { id: "announcements", name: "Announcements", icon: "📢" },
       { id: "activeAgents", name: "Active Agents", icon: "👥" },
+      // Added 2026-08-15 — see the matching entry + comment in
+      // functions/_shared/accounts.js for why the Integration Portal
+      // sidebar group needs this on top of its existing Account
+      // Management Access checkboxes.
+      { id: "integrationPortal", name: "Integration Portal", icon: "🔗" },
     ];
     function canAccessOwnerTopic(topicId) {
       if (!authInfo) return false;
@@ -705,8 +710,19 @@
     // everywhere else access-gates a sidebar row. Account Management's
     // group never needs this because Reset Password inside it has no
     // gate and is always visible.
+    //
+    // TWO gates now, both required (2026-08-15):
+    //   1. canAccessOwnerTopic("integrationPortal") — the coarse "can
+    //      this account see the menu entry at all" grant, set in the
+    //      Topic access list (Owner-only, same as Announcements/Active
+    //      Agents — see OWNER_TOPIC_ITEMS above).
+    //   2. anyIntegrationPortalVisible — the finer "does it actually
+    //      have Can-See on at least one of the 4 items inside" check
+    //      that already existed, still needed so an account that passed
+    //      gate 1 but was never granted any of the 4 individual items
+    //      doesn't land on an empty dropdown.
     const anyIntegrationPortalVisible = canSeeAdminSection("tgRoutes") || canSeeAdminSection("depositSheets") || canSeeAdminSection("bettingLinks") || canSeeAdminSection("webLinks");
-    document.getElementById("integrationPortalGroup").style.display = anyIntegrationPortalVisible ? "" : "none";
+    document.getElementById("integrationPortalGroup").style.display = (canAccessOwnerTopic("integrationPortal") && anyIntegrationPortalVisible) ? "" : "none";
 
     // ---- Announcement tool card — same canSeeAdminSection gate as the
     // Account Management subitems above, just applied to a Home-page

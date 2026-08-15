@@ -196,6 +196,19 @@ export const ADMIN_SECTIONS_DEFAULT_EDIT = {
 export const OWNER_TOPIC_ITEMS = [
   { id: "announcements", name: "Announcements", icon: "📢" },
   { id: "activeAgents", name: "Active Agents", icon: "👥" },
+  // Added 2026-08-15 — the "Integration Portal" sidebar group (TG Group/
+  // Channel, Deposit Sheet Link, Betting Resources Links, Web Link) now
+  // needs an EXPLICIT per-account grant here before it shows in the
+  // sidebar at all, on top of (not instead of) the existing
+  // "Integration Portal Access" checkboxes in Account Management Access
+  // (see EDITABLE ADMIN_SECTIONS / canSeeAdminSection for tgRoutes/
+  // depositSheets/bettingLinks/webLinks). Same reasoning as everywhere
+  // else this list is used: this is a coarse "can this account see the
+  // menu entry at all" gate, separate from the finer "which of the 4
+  // items inside it, view or edit" gate underneath — an account needs
+  // BOTH checked to actually see anything (see the sidebar visibility
+  // check in public/index.html).
+  { id: "integrationPortal", name: "Integration Portal", icon: "🔗" },
 ];
 
 export function canAccessOwnerTopic(account, topicId) {
