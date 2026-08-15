@@ -1,18 +1,17 @@
 /**
  * GET  /api/brand-config  -> { ok, config } — public, used to render the hub's brand pills
- * POST /api/brand-config  -> JSON { brand, link } — requires Can-Edit access to
- *                             the "webLinks" Account Management Access section
- *                             (see _shared/accounts.js). Editing here moved
- *                             behind that gate 2026-08-15 — previously any
- *                             logged-in agent could save through this endpoint
- *                             (via the home page pill's own ✏️ button, now
- *                             removed); the real editing surface is now the
- *                             "Web Link" admin page (functions/api/admin/
- *                             web-links.js), which posts to this same endpoint.
- *                             GET stays fully public/unauthenticated on
- *                             purpose — any agent still needs to read the
- *                             links to render + click the pills, only saving
- *                             a new link is gated.
+ * POST /api/brand-config  -> JSON { brand, link } — this is the "Web Link" panel under
+ *                             Integration Portal (public/index.html's Account Management
+ *                             modal, mode "weblink") as well as the inline pencil-icon
+ *                             edit on each brand pill on the Home marquee row itself —
+ *                             both call this same endpoint. Requires
+ *                             canEditAdminSection(account, "webLink") (see
+ *                             _shared/accounts.js) — 2026-08: previously ANY logged-in
+ *                             account could POST here regardless of rank/section access
+ *                             (there was no separate shared edit password, but also no
+ *                             per-section gate at all); now gated the same way as every
+ *                             other Integration Portal item (tgRoutes/depositSheets/
+ *                             bettingLinks).
  *
  * Config is a small JSON blob stored in the R2 bucket (env.SCREENSHOTS_BUCKET)
  * at key "brand-config.json": { [brandId]: { logoUrl, link } }.
@@ -32,14 +31,37 @@
  * owner) — small source image (60×60), upscaled to match the others;
  * looks fine at the 24px pill size this actually renders at.
  */
-import { authenticateStaff, ROLE_RANK, canEditAdminSection } from "../_shared/accounts.js";
+import { verifyRequest, canEditAdminSection } from "../_shared/accounts.js";
 
+// PKR market: 3 of the 9 brands (Crickex/Betjili/Mostplay) are the same
+// actual brand/logo as the INR build this was forked from — confirmed by
+// the business owner — so their existing PNGs were kept and re-mapped
+// here. The other 6 (jeetwin/sbj66/heybaji/superbaji/kv8/darazplay) have
+// no logo file yet; the old betvisa.png/jeetway.png files were deleted
+// entirely since those brands don't exist in this deployment. readConfig()
+// below already handles a brand with no logoUrl gracefully (falls back to
+// initials + a color), so the missing 6 aren't blocking anything. To add a
+// real logo for one of them: drop the image at
+// public/assets/img/brands/<brandId>.png and add a line here, e.g.
+// jeetwin: "/assets/img/brands/jeetwin.png".
+// PKR market: 3 of the 9 brands (Crickex/Betjili/Mostplay) are the same
+// actual brand/logo as the INR build this was forked from — confirmed by
+// the business owner — so their existing PNGs were kept and re-mapped
+// here. The other 6 (Jeetwin/Sbj66/Heybaji/Superbaji/KV8/Darazplay) now
+// have their own real logo files too, provided directly by the business
+// owner. readConfig() below already handles a brand with no logoUrl
+// gracefully (falls back to initials + a color), so this was never a
+// hard blocker — but all 9 brands now have real logos either way.
 const DEFAULT_LOGOS = {
   crickex: "/assets/img/brands/crickex.png",
   betjili: "/assets/img/brands/betjili.png",
   mostplay: "/assets/img/brands/mostplay.png",
-  betvisa: "/assets/img/brands/betvisa.png",
-  jeetway: "/assets/img/brands/jeetway.png",
+  jeetwin: "/assets/img/brands/jeetwin.png",
+  sbj66: "/assets/img/brands/sbj66.png",
+  heybaji: "/assets/img/brands/heybaji.png",
+  superbaji: "/assets/img/brands/superbaji.png",
+  kv8: "/assets/img/brands/kv8.png",
+  darazplay: "/assets/img/brands/darazplay.png",
 };
 
 export async function onRequestGet(context) {
@@ -64,10 +86,10 @@ async function handlePost({ request, env }) {
   const bucket = env.SCREENSHOTS_BUCKET;
   if (!bucket) return json({ ok: false, error: "Server is missing the SCREENSHOTS_BUCKET R2 binding." }, 500);
 
-  const auth = await authenticateStaff(request, env, ROLE_RANK.senior);
-  if (!auth.ok) return json({ ok: false, error: "Login required." }, 401);
-  if (!canEditAdminSection(auth.account, "webLinks")) {
-    return json({ ok: false, error: "You don't have Can-Edit access to Web Link." }, 403);
+  const account = await verifyRequest(request, env);
+  if (!account) return json({ ok: false, error: "Login required." }, 401);
+  if (!canEditAdminSection(account, "webLink")) {
+    return json({ ok: false, error: "You don't have permission to edit Web Link." }, 403);
   }
 
   let body;
@@ -80,26 +102,17 @@ async function handlePost({ request, env }) {
   const { brand, link } = body || {};
   if (!brand) return json({ ok: false, error: "Missing brand." }, 400);
 
-  const config = await saveLink(env, brand, link);
-  return json({ ok: true, config });
-}
-
-// Shared with functions/api/admin/web-links.js — the "Web Link" admin page
-// posts through THIS same /api/brand-config endpoint (see the file header),
-// so both stay backed by the exact one write path instead of two copies of
-// the R2 read-modify-write that could drift out of sync.
-export async function saveLink(env, brand, link) {
-  const bucket = env.SCREENSHOTS_BUCKET;
-  if (!bucket) throw new Error("Server is missing the SCREENSHOTS_BUCKET R2 binding.");
   const config = await readConfig(env);
   const entry = config[brand] || {};
   if (link !== undefined) entry.link = link || "";
+
   config[brand] = entry;
   await bucket.put("brand-config.json", JSON.stringify(config), { httpMetadata: { contentType: "application/json" } });
-  return config;
+
+  return json({ ok: true, config });
 }
 
-export async function readConfig(env) {
+async function readConfig(env) {
   const bucket = env.SCREENSHOTS_BUCKET;
   let config = {};
   if (bucket) {

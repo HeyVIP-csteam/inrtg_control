@@ -1,24 +1,12 @@
 # Issue Submission Hub → Telegram
 
-> **Deployment note (Cloudflare Pages dashboard, one-time):** `functions/`
-> now depends on `@cf-wasm/photon` (photo compression before sending to
-> Telegram — see `functions/_shared/telegramImageCompress.js`). This
-> project has no frontend build step (`public/` is served as-is), so its
-> Build command has always been empty — that was fine when Functions had
-> zero dependencies, but now it means Cloudflare skips `npm install`
-> entirely and the build fails with "Cannot find module '@cf-wasm/photon'".
-> Fix: **Workers & Pages → this project → Settings → Builds & deployments
-> → Build command → set it to `npm install`** (Build output directory
-> stays `public`). This has to be done in the dashboard — a `[build]` key
-> in `wrangler.toml` is a Workers-only concept and Pages ignores it.
-
 A small static site + Cloudflare Pages Function that takes form submissions
 (QA, Account Issue, Promotion Request, Daily Report, Genie Issue) and posts
 a formatted message to the right Telegram group/topic for the brand.
 Selected modules also get logged to that brand's Google Sheet.
 
 ```
-public/                  ← static site (deployed as-is, no build step)
+public/                  ← static site (deployed as-is)
   index.html              hub page (the card grid)
   form.html                generic form, driven by ?module=<id>
   assets/schemas.js        brands + field definitions (PUBLIC, no secrets)
@@ -27,17 +15,50 @@ public/                  ← static site (deployed as-is, no build step)
 functions/
   api/submit.js            the API route: Telegram + optional Sheet log
   _shared/routing.js        SERVER-ONLY: chat IDs, topic IDs, sheet URLs
+  _shared/telegramImageCompress.js  compresses oversized photos before
+                            sending to Telegram (needs @cf-wasm/photon —
+                            see the build-command note below)
 google-apps-script/
   sheet-logger.gs           paste into Apps Script for sheet logging
+package.json                declares @cf-wasm/photon — Cloudflare Pages
+                             needs a Build command set (see below) or it
+                             won't get installed and Functions bundling
+                             will fail with "Could not resolve
+                             @cf-wasm/photon"
 wrangler.toml
 ```
 
+> **⚠️ Build command is now REQUIRED (this was NOT true before the
+> photo-compression feature was added).**
+> This project used to be pure static + Functions with zero npm
+> dependencies, so leaving Cloudflare Pages' **Build command** field
+> blank was fine — Pages would skip the whole build step (including
+> `npm install`) and that was harmless because there was nothing to
+> install. That's no longer true now that `functions/_shared/telegramImageCompress.js`
+> imports `@cf-wasm/photon` (declared in `package.json`).
+>
+> **This is a dashboard setting, not something in `wrangler.toml`** —
+> Cloudflare Pages' Wrangler config file has no `[build]` key (that's a
+> plain-Workers-only concept); a Pages project's build command can only
+> be set via the Cloudflare dashboard or the Pages REST API.
+>
+> Go to **Cloudflare dashboard → Workers & Pages → this project →
+> Settings → Builds & deployments** and set:
+> - **Build command**: `npm install`
+> - **Build output directory**: `public` (unchanged)
+>
+> Then retry the deployment (or push a new commit). Without this, the
+> build log will show `No build command specified. Skipping build step.`
+> and the Functions bundler will fail to resolve `@cf-wasm/photon`.
+
 ## 1. Drop this into your existing repo
 
-Copy `public/`, `functions/`, `google-apps-script/`, and `wrangler.toml`
-into your repo (merge folders if you already have a `functions/` dir).
-Commit and push — if the repo is already connected to Cloudflare Pages,
-this alone triggers a deploy.
+Copy `public/`, `functions/`, `google-apps-script/`, `package.json`,
+and `wrangler.toml` into your repo (merge folders if you already have
+a `functions/` dir). Commit and push — if the repo is already
+connected to Cloudflare Pages, this alone triggers a deploy (but see
+the Build command warning above — it needs to be set once, manually,
+in the dashboard; it isn't something a commit can set for you).
 
 ## 2. Set the bot token as a secret
 
@@ -110,38 +131,6 @@ mix.
 `google-apps-script/sheet-logger.gs` is kept in the repo as a fallback —
 only needed if you ever want a brand's sheet to work without sharing it
 to the service account.
-
-### Deposit Issue / Deposit Backup — different credential, on purpose
-
-Everything above (the service account) is what every other module in
-this hub uses. **Deposit Issue and Deposit Backup are the one
-exception** — their Sheets belong to a different department that will
-not add a service account as a collaborator, so those two modules
-authenticate as a real Google account instead, via OAuth 2.0
-(`functions/_shared/googleOAuth.js`). Three separate Cloudflare
-secrets, already set for Production and Preview:
-
-- `GOOGLE_OAUTH_CLIENT_ID`
-- `GOOGLE_OAUTH_CLIENT_SECRET`
-- `GOOGLE_OAUTH_REFRESH_TOKEN`
-
-The refresh token belongs to a real Google account that the other
-department has already added as an Editor on the Deposit Support
-sheet(s) — the app "impersonates" that person for every Deposit
-Issue/Backup read and write. Setting this up (registering the OAuth
-Client, completing the consent flow once, saving the refresh token) is
-a one-time step already done; nothing in normal operation repeats it.
-
-**If Deposit Issue/Backup start failing with `invalid_grant`:** check
-the OAuth consent screen's publishing status in Google Cloud Console
-first — it must be **"In production"**, not "Testing". Testing-mode
-refresh tokens silently expire after 7 days, which is exactly the
-failure this hub hit once before switching it to production.
-Don't confuse this with the service account above — they're
-independent credentials for different modules; a Deposit Issue/Backup
-outage doesn't mean the rest of the hub's Sheet logging is affected,
-and vice versa.
-
 
 ## 6. Test it
 

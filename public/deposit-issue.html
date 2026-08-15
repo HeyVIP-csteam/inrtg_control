@@ -4,50 +4,44 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Deposit Issue</title>
+<script src="/assets/theme.js?v=c61fb537"></script>
 <style>
-  /* Space photo (dark-shaded, same overlay math as .sf-shade in
-     style.css) as the very first paint, before style.css/starfield.js
-     load — same reasoning as index.html's copy of this rule; see the
-     comment there for the full write-up. */
-  html {
-    background-color: #090c1c;
-    background-image:
-      linear-gradient(180deg, rgba(3,4,13,0.35) 0%, rgba(3,4,13,0.55) 55%, rgba(3,4,13,0.75) 100%),
-      url('/assets/img/bg-space.jpg');
-    background-size: cover;
-    background-position: center;
-    background-repeat: no-repeat;
-    background-attachment: fixed;
-  }
-
-  /* Light-theme override — theme.js (loaded right after this block, and
-     synchronous/non-deferred) sets data-theme on <html> before first
-     paint, so this genuinely applies from frame one rather than flashing
-     in late. The photo is nearly invisible under the light theme's own
-     heavy overlay anyway (see --sf-shade's 0.55-0.72 alpha for
-     [data-theme="light"] in style.css), so rather than fight CSS filter
-     limitations (filter can't be scoped to just a background-image on
-     <html> without also filtering all real content once it loads), this
-     just reuses the light theme's plain --page-bg gradient values
-     directly (kept in sync manually — see :root in style.css if that
-     gradient ever changes) with no photo layer at all. Visually
-     indistinguishable from the real thing once starfield.js mounts. */
-  html[data-theme="light"] {
-    background-color: #dbe7fb;
-    background-image:
-      radial-gradient(900px 500px at 90% 0%, #eaf1ff 0%, transparent 55%),
-      linear-gradient(160deg, #dbe7fb 0%, #d9cef4 45%, #cdbdf2 75%, #c4b2ee 100%);
-  }
+/* Inline placeholder canvas background — first thing the browser parses
+   in <head>, so it paints before any network request (external CSS, the
+   photo itself) resolves. Values are hard-coded here (can't use var()
+   yet — style.css may not have loaded) but are kept in exact sync with
+   the "real" html{}/html[data-theme=light]{} rule in style.css, so the
+   moment that stylesheet finishes loading there is zero visible change.
+   Must stay inline and first — an external <link> here would leave a
+   blank gap for a network round trip before anything paints. Only sets
+   background on <html>, never <body>: <body> has its own
+   theme-toggle transition, and animating from this photo to some other
+   background would try to interpolate image -> gradient, which browsers
+   can't do and would just look like a broken flash. */
+html {
+  background-color: #090c1c;
+  background-image:
+    linear-gradient(180deg, rgba(3,4,13,0.35) 0%, rgba(3,4,13,0.55) 55%, rgba(3,4,13,0.75) 100%),
+    url('/assets/img/bg-space.jpg');
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+  background-attachment: fixed;
+}
+html[data-theme="light"] {
+  background-color: #dbe7fb;
+  background-image:
+    radial-gradient(900px 500px at 90% 0%, #eaf1ff 0%, transparent 55%),
+    linear-gradient(160deg, #dbe7fb 0%, #d9cef4 45%, #cdbdf2 75%, #c4b2ee 100%);
+}
 </style>
-<link rel="preconnect" href="https://fonts.googleapis.com" />
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-<link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;600&display=swap" onload="this.onload=null;this.rel='stylesheet'" />
-<noscript><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;600&display=swap" /></noscript>
-<link rel="stylesheet" href="/assets/style.css?v=63a5348a" />
-<script src="/assets/theme.js?v=5b27e630"></script>
+<link rel="stylesheet" href="/assets/style.css?v=467b5a4c" />
+<link rel="stylesheet" href="/assets/toast.css?v=5779b14e" />
+<script src="/assets/toast.js?v=d9d84724"></script>
 <script src="/assets/starfield.js?v=b6e92821" defer></script>
-<script src="/assets/authguard.js?v=9dba9c0c"></script>
-<script src="/assets/presence-heartbeat.js?v=921f46cb"></script>
+<script src="/assets/authguard.js?v=19b1b251"></script>
+<script src="/assets/presence-heartbeat.js?v=a0820d9b"></script>
+<script src="/assets/announcement-banner.js?v=26c15118" defer></script>
 <style>
   .dep-shell { max-width: 1500px; margin: 0 auto; padding: 20px 24px 80px; }
 
@@ -208,6 +202,9 @@
   }
   .dep-btn-clear:hover { background: #e5304a; color: #fff; }
   .dep-btn-clear:disabled { opacity: 0.5; cursor: not-allowed; background: transparent; color: #e5304a; }
+  .dep-toast { display: none; text-align: center; padding: 8px; font-size: 13px; font-weight: 700; border-radius: 10px; margin-top: 8px; }
+  .dep-tok { background: rgba(34,197,94,0.14); color: #16a34a; }
+  .dep-ter { background: rgba(224,87,122,0.14); color: #e0577a; }
   .dep-empty-h { text-align: center; padding: 22px 8px; color: var(--ink-soft); font-size: 13px; line-height: 1.8; }
 
   .dep-tab-warning {
@@ -231,7 +228,7 @@
   }
 </style>
 </head>
-<body>
+<body class="subpage-fixed">
   <!-- Image lightbox — reuses the same .attach-lightbox styling as threads.html.
        Just displays the URL from the sheet's Image Link column directly;
        no server proxy, no KV, no storage of any kind. -->
@@ -243,7 +240,7 @@
   <header class="topbar">
     <div class="topbar-left">
       <img src="/assets/img/logo.webp" alt="HeyVIP" class="logo-img" />
-      <span class="wordmark">CS TEAM</span>
+      <span class="wordmark">PKR CS TEAM - TBC</span>
     </div>
     <div class="topbar-right">
       <span class="clock" id="liveClock"></span>
@@ -252,11 +249,13 @@
     </div>
   </header>
 
-  <div id="announcementBanner"></div>
-
-  <div class="threads-topline">
-    <a href="/" class="back-pill">&larr; Back to Home</a>
-  </div>
+  <div class="subpage-shell">
+    <aside class="sidebar" id="hubNavMount"></aside>
+    <div class="subpage-content-col">
+      <nav class="brand-row" id="pageBrandRow"><div class="brand-row-track"></div></nav>
+    <div class="subpage-right-col">
+      <div id="announcementBanner"></div>
+      <main class="subpage-main">
 
   <div class="dep-shell">
     <div class="dep-header-card">
@@ -264,7 +263,7 @@
         <span class="header-icon">💳</span>
         <div>
           <div class="dep-header-title">Deposit Issue</div>
-          <div class="dep-header-sub">Search Deposit Support records and update CS fields</div>
+          <div class="dep-header-sub">Search PKR Deposit Support records and update CS fields</div>
         </div>
       </div>
       <a href="#" id="openSheetBtn" class="dep-open-sheet is-hidden" target="_blank" rel="noopener">📄 Open Sheet</a>
@@ -275,7 +274,7 @@
         <div class="dep-brand-abbr" id="brandIcon">CX</div>
         <div>
           <div class="dep-brand-label">Filter by Brand</div>
-          <div class="dep-brand-value" id="brandValue">Brand One</div>
+          <div class="dep-brand-value" id="brandValue">Crickex</div>
         </div>
         <span class="dep-brand-arrow">▾</span>
       </div>
@@ -284,10 +283,10 @@
 
     <div class="dep-search-card">
       <div class="dep-search-row">
-        <textarea id="depQ" placeholder="Enter PG TID, UTR, Username, or Order ID..." rows="1"></textarea>
+        <textarea id="depQ" placeholder="Enter Transaction ID, Reference, Username, or Agent Number..." rows="1"></textarea>
         <button class="dep-search-btn" id="depBtn"><span>🔍</span><span>Search</span></button>
       </div>
-      <div class="dep-hint">Searches PG TID, UTR, Username, and Order ID. Separate multiple terms with <span class="kw">comma</span> — e.g. A1773102997448, 142546045941, ugra</div>
+      <div class="dep-hint">Searches Transaction ID, Reference, Username, and Agent Number. Separate multiple terms with <span class="kw">comma</span> — e.g. DGT4UBWVNM, ABC123, XYZ789</div>
       <div class="dep-chips" id="depChips"></div>
     </div>
 
@@ -302,30 +301,39 @@
           <div class="dep-empty-h" id="depHint">Click Edit on any result to start editing</div>
           <div id="depEF" style="display:none">
             <div class="dep-ep-title">Editing<span class="dep-etid" id="depEL"></span></div>
-            <div class="dep-fg2"><label class="dep-fl2">CS Remarks (col P)</label><textarea class="dep-fi" id="ef-csremarks" rows="4" placeholder="CS Remarks..." style="resize:vertical;font-family:inherit;"></textarea></div>
+            <div class="dep-fg2"><label class="dep-fl2">CS PIC (col P)</label><input class="dep-fi" id="ef-piccs" placeholder="CS PIC..."></div>
+            <div class="dep-fg2"><label class="dep-fl2">Player Contact No (col Q)</label><input class="dep-fi" id="ef-pcoNo" placeholder="Player contact no..."></div>
+            <div class="dep-fg2"><label class="dep-fl2">Status CS (col R)</label><input class="dep-fi" id="ef-statuscs" placeholder="Status CS..."></div>
+            <div class="dep-fg2"><label class="dep-fl2">Correct UID (col S)</label><input class="dep-fi" id="ef-uid" placeholder="Correct UID..."></div>
             <button class="dep-btn-sub" id="depSub">Submit — Update Sheet</button>
-            <button class="dep-btn-clear" id="depClear">Clear — Update Sheet</button>
+            <button class="dep-btn-clear" id="depClear">Clear All — Update Sheet</button>
+            <div class="dep-toast" id="depT"></div>
           </div>
         </div>
       </div>
     </div>
   </div>
 
+      </main>
+    </div>
+    </div>
+  </div>
+
+<script src="/assets/schemas.js?v=189eea70"></script>
+<script src="/assets/hub-nav.js?v=d86d0bdd"></script>
+<script src="/assets/brand-row.js?v=ea371f55"></script>
 <script>
   window.initThemeToggle();
   window.initClock();
   window.AgentAuth.renderWhoami("agentWhoami");
+  window.HubNav.mount("hubNavMount", {});
+  window.BrandRow.mount("pageBrandRow");
 
-  // Brands — must match functions/_shared/routing.js's BRANDS keys/names
-  // exactly. This frontend copy exists only so the brand dropdown/logos
-  // render without an extra API round-trip; the backend (BRANDS in
-  // routing.js + canSeeBrand()) is what actually enforces which brands
-  // exist and who can see them. Logos already exist at
-  // /assets/img/brands/<id>.png for all 5 brands.
-  var BRANDS = [
-    {id:"crickex",name:"Crickex"},{id:"betjili",name:"Betjili"},
-    {id:"mostplay",name:"Mostplay"},{id:"betvisa",name:"BetVisa"},
-    // {id:"jeetway",name:"Jeetway"}, // hidden — no Deposit Support sheet yet, uncomment once it has one (matches DEPOSIT_HIDDEN_BRANDS server-side)
+  // PKR's 9 brands — logos reused from the existing site
+  var DEP_BRANDS = [
+    {id:"crickex",name:"Crickex"},{id:"betjili",name:"Betjili"},{id:"mostplay",name:"Mostplay"},
+    {id:"jeetwin",name:"Jeetwin"},{id:"sbj66",name:"Sbj66"},{id:"heybaji",name:"Heybaji"},
+    {id:"superbaji",name:"Superbaji"},{id:"kv8",name:"KV8"},{id:"darazplay",name:"Darazplay"},
   ];
   function logoPath(id) { return '/assets/img/brands/' + id + '.png'; }
   function escapeHtml(str) { return String(str ?? "").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;"); }
@@ -333,7 +341,7 @@
   function gi(id) { return document.getElementById(id); }
 
   var _selBrand = '', _ddOpen = false, curDep = null; // '' = All Brands (directory mode), default on load
-  var VISIBLE_BRANDS = window.AgentAuth.filterAllowedBrands(BRANDS);
+  var VISIBLE_BRANDS = window.AgentAuth.filterAllowedBrands(DEP_BRANDS);
 
   function buildBrandMenu() {
     var list = gi('brandMenu'); list.innerHTML = '';
@@ -391,29 +399,66 @@
     gi('depChips').innerHTML = queries.map(function(q){ return '<span class="dep-chip">'+escapeHtml(q)+'</span>'; }).join('');
   }
 
-  // Status (col K, PG-side) and Status (col V) -> color category. Only
-  // seeded with the values confirmed from the real screenshot so far
-  // (2026-08-01) — unmapped values fall back to a hash-based palette
-  // below (fp()), never gray. Add more explicit entries here as more
-  // real dropdown values turn up.
+  // Explicit status -> color category, covering every real value from the
+  // sheet's dropdown. Categorized by what it MEANS, not just guessed from
+  // keywords: red = serious/rejected/fraud, orange = pending/needs action,
+  // green = resolved successfully, blue = refund in progress/info, purple =
+  // escalated to another team, teal = neutral/misc (testing, no SMS, etc).
   var STATUS_COLOR = {
-    "amount received": "dep-p-green",
+    // — red: serious problems, fraud, rejected —
+    "cs-invalid deposit": "dep-p-red",
+    "cs-fake slip": "dep-p-red",
+    "cs-invalid slip/mobile recharge": "dep-p-red",
+    "cs-not our agent": "dep-p-red",
+    "cs-repeat slip/duplicate slip": "dep-p-red",
+    "pyt- not our agent": "dep-p-red",
+    "pyt-not our agent": "dep-p-red",
+    "shop closed": "dep-p-red",
+    // — orange: pending / needs follow-up or action —
+    "pg-processing": "dep-p-orange",
+    "cs-amount not received": "dep-p-orange",
+    "pyt-amount not recieve": "dep-p-orange",
+    "cs-no slip on ply telegram": "dep-p-orange",
+    "pyt-no slip on ply telegram": "dep-p-orange",
+    "provide another slip": "dep-p-orange",
+    "cs-provide video/bank statement": "dep-p-orange",
+    "pyt-provide cart id": "dep-p-orange",
+    "cs-advice player to input correct agent number": "dep-p-orange",
+    "cs-advice player to raise again": "dep-p-orange",
+    "pyt-verify cash out number": "dep-p-orange",
+    "cash in slip": "dep-p-orange",
+    "below 200rs": "dep-p-orange",
+    // — green: resolved successfully —
+    "cs-refund success": "dep-p-green",
+    "pyt-refund success": "dep-p-green",
+    "pyt-auto success": "dep-p-green",
+    "pyt-mark as success": "dep-p-green",
+    "pyt-make up success": "dep-p-green",
+    "already success in msteams": "dep-p-green",
+    "other merchant success": "dep-p-green",
+    "pyt-agent close, will mark as success": "dep-p-green",
+    // — blue: refund in progress / informational —
+    "cs-refund": "dep-p-blue",
+    "pyt-refund": "dep-p-blue",
+    "cs-agent cash out": "dep-p-blue",
+    "easypay": "dep-p-blue",
+    // — purple: escalated / forwarded elsewhere —
+    "issue forwarded": "dep-p-purple",
+    // — teal: neutral / misc —
+    "testing": "dep-p-teal",
+    "no sms": "dep-p-teal",
   };
   function fp(l, v) {
     if (!v) return '<div class="dep-fr"><span class="dep-fl">'+l+'</span><span class="dep-fv"><span class="dep-pill dep-py">—</span></span></div>';
-    var key = v.toLowerCase().trim();
-    var c = STATUS_COLOR[key] || hashColor(key); // never gray — unmapped values get a deterministic color
+    var c = STATUS_COLOR[v.toLowerCase().trim()] || 'dep-p-blue'; // never gray — unmapped values default to blue, not a dull neutral
     return '<div class="dep-fr"><span class="dep-fl">'+l+'</span><span class="dep-fv"><span class="dep-pill '+c+'">'+escapeHtml(v)+'</span></span></div>';
   }
   function f(l, v) { return '<div class="dep-fr"><span class="dep-fl">'+l+'</span><span class="dep-fv">'+cell(v)+'</span></div>'; }
 
-  // Routes through the single shared toast (public/assets/toast.js) —
-  // this used to render its own separate inline banner (#depT / .dep-toast),
-  // which is exactly the "each page invents its own feedback" problem the
-  // toast unification pass was meant to fix. Signature kept as-is so the
-  // call sites below didn't need touching.
   function showT(id, ok, msg) {
-    if (window.showToast) window.showToast(ok ? 'Update success.' : (msg || 'Update failed.'), ok ? 'ok' : 'err');
+    var t = gi(id); t.className = 'dep-toast ' + (ok ? 'dep-tok' : 'dep-ter');
+    t.textContent = ok ? 'Google Sheet updated successfully!' : 'Error: ' + (msg || 'Update failed');
+    t.style.display = 'block';
   }
 
   // Keeps the Edit Record panel's height visually matched to the FIRST
@@ -439,7 +484,7 @@
     window._dep = data;
     if (!data.length) { gi('depRes').innerHTML = '<div class="dep-state">No results found.</div>'; syncEditPanelHeight(); return; }
     gi('depRes').innerHTML = data.map(function(r,i){
-      var imgBtn = r.slip ? '<span class="dep-img-btn" id="img-'+i+'">🖼️ Slip</span>' : '';
+      var imgBtn = r.imageLink ? '<span class="dep-img-btn" id="img-'+i+'">🖼️ Image</span>' : '';
       var pillLabel = escapeHtml(r.brandName)+' - '+escapeHtml(r.tabName);
       var tabPill = r.sheetUrl
         ? '<a class="dep-tab-pill dep-tab-pill-link" href="'+escapeHtml(r.sheetUrl)+'" target="_blank" rel="noopener" title="Open in Google Sheets">'+pillLabel+' <span class="dep-pill-arrow">↗️</span></a>'
@@ -450,45 +495,59 @@
         +imgBtn
         +'<span class="dep-rcard-tm">📅 '+escapeHtml(r.requestTime)+'</span></div>'
         +'<div class="dep-rcard-b"><div class="dep-fg">'
-        +f('Username',r.username)+f('PG',r.pg)
-        +f('UTR',r.utr)+f('PG Staff Name',r.pgStaffName)
-        +f('Slip Amount',r.slipAmount)+fp('Status',r.status)
-        +f('Follow Up Times',r.followUpTimes)+f('Chat IDs',r.chatIds)
-        +f('Agent UPI',r.agentUpi)+f('PG Remarks',r.pgRemarks)
-        +f('CS Remarks',r.csRemarks)+fPay('Payment Status',r.paymentStatus)
-        +f('Order ID',r.orderId)+f('PIC Name',r.picName)
-        +f('Cart ID',r.cartId)+f('Amount',r.amount)
-        +fp('Final Status',r.statusFinal)+f('UPI',r.upi)
-        +f('Remark PIC',r.remarkPic)+f('Memo',r.memo)
-        +f('Condition',r.condition)
+        +f('Channel',r.channel)+f('Agent Number',r.agentNumber)
+        +f('Username',r.username)+f('Reference',r.reference)
+        +f('Cash Out Number',r.cashOutNumber)+f('Amount',r.amount)
+        +fp('Status PG',r.statusPG)+fErr('Transaction Error',r.transactionError)
+        +f('Cart ID',r.cartId)+f('Support PIC',r.supportPIC)
+        +f('CS PIC',r.csPIC)+f('Player Contact No',r.playerContactNo)
+        +fp('Status CS',r.statusCS)+f('Correct UID',r.correctUid)
+        +f('Player\'s Cart ID',r.playersCartId)+fPay('Payment Status',r.paymentStatus)
         +'</div></div>'
         +'<div class="dep-rcard-f"><button class="dep-btn-ed" id="deb-'+i+'">Edit</button></div></div>';
     }).join('');
     data.forEach(function(r,i){
       gi('deb-'+i).addEventListener('click', function(){ openDep(i); });
-      if (r.slip) gi('img-'+i).addEventListener('click', function(){ openImageLightbox(r.slip); });
+      if (r.imageLink) gi('img-'+i).addEventListener('click', function(){ openImageLightbox(r.imageLink); });
     });
     syncEditPanelHeight();
   }
 
-  // Status (col K) and Final Status (col V) don't have a confirmed full
-  // list of dropdown values yet, so unmapped values get a consistent
-  // color deterministically hashed from their text — same value always
-  // gets the same color, picked from a vibrant palette, never gray. Add
-  // explicit entries to STATUS_COLOR above as more real values turn up.
+  // Transaction Error doesn't have a fixed list of values like Status PG
+  // does, so instead of guessing keywords, every distinct string gets a
+  // consistent color deterministically hashed from its text — same value
+  // always gets the same color, and it's picked from a vibrant palette,
+  // never gray. (If you'd rather have an exact category->color mapping
+  // like Status PG, send me the real list of Transaction Error values and
+  // I'll swap this for an explicit map.)
   var ERROR_PALETTE = ['dep-p-red','dep-p-orange','dep-p-purple','dep-p-teal','dep-p-blue'];
   function hashColor(str) {
     var h = 0;
     for (var i = 0; i < str.length; i++) { h = (h * 31 + str.charCodeAt(i)) | 0; }
     return ERROR_PALETTE[Math.abs(h) % ERROR_PALETTE.length];
   }
+  function fErr(l, v) {
+    if (!v) return '<div class="dep-fr"><span class="dep-fl">'+l+'</span><span class="dep-fv"><span class="dep-pill dep-py">—</span></span></div>';
+    var c = hashColor(v.toLowerCase().trim());
+    return '<div class="dep-fr"><span class="dep-fl">'+l+'</span><span class="dep-fv"><span class="dep-pill '+c+'">'+escapeHtml(v)+'</span></span></div>';
+  }
 
-  // Payment Status — only "pending" (red, seen in the screenshot) is
-  // confirmed so far. Unlisted values fall back to the same hash-based
-  // palette as Status/Final Status above — still never gray. Add more
-  // explicit entries here as more real values turn up.
+  // Payment Status colors follow the same scheme as your Sheet's own
+  // conditional formatting (see the screenshot you sent): red family for
+  // "not received"/negative outcomes, lavender for refunds, amber for
+  // ignore/hold, green for successfully credited, navy/blue for
+  // system-verified states. Unlisted values fall back to the same
+  // hash-based palette as Transaction Error — still never gray.
   var PAYMENT_STATUS_COLOR = {
-    "pending": "dep-p-red",
+    "not receive": "dep-p-maroon",
+    "pyt-agent close": "dep-p-maroon",
+    "duplicate": "dep-p-maroon",
+    "refund success": "dep-p-lavender",
+    "cs - ignore": "dep-p-amber",
+    "cs-ignore": "dep-p-amber",
+    "manually credited": "dep-p-green",
+    "provide correct uid": "dep-p-navy",
+    "approved by system": "dep-p-blue",
   };
   function fPay(l, v) {
     if (!v) return '<div class="dep-fr"><span class="dep-fl">'+l+'</span><span class="dep-fv"><span class="dep-pill dep-py">—</span></span></div>';
@@ -521,7 +580,8 @@
     gi('depHint').style.display = 'none'; gi('depEF').style.display = 'block';
     gi('depEL').textContent = ' — ' + r.transaction + ' (' + r.brandName + ' / ' + r.tabName + ')';
     gi('depT').style.display = 'none';
-    gi('ef-csremarks').value = r.csRemarks || '';
+    gi('ef-piccs').value = r.csPIC || ''; gi('ef-pcoNo').value = r.playerContactNo || '';
+    gi('ef-statuscs').value = r.statusCS || ''; gi('ef-uid').value = r.correctUid || '';
   }
 
   function resetEditPanel() {
@@ -529,15 +589,7 @@
     document.querySelectorAll('.dep-btn-ed').forEach(function(b){ b.classList.remove('active'); });
     gi('depHint').style.display = 'block';
     gi('depEF').style.display = 'none';
-    // #depT no longer exists — showT() now routes through the shared
-    // window.showToast() instead of a page-local banner element (see
-    // CHANGES-toast-unification.md), but this leftover reference to the
-    // now-deleted element wasn't cleaned up at the time. Left in, this
-    // threw "Cannot read properties of null (reading 'style')" on every
-    // call to resetEditPanel() — including the one selectBrand('', ...)
-    // makes on page load — which aborted the rest of that script before
-    // showBrandDirectory() ever got a chance to run, which is the actual
-    // reason the "All Brands" directory list never appeared.
+    gi('depT').style.display = 'none';
   }
 
   // "All Brands" is a directory, not a search — see doDep()'s guard
@@ -605,14 +657,7 @@
         warningHtml += '<div class="dep-tab-warning">\u2139\ufe0f Not searched (no sheet linked yet): ' + data.unconfiguredBrands.map(escapeHtml).join(', ') + '</div>';
       }
       showDep(data.results || []);
-      // insertAdjacentHTML, NOT `gi('depRes').innerHTML = warningHtml + ...` —
-      // reassigning innerHTML destroys and recreates EVERY existing child
-      // node (even ones that look identical), silently dropping any event
-      // listeners showDep() just attached to them (Edit buttons, the Slip
-      // image button) — this was a real bug, not hypothetical.
-      // insertAdjacentHTML only adds new nodes at the front; the cards
-      // already in the DOM (and their listeners) are left untouched.
-      if (warningHtml) gi('depRes').insertAdjacentHTML('afterbegin', warningHtml);
+      if (warningHtml) gi('depRes').innerHTML = warningHtml + gi('depRes').innerHTML;
     } catch (e) {
       btn.disabled = false;
       gi('depRes').innerHTML = '<div class="dep-state err">Search failed — check your connection.</div>';
@@ -627,7 +672,8 @@
     });
     const data = await res.json();
     if (data.ok) {
-      curDep.csRemarks = values.csRemarks;
+      curDep.csPIC = values.csPIC; curDep.playerContactNo = values.playerContactNo;
+      curDep.statusCS = values.statusCS; curDep.correctUid = values.correctUid;
     }
     return data;
   }
@@ -636,7 +682,10 @@
     if (!curDep) return;
     var btn = gi('depSub'); btn.disabled = true; btn.textContent = 'Updating...';
     try {
-      const data = await sendUpdate({ csRemarks: gi('ef-csremarks').value });
+      const data = await sendUpdate({
+        csPIC: gi('ef-piccs').value, playerContactNo: gi('ef-pcoNo').value,
+        statusCS: gi('ef-statuscs').value, correctUid: gi('ef-uid').value,
+      });
       btn.disabled = false; btn.textContent = 'Submit — Update Sheet';
       showT('depT', data.ok, data.error);
     } catch (e) {
@@ -645,22 +694,24 @@
     }
   }
 
-  // Clears CS Remarks AND writes the blank straight to the Sheet in one
-  // click — for when the row's CS Remarks was wrong from the start (e.g.
-  // edited the wrong row) rather than just needing a correction. Confirms
-  // first since, unlike Submit, this is inherently destructive.
+  // Clears all 4 CS-editable fields AND writes the blanks straight to the
+  // Sheet in one click — for when the whole row's CS data was wrong from
+  // the start (e.g. edited the wrong row) rather than just one field.
+  // Confirms first since, unlike Submit, this is inherently destructive.
   async function clearAndUpdate() {
     if (!curDep) return;
-    var hadAnything = gi('ef-csremarks').value;
-    if (hadAnything && !confirm('Clear CS Remarks for ' + curDep.transaction + ' — and update the Sheet immediately?\n\nThis can\'t be undone from here.')) return;
+    var hadAnything = gi('ef-piccs').value || gi('ef-pcoNo').value || gi('ef-statuscs').value || gi('ef-uid').value;
+    if (hadAnything && !confirm('Clear CS PIC, Player Contact No, Status CS, and Correct UID for ' + curDep.transaction + ' — and update the Sheet immediately?\n\nThis can\'t be undone from here.')) return;
     var btn = gi('depClear'); btn.disabled = true; btn.textContent = 'Clearing...';
     try {
-      const data = await sendUpdate({ csRemarks: '' });
-      btn.disabled = false; btn.textContent = 'Clear — Update Sheet';
+      const data = await sendUpdate({ csPIC: '', playerContactNo: '', statusCS: '', correctUid: '' });
+      btn.disabled = false; btn.textContent = 'Clear All — Update Sheet';
       showT('depT', data.ok, data.error);
-      if (data.ok) { gi('ef-csremarks').value = ''; }
+      if (data.ok) {
+        gi('ef-piccs').value = ''; gi('ef-pcoNo').value = ''; gi('ef-statuscs').value = ''; gi('ef-uid').value = '';
+      }
     } catch (e) {
-      btn.disabled = false; btn.textContent = 'Clear — Update Sheet';
+      btn.disabled = false; btn.textContent = 'Clear All — Update Sheet';
       showT('depT', false, e.message);
     }
   }
@@ -670,7 +721,5 @@
   gi('depSub').addEventListener('click', subDep);
   gi('depClear').addEventListener('click', clearAndUpdate);
 </script>
-  <script src="/assets/toast.js?v=67c1e195"></script>
-  <script src="/assets/announcement-banner.js?v=4881665d"></script>
 </body>
 </html>

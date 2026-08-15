@@ -1,11 +1,4 @@
-/* Space Grotesk / Inter / JetBrains Mono are loaded via a <link> tag in
-   each HTML file's <head> now, not an @import here — @import forces the
-   browser to wait for that external font-CSS request to finish before it
-   can even start applying the REST of this file's own rules (body's
-   background, the starfield styles, etc.), chaining two network requests
-   back-to-back instead of letting them load in parallel. That's what was
-   stretching out the "flat fallback color" window on page navigation —
-   see the critical inline <style> in index.html/form.html's <head>. */
+@import url("https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;600&display=swap");
 
 :root {
   --ink: #1b2559;
@@ -31,8 +24,8 @@
   --sf-filter: brightness(1.4) saturate(0.85) contrast(0.95);
   --sf-shade: linear-gradient(180deg, rgba(234,241,255,0.55) 0%, rgba(217,206,244,0.62) 45%, rgba(196,178,238,0.72) 100%);
   --sidebar-bg: rgba(255, 255, 255, 0.28);
-  --sidebar-item-bg: rgba(255, 255, 255, 0.68);
-  --sidebar-item-hover: rgba(255, 255, 255, 0.82);
+  --sidebar-item-bg: rgba(255, 255, 255, 0.65);
+  --sidebar-item-hover: rgba(255, 255, 255, 0.85);
   --pill-bg: rgba(255, 255, 255, 0.6);
   --pill-border: rgba(255, 255, 255, 0.75);
   --brand-row-bg: rgba(255, 255, 255, 0.3);
@@ -74,8 +67,8 @@
   --sf-filter: none;
   --sf-shade: linear-gradient(180deg, rgba(3,4,13,0.35) 0%, rgba(3,4,13,0.55) 55%, rgba(3,4,13,0.75) 100%);
   --sidebar-bg: rgba(15, 19, 40, 0.75);
-  --sidebar-item-bg: rgba(20, 26, 51, 0.85);
-  --sidebar-item-hover: rgba(255, 255, 255, 0.07);
+  --sidebar-item-bg: rgba(15, 19, 40, 0.88);
+  --sidebar-item-hover: rgba(28, 34, 66, 0.96);
   --pill-bg: rgba(255, 255, 255, 0.04);
   --pill-border: rgba(255, 255, 255, 0.1);
   --brand-row-bg: rgba(255, 255, 255, 0.03);
@@ -85,6 +78,14 @@
 
 * { box-sizing: border-box; }
 
+/* Global scrollbar — thin and low-key by default (barely visible against
+   the background) but still clearly shows scroll position/progress once
+   you look for it or start dragging it; replaces every browser's fat,
+   high-contrast default scrollbar everywhere on the site (sidebars,
+   thread panels, modals, tables, all of it) with one consistent style.
+   Firefox uses scrollbar-color/-width; everything else (Chrome, Edge,
+   Safari) uses the ::-webkit-scrollbar-* pseudo-elements below — both
+   are needed to cover all browsers. */
 * { scrollbar-width: thin; scrollbar-color: var(--accent-glow) transparent; }
 ::-webkit-scrollbar { width: 8px; height: 8px; }
 ::-webkit-scrollbar-track { background: transparent; }
@@ -92,25 +93,39 @@
 ::-webkit-scrollbar-thumb:hover { background: rgba(124, 108, 240, 0.75); background-clip: padding-box; }
 ::-webkit-scrollbar-corner { background: transparent; }
 
+/* The canvas background now lives on <html> (see the rule below), not on
+   <body> — this is what lets the inline placeholder <style> in each
+   page's <head> (first paint, before this file has even downloaded)
+   hand off to this "real" rule with zero visible change: same photo,
+   same shade gradient, same values, just now driven by a CSS variable
+   instead of hard-coded numbers. If <body> also carried an opaque
+   background here, it would paint *above* the negative-z-index
+   #starfieldRoot layer once <html> owns its own background (the
+   propagation trick that lets a bare <body> background become the page
+   canvas background only applies while <html> itself specifies none) —
+   so <body> is deliberately left transparent and the starfield/photo
+   show straight through it. */
+html {
+  background-color: #090c1c;
+  background-image: var(--sf-shade), url('/assets/img/bg-space.jpg');
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+  background-attachment: fixed;
+}
+html[data-theme="light"] {
+  /* Light theme skips the photo for this base layer entirely — the
+     shade over it is already 55%~72% opaque, so a plain gradient in
+     the exact same tones reads as visually identical while being one
+     fewer thing to keep in sync with the placeholder <style>. */
+  background-color: #dbe7fb;
+  background-image: var(--page-bg);
+}
 body {
   margin: 0;
   min-height: 100vh;
   color: var(--ink);
-  background: var(--page-bg);
-  background-attachment: fixed;
-  transition: background 0.2s ease, color 0.2s ease;
-  /* Forces <body> to establish its own stacking context, cleanly (no
-     side effects on layout, unlike position:relative + z-index) — this
-     is what makes #starfieldRoot's z-index: -2 (see below) actually
-     land BETWEEN body's own background and body's other content,
-     instead of underneath body's own background entirely. Without this,
-     whether the starfield is visible at all ends up depending on
-     incidental things elsewhere on the page that happen to give body a
-     stacking context as a side effect (an animation/transition
-     currently affecting a compositable property, etc.) — fragile and
-     exactly what broke here. isolation: isolate makes it explicit and
-     permanent, independent of anything else on the page. */
-  isolation: isolate;
+  transition: color 0.2s ease;
 }
 
 /* ---- Animated space-photo background (both themes) ----
@@ -171,15 +186,28 @@ body {
 
 /* threads.html only — locks the whole page to the viewport so the only
    thing that ever scrolls is the conversation area, and the reply bar
-   stays genuinely pinned regardless of browser zoom level. */
-html:has(body.threads-page), body.threads-page {
-  height: 100%;
+   stays genuinely pinned regardless of browser zoom level.
+   height:100dvh/100vh is used directly on <body> instead of the previous
+   `html:has(body.threads-page){height:100%} + body.threads-page
+   {height:100%}` pair — percentage heights need <html> itself to have a
+   definite height first, which is what that :has() selector existed to
+   provide, but that makes this whole fixed-viewport system depend on
+   :has() actually matching. Viewport units resolve directly against the
+   viewport with NO ancestor sizing required at all, so this removes that
+   dependency entirely — a strictly more robust base for a mechanism the
+   reply box's visibility depends on. (100vh first as a plain fallback
+   for any engine that doesn't recognize dvh; a browser that doesn't
+   recognize a value ignores that whole declaration and keeps the
+   previous one, it doesn't fall through to auto.) */
+body.threads-page {
+  height: 100vh;
+  height: 100dvh;
   overflow: hidden;
   display: flex;
   flex-direction: column;
 }
 body.threads-page .topbar { flex-shrink: 0; }
-body.threads-page #announcementBanner { flex-shrink: 0; }
+body.threads-page > .brand-row { flex-shrink: 0; }
 body.threads-page .threads-topline { flex-shrink: 0; }
 body.threads-page .threads-shell { flex: 1; height: auto; min-height: 0; }
 
@@ -215,6 +243,52 @@ a { color: inherit; text-decoration: none; }
   -webkit-backdrop-filter: blur(16px) saturate(160%);
 }
 .topbar-left { display: flex; align-items: center; gap: 10px; }
+
+/* ---- HubNav mobile drawer (2026-08) — button injected by hub-nav.js
+   into .topbar-left; hidden above 820px (see the @media block near
+   .sidebar below), where the nav is always a normal in-flow column. ---- */
+.hub-nav-toggle {
+  display: none;
+  align-items: center; justify-content: center;
+  width: 32px; height: 32px; border-radius: 9px; flex-shrink: 0;
+  background: var(--field-bg); border: 1.5px solid var(--border);
+  color: var(--ink); font-size: 15px; cursor: pointer;
+}
+.hub-nav-toggle:hover { border-color: var(--accent-gold); }
+.hub-nav-backdrop {
+  display: none;
+  position: fixed; inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  /* Below the topbar's z-index:20 (see .topbar above) so the topbar —
+     logo, clock, user pill — stays fully visible above the dimmed
+     backdrop and the drawer itself, matching the reference screenshots
+     (drawer opens BELOW the topbar row, never covering it). */
+  z-index: 14;
+}
+body.hubnav-open .hub-nav-backdrop { display: block; }
+
+/* ---- index.html's OWN sidebar drawer (2026-08 — ported from the INR
+   build's proven implementation, see spa-shell.js's mount()). Separate
+   mechanism from .hub-nav-toggle above: index.html has always kept its
+   own, independent sidebar-rendering code rather than hub-nav.js (see
+   that file's header comment), and — crucially — clicking a tool card
+   from the hub does NOT navigate to a new page at all, it's an in-place
+   SPA mount (see spa-shell.js) that keeps THIS sidebar on screen the
+   whole time. .hub-nav-toggle only ever runs on a standalone page
+   load (threads.html opened directly/bookmarked/refreshed), so it was
+   never reachable via the hub's own card-click flow — this is the
+   fix for that. Both start hidden/inert; only turned on inside the
+   @media blocks further below. */
+.sidebar-toggle-btn { display: none; }
+.sidebar-backdrop {
+  display: none;
+  position: fixed; inset: 0; z-index: 44;
+  background: rgba(10, 12, 25, 0.55);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.2s ease;
+}
+
 .logo-badge {
   width: 34px; height: 34px; border-radius: 10px;
   background: linear-gradient(135deg, #6366f1, #38bdf8);
@@ -320,15 +394,18 @@ a { color: inherit; text-decoration: none; }
   object-fit: cover;
 }
 .brand-pill .pill-name { cursor: default; }
-/* .pill-edit rules removed 2026-08-15 — the pill's own ✏️ edit button is
-   gone; link editing moved to the "Web Link" admin section. See
-   public/index.html's buildBrandPill() and functions/api/admin/web-links.js. */
+/* .pill-edit removed 2026-08 — the inline pencil-icon shortcut is gone;
+   editing now only happens via Integration Portal → Web Link. */
 
 /* ---- Brand logo/link edit modal ---- */
 .edit-modal-backdrop {
   display: flex;
   position: fixed; inset: 0; z-index: 50;
   background: rgba(10, 12, 25, 0.55);
+  /* flex-start (not center) + generous top padding: with overflow-y:auto,
+     align-items:center clips content that overflows ABOVE the viewport —
+     you can scroll down to the bottom but never up to the true top. See
+     php-issue-hub-完整优化记录.md §5.3 for the full writeup. */
   align-items: flex-start; justify-content: center;
   opacity: 0;
   pointer-events: none;
@@ -429,27 +506,6 @@ a { color: inherit; text-decoration: none; }
   color: var(--ink-soft); margin: 0 0 8px;
 }
 .agent-profile-locked-note { text-transform: none; font-weight: 600; letter-spacing: 0; color: var(--ink-soft); }
-
-/* Plain divider marking the start of a new section (Topic access /
-   Account Management Access) inside the Agent Personal Profile popup —
-   same thin gray line style as .form-divider, just scoped separately in
-   case this section ever needs its own treatment later. */
-.agent-profile-section-divider {
-  height: 1px; margin-bottom: 14px; background: var(--border);
-}
-
-/* ---- Collapsible "Topic access" / "Account Management Access" blocks
-   inside the Agent Personal Profile popup — collapsed by default, click
-   the header to expand. Same open/arrow-rotate pattern as the sidebar's
-   .sidebar-item.expandable / .arrow above. ---- */
-.agent-profile-collapsible-header {
-  cursor: pointer; user-select: none; display: flex; align-items: center;
-  justify-content: space-between; gap: 8px; margin-bottom: 0; padding: 2px 0;
-}
-.agent-profile-collapsible-header .arrow { transition: transform 0.15s ease; flex-shrink: 0; }
-.agent-profile-collapsible.open .agent-profile-collapsible-header .arrow { transform: rotate(90deg); }
-.agent-profile-collapsible > .agent-profile-collapsible-body { display: none; margin-top: 8px; }
-.agent-profile-collapsible.open > .agent-profile-collapsible-body { display: flex; }
 .agent-profile-status-row {
   display: flex; align-items: center; justify-content: space-between; gap: 8px;
   border: 1.5px solid var(--border); background: var(--field-bg); border-radius: 12px;
@@ -460,27 +516,35 @@ a { color: inherit; text-decoration: none; }
 .agent-profile-status-text.is-active { color: #1a9c6e; }
 .agent-profile-status-text.is-locked { color: var(--required); }
 .agent-profile-module-list { display: flex; flex-direction: column; gap: 2px; }
-.agent-profile-module-check {
-  display: flex; align-items: center; gap: 8px; font-size: 13px; padding: 4px 2px;
-  color: var(--ink);
-}
-.agent-profile-module-check input[disabled] { cursor: not-allowed; }
-
-/* ---- Account Management Access panel (Owner-only, inside the Agent
-   Personal Profile popup) — same look as .agent-profile-module-list
-   above, plus a per-section View only/Can Edit radio row that only
-   appears while that section's checkbox is checked. ---- */
 .agent-profile-admin-section-list { display: flex; flex-direction: column; gap: 2px; }
+.agent-profile-collapsible { margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--border); }
+.agent-profile-collapsible-header {
+  width: 100%; display: flex; align-items: flex-start; justify-content: space-between; gap: 10px;
+  padding: 0; margin: 0 0 10px; background: none; border: none; cursor: pointer; font-family: inherit; text-align: left;
+}
+.agent-profile-collapsible-header:hover .agent-profile-section-label-lg { color: var(--wordmark); }
+.agent-profile-section-label-lg {
+  font-size: 12px; font-weight: 800; letter-spacing: 0.04em; text-transform: uppercase;
+  color: var(--ink); display: block;
+}
+.agent-profile-section-hint {
+  display: block; font-size: 11px; font-weight: 600; letter-spacing: 0; text-transform: none;
+  color: var(--ink-soft); margin-top: 2px;
+}
+.agent-profile-chev { color: var(--ink-soft); font-size: 13px; flex-shrink: 0; transition: transform 0.15s ease; }
+.agent-profile-collapsible.is-open .agent-profile-chev { transform: rotate(90deg); }
+.agent-profile-collapsible-body { padding: 0; }
+.agent-profile-divider { border: none; border-top: 1px solid var(--border); margin: 10px 0; }
 .agent-profile-edit-level-row {
   display: flex; align-items: center; gap: 14px; margin: 0 0 6px 26px;
   font-size: 12px; color: var(--ink-soft);
 }
 .agent-profile-edit-level-row label { display: flex; align-items: center; gap: 5px; cursor: pointer; }
-.agent-profile-admin-delegate-row {
-  margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--border);
+.agent-profile-module-check {
+  display: flex; align-items: center; gap: 8px; font-size: 13px; padding: 4px 2px;
+  color: var(--ink);
 }
-.agent-profile-admin-delegate-row .agent-profile-module-check { align-items: flex-start; line-height: 1.35; }
-.agent-profile-admin-delegate-row .agent-profile-module-check input { margin-top: 3px; }
+.agent-profile-module-check input[disabled] { cursor: not-allowed; }
 
 /* ---- TG Group / Channel (live-editable Telegram routing) ---- */
 .tgroute-layout { display: flex; gap: 14px; max-height: 78vh; }
@@ -528,6 +592,11 @@ a { color: inherit; text-decoration: none; }
   padding: 7px 9px; font-size: 12px; color: var(--ink); font-family: inherit;
 }
 .tgroute-row-actions { display: flex; flex-shrink: 0; gap: 8px; }
+.mention-backfill-row { display: flex; align-items: flex-start; justify-content: space-between; gap: 24px; margin-top: 18px; }
+.mention-backfill-copy { flex: 1; min-width: 0; }
+.mention-backfill-title { font-size: 13px; font-weight: 700; color: var(--ink); margin-bottom: 6px; }
+.mention-backfill-action { flex-shrink: 0; text-align: right; }
+.mention-backfill-action .edit-modal-note { margin: 8px 0 0; white-space: nowrap; }
 .tgroute-action-btn {
   font-size: 11.5px; font-weight: 700; padding: 7px 14px; border-radius: 8px;
   cursor: pointer; border: 1.5px solid var(--accent-gold); color: #0f1220;
@@ -546,6 +615,340 @@ a { color: inherit; text-decoration: none; }
 }
 .tgroute-divider { border: none; border-top: 1px solid var(--panel-border); margin: 18px 0 0; }
 .tgroute-footnote { margin-top: 12px; }
+
+/* ---- IP Access panel (Account Management → IP Access) — replaces the
+   old single-office Whitelist IP form. Lives inside the same .edit-modal
+   (opened via openAcctModal("whitelist"), .wide sized) as tgroutes/
+   settings/etc. above; see the big IP Access JS block near
+   openAcctModal() in index.html. ---- */
+.ipa-header-actions { display: flex; gap: 8px; flex-shrink: 0; }
+.ipa-header-btn {
+  background: var(--field-bg); border: 1.5px solid var(--border); border-radius: 8px;
+  padding: 7px 14px; font-size: 12px; font-weight: 700; color: var(--ink);
+  cursor: pointer; white-space: nowrap; transition: border-color 0.15s ease, color 0.15s ease;
+}
+.ipa-header-btn:hover { border-color: var(--accent-gold); color: var(--accent-gold); }
+
+.ipa-stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 16px; }
+.ipa-stat-card {
+  text-align: left; background: var(--field-bg); border: 1.5px solid var(--border); border-radius: 12px;
+  padding: 12px 14px; cursor: pointer; transition: border-color 0.15s ease, transform 0.15s ease;
+}
+.ipa-stat-card:hover { transform: translateY(-1px); border-color: var(--accent-gold); }
+.ipa-stat-card.active { border-color: var(--accent-gold); box-shadow: 0 0 0 1px var(--accent-gold) inset; }
+.ipa-stat-label { display: block; font-size: 10px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink-soft); margin-bottom: 4px; }
+.ipa-stat-value { display: block; font-family: var(--font-display); font-size: 24px; font-weight: 600; color: var(--ink); }
+.ipa-stat-value.ipa-green { color: #34d399; }
+.ipa-stat-value.ipa-gold { color: var(--accent-gold); }
+.ipa-stat-value.ipa-red { color: #ef4a72; }
+
+.ipa-section { border: 1.5px solid var(--border); border-radius: 12px; margin-bottom: 10px; overflow: hidden; }
+.ipa-section-header {
+  width: 100%; display: flex; align-items: center; justify-content: space-between;
+  background: var(--field-bg); border: none; padding: 12px 16px;
+  font-size: 13px; font-weight: 700; color: var(--ink); cursor: pointer; text-align: left;
+}
+.ipa-chevron { color: var(--ink-soft); transition: transform 0.15s ease; font-size: 12px; }
+.ipa-chevron.open { transform: rotate(180deg); }
+.ipa-section-body { padding: 14px 16px 16px; }
+.ipa-form-grid {
+  display: grid;
+  /* minmax(0, 1fr) — NOT bare "1fr" — for the flexible middle column.
+     A plain `1fr` track's implicit minimum is "auto" (the content's own
+     min-content width), not 0 — if that content (the IP address input,
+     which has a fairly wide placeholder) needs more room than is
+     actually available, the TRACK REFUSES TO SHRINK below that and the
+     row overflows instead, which is exactly what made this whole
+     section render squeezed/misaligned with text cut off (reported
+     with screenshots). Wrapping it in minmax(0, 1fr) removes that
+     implicit floor so the track can actually shrink to fit. */
+  grid-template-columns: minmax(170px, 220px) minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: flex-end;
+}
+/* Matches .ipa-form-grid's first column exactly (same minmax formula) so
+   the "Block an IP" row's IP ADDRESS(ES) box lines up edge-to-edge with
+   "Add IP manually"'s OFFICE box above it — the two rows previously used
+   different column formulas here (equal-weight vs fixed-width first
+   column), which kept their boxes from aligning vertically between the
+   two stacked sections (reported with screenshots). */
+.ipa-form-grid.ipa-form-2col { grid-template-columns: minmax(170px, 220px) minmax(0, 1fr) auto; }
+.ipa-field { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
+.ipa-field-grow { min-width: 0; }
+.ipa-field label { font-size: 10px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; color: var(--label-blue); }
+.ipa-field select, .ipa-field input {
+  width: 100%; box-sizing: border-box; height: 38px;
+  background: var(--card-bg); border: 1.5px solid var(--border); border-radius: 8px;
+  padding: 0 11px; font-size: 13px; color: var(--ink); font-family: inherit;
+  text-overflow: ellipsis;
+}
+/* Native <select> chrome (internal padding + built-in arrow) is controlled
+   by the browser/OS, not by our padding/border rules, so even with
+   identical CSS the select's rendered box height drifts a few px from the
+   text <input> next to it in the same row — the two boxes don't line up
+   (reported with screenshots). appearance:none strips that native chrome
+   so the explicit height above is what actually renders; we draw our own
+   arrow since removing native appearance also removes the built-in one. */
+.ipa-field select {
+  appearance: none; -webkit-appearance: none; -moz-appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='none' stroke='%239aa3c4' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='5 8 10 13 15 8'/%3E%3C/svg%3E");
+  background-repeat: no-repeat; background-position: right 11px center; background-size: 14px;
+  padding-right: 32px;
+}
+/* <select> has a long-standing browser quirk: unlike <input>, it refuses to
+   shrink narrower than its widest <option>'s intrinsic content width, even
+   with width:100% set on a narrower parent. When the OFFICE column (clamped
+   170-220px) is narrower than an office name needs, the select just
+   overflows past its grid column and visually sits on top of the next
+   field (IP ADDRESS(ES)) instead of respecting the layout — reported with
+   screenshots. min-width:0 + overflow:hidden forces it to actually honor
+   the 100% width and ellipsis-truncate the option text instead. */
+.ipa-field select { min-width: 0; overflow: hidden; white-space: nowrap; }
+.ipa-field select:focus, .ipa-field input:focus { outline: none; border-color: var(--accent-gold); }
+.ipa-btn-primary, .ipa-btn-secondary {
+  border: none; border-radius: 10px; padding: 9px 20px; font-size: 13px; font-weight: 700; cursor: pointer;
+  white-space: nowrap; height: 38px;
+}
+.ipa-btn-primary { background: linear-gradient(90deg, #f3c463, #e0a83f); color: #241c05; }
+.ipa-btn-primary:hover { filter: brightness(1.05); }
+.ipa-btn-secondary { background: none; border: 1.5px solid var(--border); color: var(--ink); }
+.ipa-btn-secondary:hover { border-color: var(--accent-gold); color: var(--accent-gold); }
+.ipa-btn-primary:disabled, .ipa-btn-secondary:disabled { opacity: 0.5; cursor: not-allowed; }
+.ipa-hint { margin: 10px 0 0; font-size: 11px; color: var(--ink-soft); line-height: 1.5; }
+
+.ipa-hint-footer { text-align: center; font-size: 12px; color: var(--ink-soft); margin: 18px 0 0; }
+.ipa-tables { margin-top: 4px; }
+.ipa-settled-note { font-size: 11.5px; color: var(--ink-soft); margin: 4px 0 12px; }
+.ipa-table-block { margin-bottom: 18px; }
+.ipa-table-block:last-child { margin-bottom: 0; }
+.ipa-table-head-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 8px; }
+.ipa-table-title {
+  font-family: var(--font-display); font-weight: 600; font-size: 13.5px; color: var(--ink);
+  display: flex; align-items: center; gap: 8px;
+}
+.ipa-table-count {
+  display: inline-flex; align-items: center; justify-content: center; min-width: 18px; height: 18px;
+  padding: 0 5px; border-radius: 999px; background: var(--accent-gold); color: #241c05;
+  font-size: 10.5px; font-weight: 800;
+}
+.ipa-page-size {
+  background: var(--field-bg); border: 1.5px solid var(--border); border-radius: 8px;
+  padding: 5px 10px; font-size: 11.5px; font-weight: 600; color: var(--ink); font-family: inherit; cursor: pointer;
+}
+.ipa-page-size:focus { outline: none; border-color: var(--accent-gold); }
+.ipa-pagination {
+  display: flex; align-items: center; justify-content: center; gap: 14px;
+  margin-top: 10px; font-size: 12px;
+}
+.ipa-page-link {
+  background: none; border: none; color: var(--label-blue); font-weight: 700; font-size: 12px;
+  cursor: pointer; padding: 2px 4px; text-decoration: underline; text-underline-offset: 2px;
+}
+.ipa-page-link:hover:not(:disabled) { color: var(--accent-gold); }
+.ipa-page-link:disabled { color: var(--ink-soft); text-decoration: none; cursor: default; opacity: 0.55; }
+.ipa-page-status { color: var(--ink-soft); font-weight: 600; }
+/* The Pending/Approved/Blocked tables are already paginated (10/20/30
+   rows per page via the page-size picker), so the row count on screen
+   is always bounded — a fixed max-height + overflow-y:auto here was
+   redundant AND harmful: it clipped the last row mid-cell and drew a
+   native scrollbar inside the rounded border, which is exactly the
+   stray-scrollbar-in-the-middle-of-the-table look reported with
+   screenshots. Dropping the vertical scroll lets the box size itself
+   to its content (matching the reference screenshot), so the top and
+   bottom padding — and the divider under the last row — end up even.
+   overflow-x stays so a very narrow viewport can still scroll
+   sideways instead of breaking the layout. */
+.ipa-table-scroll { overflow-x: auto; border: 1px solid var(--border); border-radius: 12px; }
+/* The Record popover is the one place this component shows an
+   UNPAGINATED, potentially long list (the full action log), so it
+   still needs its own vertical scroll — unlike the tables above. */
+.ipa-record-scroll { max-height: 340px; overflow-y: auto; }
+/* Every cell (header AND body) gets a full grid of dividers, and every
+   cell's content is centered — the two specific things asked for, on
+   top of the borders .agent-profile-table already had.
+   border-collapse:separate (NOT collapse) is deliberate: a sticky <th>
+   (position:sticky, needed so the header stays visible while the body
+   scrolls) inside a collapsed-border table is a known cross-browser
+   rendering conflict — the browser has to break the "merge adjacent
+   cell borders into one" model to keep the header pinned above the
+   scrolling body, and different engines resolve that inconsistently,
+   which is exactly what produced the table visually tearing into two
+   separate boxes (reported with screenshots). border-spacing:0 keeps
+   the separate model from adding any visible gap between cells, so the
+   divider look (via each cell's own border-right/border-bottom below)
+   ends up identical either way — just without the sticky-header bug. */
+.ipa-table { width: 100%; border-collapse: separate; border-spacing: 0; font-size: 12px; }
+.ipa-table th {
+  /* NOT position:sticky (removed) — a sticky <th> inside a container
+     that scrolls on BOTH axes (.ipa-table-scroll has overflow-x AND
+     overflow-y:auto) is a known source of cross-browser rendering
+     corruption, and switching border-collapse to "separate" (see the
+     .ipa-table rule above) reduced it but didn't fully eliminate it —
+     still reported, with screenshots, as the table visually tearing
+     into separate boxes with a stray scrollbar rendered mid-table.
+     The scroll area here only holds up to ~260px of content anyway, so
+     a header that stays pinned while scrolling isn't worth carrying
+     that risk for — a plain (non-sticky) header that scrolls away with
+     the rest of the table is a small UX trade for a table that
+     actually renders correctly every time. */
+  text-align: center; font-size: 10px; text-transform: uppercase;
+  letter-spacing: 0.04em; color: var(--ink-soft); font-weight: 700; padding: 10px 10px;
+  background: var(--card-bg); border-bottom: 1.5px solid var(--border); border-right: 1px solid var(--panel-border);
+}
+.ipa-table th:last-child { border-right: none; }
+.ipa-table td {
+  padding: 9px 10px; text-align: center; vertical-align: middle; color: var(--ink);
+  border-bottom: 1px solid var(--panel-border); border-right: 1px solid var(--panel-border);
+}
+.ipa-table td:last-child { border-right: none; }
+.ipa-table tr:last-child td { border-bottom: none; }
+.ipa-table .ipa-ip { color: #34d399; font-family: var(--font-mono); font-weight: 600; letter-spacing: 0.01em; }
+.ipa-table .ipa-empty { color: var(--ink-soft); font-style: italic; padding: 18px 10px; }
+.ipa-actions { white-space: nowrap; }
+.ipa-link { background: none; border: none; cursor: pointer; font-size: 11.5px; font-weight: 700; padding: 2px 6px; text-decoration: underline; text-underline-offset: 2px; }
+.ipa-link.ok { color: #34d399; }
+.ipa-link.err { color: #ef4a72; }
+.ipa-link + .ipa-link { margin-left: 4px; }
+
+/* "Manage offices" / "Record" — anchored INSIDE the modal, near the
+   header buttons that open them (not separate centered backdrops — see
+   the reference screenshots this was built from). Positioned
+   absolutely against .edit-modal (position:relative already, see
+   .edit-modal rule above), so they float over whatever the panel body
+   is currently showing without shifting any of that content. */
+/* Dark scrim behind the "Manage offices"/"Record" popovers — covers the
+   whole .edit-modal (not just the area behind the popover box itself),
+   so the IP Access panel underneath reads as visually backgrounded/
+   inactive while a popover is open, same as how the outer
+   .edit-modal-backdrop itself dims the page behind IT. Toggled by the
+   same JS that shows/hides each .ipa-popover (see toggleIpaPopover() —
+   it also toggles this). */
+.ipa-popover-scrim {
+  position: absolute; inset: 0; z-index: 4;
+  background: rgba(6, 8, 18, 0.6);
+  border-radius: inherit;
+}
+.ipa-popover {
+  position: absolute;
+  top: 58px; left: 24px; right: 24px;
+  max-height: calc(100% - 82px);
+  overflow-y: auto;
+  background: var(--card-bg); border: 1.5px solid var(--accent-gold); border-radius: 14px;
+  padding: 18px 20px 20px;
+  box-shadow: 0 20px 45px -12px rgba(0, 0, 0, 0.45);
+  z-index: 5;
+}
+.ipa-popover-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; }
+.ipa-popover-title { font-family: var(--font-display); font-weight: 600; font-size: 15px; margin: 0; color: var(--ink); }
+.ipa-popover-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 4px; }
+#ipaOfficesPopover textarea {
+  width: 100%; background: var(--card-bg); border: 1.5px solid var(--border); border-radius: 8px;
+  padding: 9px 11px; font-size: 13px; color: var(--ink); font-family: inherit; resize: vertical;
+}
+#ipaOfficesPopover textarea:focus { outline: none; border-color: var(--accent-gold); }
+
+@media (max-width: 820px) {
+  .ipa-stats { grid-template-columns: repeat(2, 1fr); }
+  .ipa-form-grid, .ipa-form-grid.ipa-form-2col { grid-template-columns: 1fr; align-items: stretch; }
+  .ipa-btn-primary, .ipa-btn-secondary { width: 100%; }
+  .ipa-popover { left: 12px; right: 12px; top: 52px; }
+}
+
+/* ---- Active Agents popup (Home → tool-card grid → #activeAgentsCard)
+   Lives in its own .edit-modal-backdrop#aaModalBackdrop, separate from
+   #acctModalBackdrop above so its open/close state and internal popover
+   (Record) never collide with Account Management's. See the JS block
+   near "window.ActiveAgentsModal" further down in index.html. ---- */
+.aa-modal-header {
+  display: flex; align-items: center; gap: 12px;
+  margin: 0 34px 4px 0; flex-wrap: wrap;
+}
+.aa-modal-header-icon {
+  width: 34px; height: 34px; border-radius: 10px; flex-shrink: 0;
+  background: #34d39933; display: flex; align-items: center; justify-content: center;
+  font-size: 15px;
+}
+.aa-modal-header-text { flex: 1; min-width: 160px; }
+.aa-modal-subtitle { margin: 2px 0 0; font-size: 11px; color: var(--ink-soft); }
+.aa-online-badge {
+  display: inline-flex; align-items: center; gap: 5px;
+  background: rgba(52, 211, 153, 0.12); border: 1.5px solid rgba(52, 211, 153, 0.4);
+  color: #1a9c6e; border-radius: 999px; padding: 5px 12px;
+  font-size: 11.5px; font-weight: 700; white-space: nowrap;
+}
+html[data-theme="light"] .aa-online-badge { color: #16805c; }
+
+.aa-list { display: flex; flex-direction: column; gap: 8px; max-height: 52vh; overflow-y: auto; padding-right: 2px; }
+.aa-row {
+  display: flex; align-items: center; gap: 12px;
+  border: 1.5px solid var(--border); border-radius: 12px;
+  padding: 11px 10px 11px 14px;
+}
+.aa-row.is-offline { opacity: 0.75; }
+.aa-row-avatar { position: relative; flex-shrink: 0; }
+.aa-row-avatar-circle {
+  width: 34px; height: 34px; border-radius: 9px; background: var(--field-bg);
+  display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 13px;
+}
+.aa-row-badge {
+  position: absolute; bottom: -2px; right: -2px; width: 11px; height: 11px;
+  border-radius: 50%; border: 2px solid var(--card-bg);
+}
+.aa-row-main { flex: 1; min-width: 0; }
+.aa-row-name { color: var(--ink); font-weight: 700; font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* Icon-pill tags (role / device) — rounded-full with a small icon, closer
+   to the reference design than the earlier plain rounded-rect tags. */
+.aa-tags { display: flex; gap: 6px; margin-top: 5px; flex-wrap: wrap; }
+.aa-tag {
+  display: inline-flex; align-items: center; gap: 4px;
+  color: var(--ink-soft); font-size: 10.5px; font-weight: 600;
+  background: var(--field-bg); border-radius: 999px; padding: 3px 9px 3px 7px;
+}
+.aa-row-status { width: 100px; flex-shrink: 0; }
+.aa-row-status-line { display: flex; align-items: center; gap: 6px; justify-content: flex-end; }
+.aa-row-status-time { color: var(--ink-soft); font-size: 10.5px; margin-top: 2px; text-align: right; }
+
+.aa-dot-online { background: #34d399; animation: aaBreathe 1.8s ease-in-out infinite; }
+.aa-dot-gray { background: #5f5e5a; }
+@keyframes aaBreathe {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(52, 211, 153, 0.55); }
+  50% { box-shadow: 0 0 0 6px rgba(52, 211, 153, 0); }
+}
+.aa-footer {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--panel-border);
+  font-size: 10.5px; color: var(--ink-soft);
+}
+.aa-footer-live { display: inline-flex; align-items: center; gap: 5px; }
+.aa-record-pick:hover { background: var(--sidebar-item-hover); }
+.aa-day-pick:hover { background: var(--field-bg); }
+/* #aaRecordPopover overrides .ipa-popover's left:24px/right:24px with an
+   explicit centered transform. Needed because this popover ALSO sets an
+   inline max-width:820px (see ACTIVE-AGENTS-SPEC.md §2) while its parent
+   .edit-modal.wide is 940px — with left+right+max-width all constrained
+   at once, the CSS spec resolves the over-constraint by dropping "right"
+   and anchoring to the left, which is what made it visibly hug the left
+   edge with dead space on the right instead of sitting centered. Scoped
+   to this ID only (not a change to the shared .ipa-popover class) so the
+   IP Access modal's own popovers, which don't hit this over-constraint
+   (no max-width set on them), are untouched. */
+#aaRecordPopover {
+  left: 50%; right: auto;
+  width: calc(100% - 48px);
+  transform: translateX(-50%);
+}
+@media (max-width: 720px) {
+  .aa-modal-header { margin-right: 0; }
+  #aaModalBackdrop .edit-modal.wide { max-width: 100%; }
+}
+@media (max-width: 480px) {
+  #aaRecordPopover table, #aaRecordPopover thead, #aaRecordPopover tbody, #aaRecordPopover th, #aaRecordPopover td { white-space: normal !important; }
+}
+
+/* ---- Settings (Maintenance/Coming soon toggle) removed 2026-08 — this
+   used to size the .fs-fields/.fs-dropdown rows (settings-dropdown.css,
+   also removed) that lived here. See renderSettingsPanel() in
+   index.html for what's left in this modal. */
 
 
 /* ---- Theme toggle (legacy floating button, kept for old pages) ---- */
@@ -569,45 +972,131 @@ a { color: inherit; text-decoration: none; }
 }
 .theme-toggle:hover { transform: translateY(-1px); }
 
-/* ---- Fixed viewport shell (topbar pinned, sidebar independently
-   scrolling, main content frozen until it actually overflows) — same
-   pattern threads.html/announcements.html already use (see their
-   `body.threads-page`/`body.announcements-page` rules), copied here so
-   the home hub behaves the same way instead of the whole page scrolling
-   as one block. */
-html:has(body.hub-page), body.hub-page {
-  height: 100%;
+/* ---- Sidebar hub layout ---- */
+/* ---- Fixed-viewport hub page: topbar stays put, sidebar scrolls
+   independently, right column (brand ticker + banner + main content)
+   is its own scroll container. Same pattern already proven on
+   threads.html (body.threads-page) — see
+   php-issue-hub-完整优化记录.md §6 for the writeup this was ported from.
+   height:100dvh/100vh directly on <body> instead of relying on
+   `html:has(body.hub-page){height:100%}` to give <html> a definite
+   height first — see body.threads-page above for why. */
+body.hub-page {
+  height: 100vh;
+  height: 100dvh;
   overflow: hidden;
   display: flex;
   flex-direction: column;
 }
 body.hub-page .topbar { flex-shrink: 0; }
 
-/* ---- Sidebar hub layout ---- */
+/* ---- Generic fixed-viewport 2-column shell for sub-pages that get the
+   shared "Issue Submission" nav (form.html, promo.html, deposit-issue.html,
+   deposit-backup.html) — mirrors body.hub-page's pattern above. Reuses
+   .sidebar as-is for the nav column. ---- */
+body.subpage-fixed {
+  height: 100vh;
+  height: 100dvh;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+body.subpage-fixed .topbar { flex-shrink: 0; }
+.subpage-shell { display: flex; flex: 1; min-height: 0; }
+.subpage-right-col { flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; }
+/* Same wrapper pattern as index.html's .hub-content-col — keeps the
+   marquee inside the content column, beside the sidebar, not spanning
+   over it. */
+.subpage-content-col { flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; }
+.subpage-content-col > .brand-row { flex-shrink: 0; }
+.subpage-right-col > #announcementBanner { flex-shrink: 0; }
+.subpage-main { flex: 1; min-height: 0; overflow-y: auto; }
+
+/* ---- SPA shell (index.html only) — #spaMount swaps in a fetched
+   route's content in place of #viewHome; see spa-shell.js ---- */
+#spaMount { min-width: 0; min-height: 0; }
+.spa-loading {
+  flex: 1; display: flex; align-items: center; justify-content: center;
+  color: var(--ink-soft); font-size: 13px; letter-spacing: 0.02em;
+}
+.spa-loading.spa-error {
+  flex-direction: column; gap: 12px; text-align: center; padding: 0 24px;
+}
+.spa-retry-btn {
+  border: 1px solid var(--panel-border); background: var(--pill-bg);
+  color: var(--ink); font-size: 13px; font-weight: 700;
+  padding: 8px 18px; border-radius: 999px; cursor: pointer;
+}
+.spa-retry-btn:hover { background: var(--pill-border); }
+
 .hub-layout {
   display: flex;
   flex: 1;
-  min-height: 0; /* flex children default to min-height:auto, which would
-                     let this row grow past the viewport instead of
-                     respecting the fixed-height column above — easy to
-                     miss, breaks the whole scroll-locking trick if left
-                     out. */
+  min-height: 0; /* flex children default to min-height:auto and will
+                    otherwise refuse to shrink below their content size,
+                    silently breaking the "independent scroll" effect */
 }
+/* Wraps the persistent marquee + whichever of #viewHome/#spaMount is
+   currently showing — sits BESIDE .sidebar (not above it, and not
+   spanning the sidebar's width), so the marquee only ever occupies the
+   same column the page content already lives in. Matches the INR
+   build's layout exactly. */
+.hub-content-col {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.hub-content-col > .brand-row { flex-shrink: 0; }
 .sidebar {
   width: 290px;
   flex-shrink: 0;
+  background: var(--sidebar-bg);
   border-right: 1px solid var(--panel-border);
   padding: 24px 16px 40px;
-  overflow-y: auto; /* independent scroll — a long ISSUE SUBMISSION list
-                        never pushes the main content area down. */
+  overflow-y: auto;
+  backdrop-filter: blur(16px) saturate(160%);
+  -webkit-backdrop-filter: blur(16px) saturate(160%);
 }
-/* .brand-row + #announcementBanner used to be siblings of .hub-layout,
-   full page width — which meant they rendered ON TOP of the sidebar's
-   column instead of stopping where it ends. Moved inside .hub-right-col
-   (a sibling of .sidebar, alongside .hub-main) so their width naturally
-   aligns to just the right-hand column; flex-shrink:0 keeps them at
-   their natural height while .hub-main is the one flexible/scrolling
-   piece below them. */
+
+/* ---- HubNav small-screen behavior (2026-08) ---- Scoped to
+   .threads-shell/.subpage-shell only — i.e. every page that mounts the
+   SHARED HubNav component (threads.html, deposit-issue.html,
+   deposit-backup.html, promo.html, betting-resources.html, form.html,
+   announcements.html; see hub-nav.js's own header comment). index.html
+   has its own separate, unrelated .hub-layout > .sidebar and is
+   deliberately NOT touched here — this was scoped to "after clicking
+   into a tool card" specifically, not the hub page itself.
+   Below 820px: hidden by default (off-canvas, translateX(-105%)) and
+   toggled open as a fixed drawer via the hamburger button hub-nav.js
+   injects into .topbar-left — opening it never reflows or shrinks the
+   main content column next to it (.sidebar leaves the flex layout
+   entirely once it's `position: fixed`, so that column just renders at
+   its natural full width the whole time, whether the drawer is open or
+   closed). Above 820px: no rule here applies at all, so .sidebar stays
+   the normal 290px in-flow column above, exactly as before, and the
+   hamburger button stays hidden (see .hub-nav-toggle above). */
+@media (max-width: 820px) {
+  .hub-nav-toggle { display: flex; }
+  .threads-shell .sidebar,
+  .subpage-shell .sidebar {
+    position: fixed;
+    top: 0;
+    left: 0;
+    height: 100dvh;
+    width: 280px;
+    max-width: 82vw;
+    z-index: 15;
+    transform: translateX(-105%);
+    transition: transform 0.22s ease;
+    box-shadow: 12px 0 32px rgba(0, 0, 0, 0.35);
+  }
+  body.hubnav-open .threads-shell .sidebar,
+  body.hubnav-open .subpage-shell .sidebar {
+    transform: translateX(0);
+  }
+}
 .hub-right-col {
   flex: 1;
   min-width: 0;
@@ -615,22 +1104,24 @@ body.hub-page .topbar { flex-shrink: 0; }
   display: flex;
   flex-direction: column;
 }
-.hub-right-col > .brand-row,
 .hub-right-col > #announcementBanner {
   flex-shrink: 0;
 }
-/* Hamburger toggle + drawer backdrop — both start hidden/inert; only
-   turned on inside the @media (max-width: 720px) block further below,
-   where .sidebar itself switches to an off-canvas drawer. */
-.sidebar-toggle-btn { display: none; }
-.sidebar-backdrop {
-  display: none;
-  position: fixed; inset: 0; z-index: 44;
-  background: rgba(10, 12, 25, 0.55);
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity 0.2s ease;
-}
+/* #spaMount (also .hub-right-col, see index.html) stacks its mounted
+   route's content in a column — same as .hub-right-col's own default
+   direction, no inline override needed. For threads/announcements (see
+   spa-shell.js's ROUTES.threads/.announcements `select`), that means
+   #announcementBanner sits above the WHOLE .threads-body-row as a single
+   unit, mirroring .threads-content-col's own stacked layout on the
+   standalone (non-SPA) page exactly — .threads-body-row already carries
+   its own correct `flex:1; min-height:0` (see below), so it stretches to
+   fill the remaining height and the internal scroll chain inside it
+   keeps working. (An earlier version of this forced #spaMount to
+   flex-direction:row and used flex-wrap to push the banner onto its own
+   line — that silently broke height-stretching for the wrapped second
+   line, killing internal scrolling on every SPA-mounted thread view. See
+   conversation history for the reported bug + fix.) */
+#spaMount > #announcementBanner { flex-shrink: 0; }
 .sidebar-header {
   display: flex;
   align-items: center;
@@ -639,64 +1130,14 @@ body.hub-page .topbar { flex-shrink: 0; }
   font-weight: 700;
   letter-spacing: 0.08em;
   text-transform: uppercase;
-
   color: var(--ink-soft);
   padding: 0 10px 16px;
 }
 .sidebar-header .dot { width: 6px; height: 6px; border-radius: 50%; background: #7c6cf0; }
 
-/* ---- "Cool factor" treatment for the Home page's Topic sidebar items
-   only: a twinkling corner star + a slow breathing edge glow + a soft
-   shimmer sweep across the surface. Three independent animation timings
-   so they never sync up and look mechanical. `position: relative` +
-   `overflow: hidden` are required here — the sweep's ::before and the
-   star's ::after are both absolutely positioned and need to stay
-   clipped to the card's own rounded corners.
-   NOTE: this used to also run on .thread-item (TG Reply Threads list)
-   and .ann-list-item (Announcement list) — removed from both. Those two
-   lists can grow unbounded (dozens/hundreds of rows), and a permanently-
-   running decorative animation on every row adds a real paint-cost tier
-   that scales with row count (see sidebar-diffed-rendering.md §2.4). The
-   Home page sidebar stays small and fixed, so it's fine to keep there. */
 .sidebar-item {
   position: relative;
   overflow: hidden;
-  animation: card-glow 2.6s ease-in-out infinite;
-}
-.sidebar-item::before {
-  content: "";
-  position: absolute; inset: 0;
-  background: linear-gradient(115deg, transparent 40%, rgba(255,255,255,0.09) 50%, transparent 60%);
-  background-size: 250% 100%;
-  animation: card-sweep 3.4s ease-in-out infinite;
-  pointer-events: none;
-}
-.sidebar-item::after {
-  content: "";
-  position: absolute; top: 10px; right: 12px;
-  width: 5px; height: 5px; border-radius: 50%; background: #fff;
-  box-shadow: 0 0 4px 1px rgba(255, 255, 255, 0.8);
-  animation: card-twinkle 2.2s ease-in-out infinite;
-  pointer-events: none;
-}
-@keyframes card-glow {
-  0%, 100% { box-shadow: 0 0 0 0 rgba(124, 108, 240, 0); }
-  50% { box-shadow: 0 0 14px 1px rgba(124, 108, 240, 0.45); }
-}
-@keyframes card-sweep {
-  0% { background-position: 200% 0; }
-  60%, 100% { background-position: -50% 0; }
-}
-@keyframes card-twinkle {
-  0%, 100% { opacity: 0.3; transform: scale(0.8); }
-  50% { opacity: 1; transform: scale(1.3); }
-}
-/* Recall History cards keep their existing red tint undisturbed — the
-   glow above is a general blue/purple accent that would clash with
-   "this is sensitive" red styling, so it's turned off there specifically. */
-.recall-item { animation: none; }
-.recall-item::before, .recall-item::after { display: none; }
-.sidebar-item {
   display: flex;
   align-items: center;
   gap: 12px;
@@ -707,6 +1148,39 @@ body.hub-page .topbar { flex-shrink: 0; }
   border-left: 3px solid transparent;
   margin-bottom: 8px;
   transition: background 0.15s ease, transform 0.12s ease, border-color 0.15s ease;
+  animation: card-glow 2.6s ease-in-out infinite;
+}
+/* Corner twinkle + light-sweep — three different-length cycles (2.2s /
+   2.6s / 3.4s, roughly coprime) so they never fall into visible sync and
+   read as one mechanical "blink" instead of ambient sparkle. */
+.sidebar-item::after {
+  content: "";
+  position: absolute; top: 9px; right: 11px;
+  width: 5px; height: 5px; border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 0 4px 1px rgba(255, 255, 255, 0.8);
+  animation: card-twinkle 2.2s ease-in-out infinite;
+  pointer-events: none;
+}
+.sidebar-item::before {
+  content: "";
+  position: absolute; inset: 0;
+  background: linear-gradient(115deg, transparent 40%, rgba(255, 255, 255, 0.09) 50%, transparent 60%);
+  background-size: 250% 100%;
+  animation: card-sweep 3.4s ease-in-out infinite;
+  pointer-events: none;
+}
+@keyframes card-glow {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(124, 108, 240, 0); }
+  50%      { box-shadow: 0 0 14px 1px rgba(124, 108, 240, 0.45); }
+}
+@keyframes card-twinkle {
+  0%, 100% { opacity: 0.3; transform: scale(0.8); }
+  50%      { opacity: 1;   transform: scale(1.3); }
+}
+@keyframes card-sweep {
+  0%        { background-position: 200% 0; }
+  60%, 100% { background-position: -50% 0; }
 }
 .sidebar-item:hover {
   background: var(--sidebar-item-hover);
@@ -742,16 +1216,24 @@ body.hub-page .topbar { flex-shrink: 0; }
 .sidebar-item.expandable .arrow { transition: transform 0.15s ease; }
 .sidebar-item.expandable.open .arrow { transform: rotate(90deg); }
 
-/* "Seamless card" wrapper — the toggle + its subitems render as one
-   continuous rounded card instead of an indented list with a left
-   border line. */
+/* Account Management — "one continuous card" style: the toggle header
+   and its sub-items live inside one rounded, bordered group instead of
+   an indented tree line, so it reads as a single self-contained panel.
+   Carries its OWN copy of the ambient card-glow animation (below) —
+   `.am-toggle` still has the base `.sidebar-item` class too, but that
+   copy is disabled just underneath, since box-shadow bleeding outward
+   from a CHILD gets clipped by this element's own `overflow: hidden`.
+   An element's OWN box-shadow is NOT clipped by its OWN overflow:hidden
+   (only its children/content are) — so putting the glow here instead
+   lets it bleed and pulse exactly like every other sidebar card. */
 .am-group {
   border-radius: 14px;
   border: 1px solid transparent;
   background: var(--sidebar-item-bg);
   overflow: hidden;
-  margin-bottom: 8px;
+  margin-bottom: 16px;
   transition: border-color 0.15s ease;
+  animation: card-glow 2.6s ease-in-out infinite;
 }
 .am-group:has(.am-toggle:hover),
 .am-group:has(.sidebar-subitems.open) { border-color: var(--panel-border); }
@@ -761,26 +1243,30 @@ body.hub-page .topbar { flex-shrink: 0; }
   border-left: 3px solid transparent;
   border-radius: 0;
   background: transparent;
+  /* See the .am-group comment above — this would just be an invisible
+     (clipped) duplicate of the glow the group itself now carries. */
+  animation: none;
 }
 .am-group .am-toggle:hover { background: var(--sidebar-item-hover); transform: none; }
-
-.sidebar-subitems {
-  display: none; margin: 0; padding: 6px;
+.am-group .sidebar-subitems {
+  display: none; margin: 0; padding: 6px; border-left: none;
   border-top: 1px solid var(--panel-border);
 }
-.sidebar-subitems.open { display: block; }
+.am-group .sidebar-subitems.open { display: block; }
 .sidebar-subitem {
+  position: relative;
   display: flex; align-items: center; gap: 9px; padding: 9px 10px;
   border-radius: 10px; font-size: 12.5px; font-weight: 600;
   color: var(--ink-soft); cursor: pointer; margin-bottom: 4px;
   transition: background 0.15s ease, color 0.15s ease;
 }
 .sidebar-subitem:hover { background: var(--sidebar-item-hover); color: var(--ink); }
+/* Hover circle behind each row's icon — color comes from that row's own
+   --sub-accent inline style, so every row can have a different tint. */
 .sidebar-subitem .sub-icon {
-  width: 26px; height: 26px; border-radius: 50%;
+  width: 26px; height: 26px; border-radius: 50%; flex-shrink: 0;
   display: inline-flex; align-items: center; justify-content: center;
-  font-size: 13px;
-  transition: background 0.15s ease;
+  font-size: 13px; transition: background 0.15s ease;
 }
 .sidebar-subitem:hover .sub-icon { background: var(--sub-accent, rgba(255, 255, 255, 0.1)); }
 .brand-checks { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 6px; }
@@ -824,110 +1310,280 @@ body.hub-page .topbar { flex-shrink: 0; }
 
 .hub-main {
   flex: 1;
-  min-height: 0; /* same reason as .hub-layout above — lets overflow-y
-                     below actually do something instead of the box
-                     growing to fit its content. */
-  overflow-y: auto; /* frozen/no scrollbar until content genuinely
-                        exceeds the visible height — this is the "main
-                        content area doesn't move" behavior; it only
-                        starts scrolling once it has to. */
+  min-height: 0;
+  overflow-y: auto; /* only scrolls if content actually exceeds the
+                        visible height — normally sits still. Kept
+                        (not removed) even though the spacing below was
+                        tightened specifically so this never has to
+                        trigger on a normal desktop window: a very short
+                        window (small laptop, heavy browser zoom) can
+                        still legitimately need it, and removing this
+                        would silently clip the bottom of the page with
+                        no way to reach it — the exact bug already fixed
+                        once elsewhere on this site (see conversation
+                        history). */
   position: relative;
-  padding: 54px 40px 36px;
+  padding: 24px 40px;
   display: flex;
   align-items: flex-start;
   justify-content: center;
   text-align: center;
 }
+/* Was max-width: 480px — the actual root cause of a long-running "cards
+   won't get wider no matter what I set .tool-cards to" bug (2026-08).
+   .tool-cards' own max-width was raised to 780px, then 960px, and NEITHER
+   ever took effect, because this outer wrapper — NOT .tool-cards — was
+   the real bottleneck the whole time: 3 columns squeezed into 480px
+   meant each card rendered at ~152px regardless of what the grid itself
+   was told. Confirmed `.inner` under `.hub-main` is used by exactly two
+   pages (this hub's #viewHome and betting-resources.html), so widening
+   it here is safe project-wide. If a card grid ever looks stuck at a
+   tiny width again, check HERE first, not the grid's own rules — that's
+   the lesson this bug cost a few rounds of guessing to learn. */
 .hub-main .inner { max-width: 980px; }
-/* #spaMount (spa-shell.js's SPA mount point) lives INSIDE .hub-main as a
-   sibling of .inner, so the persistent sidebar stays visible while a
-   routed view (threads/promo/deposit-issue/deposit-backup/announcements)
-   is mounted — see spa-shell.js's comment on #spaMount for why.
-
-   Two different kinds of mounted content, two different treatments:
-   - promo.html / deposit-issue.html / deposit-backup.html already carry
-     their OWN max-width:1500px + padding (see their injected <style>
-     blocks) — they're padded, centered card layouts, same spirit as
-     .inner's home cards, so they're left to sit inside .hub-main's
-     normal padding/centering untouched.
-   - threads.html / announcements.html are real sidebar+panel app-shells
-     that were built assuming they own the ENTIRE viewport below a
-     single topbar — cramming them into .hub-main's padded 480px-ish
-     column would squeeze them badly. These get .spa-fullbleed (added by
-     spa-shell.js per-route, see ROUTES.fullBleed there).
-
-   For .spa-fullbleed specifically: removing .hub-main's padding via
-   NEGATIVE MARGIN on the child (the obvious fix) doesn't work now that
-   .hub-main scrolls its own overflow (see the fixed-viewport rules
-   above) — a negative top/left margin tries to pull content above/left
-   of the scroll container's origin, which a scroll container can't show
-   (scrollTop/scrollLeft can't go negative), so the top of the mounted
-   view would just be silently clipped. Using :has() on the PARENT to
-   drop its own padding AND overflow to 0/hidden when it contains an
-   active .spa-fullbleed child sidesteps that. It ALSO fixes a real
-   "two scrollbars" bug: threads-shell/ann-shell's OWN height rules
-   (`calc(100vh - 61px)` / `100%`) assume they own the full viewport, so
-   left as .hub-main's overflow-y:auto scrolling child, you got BOTH
-   .hub-main's own scrollbar (because the mounted shell is taller than
-   .hub-main's actual available box) AND the mounted shell's own
-   internal scroll panes — two scrollbars fighting each other. Turning
-   .hub-main's overflow off for fullbleed views, and making
-   #spaMount.spa-fullbleed + the mounted shell fill 100% of the
-   now-unpadded box instead of assuming their own 100vh, leaves exactly
-   ONE scroll mechanism: the mounted shell's own internal panes — same
-   as how threads.html/announcements.html scroll when visited standalone. */
-.hub-main:has(> #spaMount.spa-fullbleed) { padding: 0; overflow: hidden; }
-/* Plain BLOCK by default — promo.html/deposit-issue.html/deposit-
-   backup.html/form.html's own root elements (.promo-shell, .dep-shell,
-   .form-page) all use `margin: 0 auto` to center themselves, same as
-   they do in their standalone pages where they're a normal block-flow
-   child of <body>. If #spaMount were `display:flex` here instead, those
-   auto side-margins would trigger flexbox's "auto margins absorb the
-   free space" behavior INSTEAD of stretch — the child would shrink-to-
-   fit its own content width rather than filling the row, which is
-   exactly the "narrow before search results, wide after a wide results
-   table appears" bug this replaced. Plain block layout has no such
-   interaction — margin:auto centering just works normally. */
-#spaMount.spa-mounted {
-  display: block;
-  width: 100%;
-  text-align: left;
+.status-badge-corner {
+  display: inline-flex;
+  margin-top: 10px;
 }
-/* Only the genuine sidebar+panel app-shells (threads/announcements) get
-   flex — THEIR content (.threads-shell/.ann-shell) is `display:flex`
-   itself and relies on `flex:1` from a flex PARENT to fill available
-   height; a plain block #spaMount can't give that. */
-#spaMount.spa-mounted.spa-fullbleed {
+.hub-main h1 { font-family: var(--font-display); font-weight: 600; font-size: 28px; margin: 0 0 10px; letter-spacing: -0.01em; }
+.hub-main p { color: var(--ink-soft); margin: 0 0 24px; line-height: 1.6; }
+.status-badge {
+  display: inline-flex; align-items: center; gap: 8px;
+  background: var(--pill-bg); border: 1px solid var(--pill-border);
+  padding: 9px 18px; border-radius: 999px; font-size: 12.5px; font-weight: 700; color: var(--ink-soft);
+}
+.status-badge .pulse {
+  width: 7px; height: 7px; border-radius: 50%; background: #34d399;
+  box-shadow: 0 0 8px #34d399;
+  animation: pulse 2s infinite;
+}
+@keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
+
+.hub-stats {
   display: flex;
-  flex-direction: column;
-  height: 100%;
+  justify-content: center;
+  gap: 22px;
+  margin-top: 18px;
+  padding-top: 14px;
+  border-top: 1px solid var(--panel-border);
 }
-#spaMount.spa-fullbleed .threads-shell,
-#spaMount.spa-fullbleed .ann-shell {
-  height: 100%;
-  flex: 1;
-  min-height: 0;
+.hub-stats .stat { text-align: center; }
+.hub-stats .stat b {
+  display: block;
+  font-family: var(--font-display);
+  font-size: 19px;
+  color: var(--ink);
 }
-/* Auto-hide the persistent ISSUE SUBMISSION nav sidebar while Threads
-   is open, but ONLY below this width. Threads already brings its own
-   440px sidebar; stacked with this one's 290px, a narrower/half window
-   leaves barely any room for the actual conversation pane (business
-   owner's real complaint — a half-width browser window made the chat
-   itself unreadably narrow). At full window width there's plenty of
-   room for all three columns, so the nav stays put there — this is a
-   width-triggered collapse, not "always hide on Threads". 1300px is
-   comfortably below a full 1920px window but above a genuine half-split
-   of one, so a half-screen window reliably falls under it while a
-   maximized window doesn't. data-view="threads" (set in spa-shell.js's
-   mount()) scopes this to Threads specifically — announcements.html is
-   also spa-fullbleed but doesn't have this 3-column space problem, so
-   it keeps its nav regardless of width.
-   Reuses the exact off-canvas drawer mechanics the ≤720px mobile
-   breakpoint already has below (position:fixed + translateX slide +
-   the hamburger toggle button) instead of a bare `display:none` — a
-   plain display:none has no way back in; this keeps the sidebar
-   reachable via the same toggle button mobile already uses, just
-   triggered at a wider breakpoint too when Threads is the active view. */
+.hub-stats .stat span {
+  font-size: 11px;
+  color: var(--ink-soft);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+/* 3-column home grid (2026-08 redesign) — order in the markup follows
+   the owner's requested reading order (row 1: TG Reply Threads / Deposit
+   Issue / Deposit Backup, row 2: Promo Code Search / Announcement /
+   HeyVIP Betting Rules, row 3: Active Agents alone). max-width raised
+   from 520px to 900px alongside the .inner fix above — with 3 columns,
+   520px would have meant ~160px cards even with .inner fixed. */
+.tool-cards {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 16px;
+  margin-top: 20px;
+  max-width: 900px;
+}
+.tool-card {
+  display: block;
+  position: relative;
+  text-align: left;
+  background: var(--card-bg);
+  border: 1px solid var(--panel-border);
+  border-radius: 16px;
+  padding: 18px 18px 16px;
+  padding-bottom: 34px;
+  min-height: 108px; /* fixed floor instead of aspect-ratio — see note
+                         below on why aspect-ratio was tried and dropped */
+  box-shadow: var(--shadow);
+  transition: transform 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
+}
+.tool-card:hover {
+  transform: translateY(-2px);
+  border-color: var(--tool-accent, var(--accent-gold));
+  box-shadow: var(--shadow), 0 0 32px -8px var(--tool-accent, transparent);
+}
+
+/* Rotating gradient ring, hover-only. NOTE: aspect-ratio was tried
+   earlier in this same redesign to keep the 3-col cards from squashing
+   into squares, and briefly got blamed for a "some cards render blank,
+   others overlap" regression — that turned out to be a red herring (the
+   .inner 480px bug above was the real cause), but aspect-ratio's
+   interaction with `display:flex` + CSS Grid 1fr tracks is a genuine
+   cross-browser rough edge, and this project has no real browser in its
+   dev loop to verify against (only owner screenshots) — so it was left
+   OUT in favor of the plain min-height above. This ring (conic-gradient
+   + mask-composite) is a comparably risk-bearing feature, but the owner
+   asked for it back explicitly once the real bug was found, so it's
+   back in — just flagged here in case a future report of "cards look
+   wrong" turns out to trace back to this instead. */
+.tool-card::before {
+  content: "";
+  position: absolute;
+  inset: -1px;
+  border-radius: inherit;
+  padding: 1.5px;
+  background: conic-gradient(from 0deg, transparent 0%, var(--tool-accent, var(--accent-gold)) 12%, transparent 26%, transparent 100%);
+  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.2s ease;
+  animation: tool-card-spin 3.4s linear infinite;
+  animation-play-state: paused;
+}
+.tool-card:hover::before {
+  opacity: 1;
+  animation-play-state: running;
+}
+@keyframes tool-card-spin {
+  to { transform: rotate(360deg); }
+}
+
+/* One-shot diagonal sweep of light across the card face, hover-triggered. */
+.tool-card::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: linear-gradient(115deg, transparent 25%, rgba(255, 255, 255, 0.16) 42%, rgba(255, 255, 255, 0.16) 46%, transparent 62%);
+  background-size: 220% 100%;
+  background-position: 160% 0;
+  opacity: 0;
+  pointer-events: none;
+}
+.tool-card:hover::after {
+  opacity: 1;
+  animation: tool-card-sweep 0.85s ease forwards;
+}
+@keyframes tool-card-sweep {
+  0% { background-position: 160% 0; opacity: 1; }
+  100% { background-position: -60% 0; opacity: 0; }
+}
+
+.tool-card .t-arrow {
+  position: absolute; right: 18px; bottom: 16px;
+  color: var(--ink-soft); font-size: 15px;
+  transition: transform 0.15s ease, color 0.15s ease;
+}
+.tool-card:hover .t-arrow { transform: translateX(3px); color: var(--tool-accent, var(--ink)); }
+/* "Open →" label, hover-only — generated content so the 7 card markups
+   didn't each need a new span added just for this. Reads as "Open →"
+   because it's inserted immediately before the existing arrow glyph,
+   only under :hover, so at rest every card still shows just the bare
+   arrow it always has. */
+.tool-card:hover .t-arrow::before {
+  content: "Open ";
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  color: var(--tool-accent, var(--ink));
+}
+.tool-card .t-icon {
+  position: relative;
+  width: 36px; height: 36px; border-radius: 10px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 16px; margin-bottom: 12px;
+}
+.t-badge {
+  position: absolute;
+  top: -6px; right: -6px;
+  min-width: 17px; height: 17px;
+  padding: 0 4px;
+  border-radius: 999px;
+  background: #ef4a72;
+  color: #fff;
+  font-size: 10px;
+  font-weight: 800;
+  display: flex; align-items: center; justify-content: center;
+}
+.t-badge:empty { display: none; }
+.tool-card .t-name { font-family: var(--font-display); font-weight: 600; font-size: 14.5px; color: var(--ink); margin-bottom: 4px; }
+.tool-card .t-desc { font-size: 11.5px; color: var(--ink-soft); line-height: 1.4; }
+.t-sub-stat { font-size: 10.5px; font-weight: 700; color: var(--tool-accent, var(--ink-soft)); margin-top: 8px; }
+.t-sub-stat:empty { display: none; }
+.tool-card-soon { cursor: default; opacity: 0.6; }
+.tool-card-soon:hover { transform: none; border-color: var(--panel-border); box-shadow: var(--shadow); }
+.tool-card-soon .t-icon { opacity: 0.7; }
+.t-soon-badge {
+  position: absolute; right: 18px; bottom: 16px;
+  font-size: 11px; font-weight: 700; color: var(--ink-soft);
+  background: var(--field-bg); border: 1px solid var(--border);
+  padding: 3px 9px; border-radius: 20px;
+}
+.t-sub-stat.has-unsolved {
+  color: #ef4a72;
+  font-weight: 800;
+  animation: breathe 1.8s ease-in-out infinite;
+}
+/* Active Agents home-card — icon + "N online now" text both breathe
+   together while at least one agent is online, same shared keyframe as
+   the unsolved-threads badge above and the announcement icon below —
+   stops breathing (goes static) the moment online count hits 0, see
+   loadActiveAgentsCardStat() in index.html. */
+.t-sub-stat.breathing { animation: breathe 1.8s ease-in-out infinite; }
+@keyframes breathe { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
+.tool-card .t-icon.breathing { animation: breathe 1.8s ease-in-out infinite; }
+/* Steps down 3 -> 2 -> 1 columns as the viewport (not just .tool-cards'
+   own max-width) shrinks — matches the existing 720px breakpoint below
+   where the sidebar itself collapses. */
+@media (max-width: 900px) {
+  .tool-cards { grid-template-columns: repeat(2, 1fr); max-width: 600px; }
+}
+@media (max-width: 560px) {
+  .tool-cards { grid-template-columns: 1fr; max-width: 360px; }
+}
+
+/* Sidebar becomes an off-canvas drawer instead of stacking full-width
+   above the content (the old behavior this replaces) — matches the
+   INR build's proven pattern exactly. It's out of normal flow now
+   (position:fixed), so nothing about .hub-layout/.hub-main needs to
+   change to accommodate it, and the main content column never gets
+   squeezed or reflowed by the drawer opening/closing. */
+@media (max-width: 720px) {
+  .sidebar-toggle-btn {
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px;
+    width: 34px; height: 34px; border: none; background: none; cursor: pointer; margin-right: 4px; padding: 0;
+  }
+  .sidebar-toggle-btn span { display: block; width: 19px; height: 2px; border-radius: 2px; background: var(--ink); }
+  .hub-layout { min-height: auto; }
+  .sidebar {
+    position: fixed; top: 61px; left: 0; bottom: 0; z-index: 45;
+    width: 290px; max-width: 82vw; max-height: none;
+    border-right: 1px solid var(--panel-border); border-bottom: none;
+    background: var(--card-bg); box-shadow: var(--shadow);
+    transform: translateX(-100%);
+    transition: transform 0.22s ease;
+  }
+  .sidebar.open { transform: translateX(0); }
+  .sidebar-backdrop.open { display: block; opacity: 1; pointer-events: auto; }
+}
+
+/* Auto-hide the persistent ISSUE SUBMISSION nav sidebar while Threads is
+   open, but ONLY below this width — Threads already brings its own
+   340px thread-list sidebar; stacked with this one's 290px, a narrower/
+   half window leaves barely any room for the actual conversation pane.
+   At full window width there's plenty of room for all three columns, so
+   the nav stays put there — this is a width-triggered collapse, not
+   "always hide on Threads". Reuses the exact off-canvas drawer mechanics
+   the ≤720px breakpoint above already has (same fixed-position +
+   translateX slide + hamburger toggle) instead of a bare display:none —
+   a plain display:none has no way back in; this keeps the sidebar
+   reachable via the same toggle button. data-view="threads" (set in
+   spa-shell.js's mount()) scopes this to Threads specifically. Ported
+   from the INR build, which hit this exact "half-split window makes the
+   chat unreadably narrow" complaint first. */
 @media (max-width: 1300px) {
   body:has(#spaMount[data-view="threads"]) .sidebar-toggle-btn {
     display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px;
@@ -948,404 +1604,361 @@ body.hub-page .topbar { flex-shrink: 0; }
   body:has(#spaMount[data-view="threads"]) .sidebar-backdrop.open { display: block; opacity: 1; pointer-events: auto; }
 }
 
-.status-badge-corner {
-  display: inline-flex;
-  margin-top: 14px;
-}
-.hub-main h1 { font-family: var(--font-display); font-weight: 600; font-size: 28px; margin: 0 0 10px; letter-spacing: -0.01em; }
-.hub-main p { color: var(--ink-soft); margin: 0 0 24px; line-height: 1.6; }
-.status-badge {
-  display: inline-flex; align-items: center; gap: 8px;
-  background: var(--pill-bg); border: 1px solid var(--pill-border);
-  padding: 9px 18px; border-radius: 999px; font-size: 12.5px; font-weight: 700; color: var(--ink-soft);
-}
-.status-badge .pulse {
-  width: 7px; height: 7px; border-radius: 50%; background: #34d399;
-  box-shadow: 0 0 8px #34d399;
-  animation: pulse 2s infinite;
-}
-@keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
-
-.hub-stats {
-  display: flex;
-  justify-content: center;
-  gap: 22px;
-  margin-top: 26px;
-  padding-top: 20px;
-  border-top: 1px solid var(--panel-border);
-}
-.hub-stats .stat { text-align: center; }
-.hub-stats .stat b {
-  display: block;
-  font-family: var(--font-display);
-  font-size: 19px;
-  color: var(--ink);
-}
-.hub-stats .stat span {
-  font-size: 11px;
-  color: var(--ink-soft);
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-}
-
-.tool-cards {
+/* ---- betting-resources.html — the HeyVIP Betting Rules page itself ---- */
+.br-inner { max-width: 820px; text-align: left; }
+.br-panels {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 12px;
-  max-width: 960px;
+  grid-template-columns: 1fr 1fr;
+  gap: 20px;
+  align-items: start;
 }
-.tool-card {
-  position: relative;
-  display: flex;
-  flex-direction: column;
-  text-align: left;
+@media (max-width: 720px) {
+  .br-panels { grid-template-columns: 1fr; }
+}
+.br-panel {
   background: var(--card-bg);
   border: 1px solid var(--panel-border);
+  border-radius: 16px;
+  padding: 18px;
+  box-shadow: var(--shadow);
+}
+.br-panel-title {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 14px;
+  color: var(--ink);
+  margin-bottom: 12px;
+}
+.br-links-list { display: flex; flex-direction: column; gap: 10px; }
+.br-link-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: var(--field-bg);
+  border: 1px solid var(--border);
   border-radius: 12px;
   padding: 12px 14px;
-  box-shadow: var(--shadow);
-  overflow: hidden;
-  isolation: isolate;
-  min-height: 108px;
-  transition: transform 0.2s ease, box-shadow 0.2s ease;
+  text-decoration: none;
+  transition: border-color 0.15s ease, transform 0.15s ease;
 }
-/* Rotating conic-gradient ring, masked down to a thin border — only
-   spins while hovered (animation-play-state), so it costs nothing at
-   rest across a whole grid of cards. */
-.tool-card::before {
-  content: "";
-  position: absolute;
-  inset: -2px;
-  border-radius: 13px;
-  padding: 2px;
-  background: conic-gradient(from 0deg, var(--tool-accent, var(--accent-gold)), transparent 30%, transparent 70%, var(--tool-accent, var(--accent-gold)));
-  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
-  -webkit-mask-composite: xor;
-  mask-composite: exclude;
-  opacity: 0;
-  transition: opacity 0.25s ease;
-  animation: tool-card-spin 3.5s linear infinite;
-  animation-play-state: paused;
-  z-index: 0;
-  pointer-events: none;
-}
-/* Flowing light sweep across the surface, fired once per hover. */
-.tool-card::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  background: linear-gradient(115deg, transparent 30%, rgba(255,255,255,0.08) 45%, rgba(255,255,255,0.14) 50%, rgba(255,255,255,0.08) 55%, transparent 70%);
-  background-size: 220% 100%;
-  background-position: 130% 0;
-  opacity: 0;
-  transition: opacity 0.25s ease;
-  z-index: 0;
-  pointer-events: none;
-}
-.tool-card > * { position: relative; z-index: 1; }
-.tool-card:hover {
-  transform: translateY(-4px);
-  box-shadow: var(--shadow), 0 0 0 1px var(--tool-accent, var(--accent-gold));
-}
-.tool-card:hover::before { opacity: 1; animation-play-state: running; }
-.tool-card:hover::after { opacity: 1; animation: tool-card-sweep 1.4s ease forwards; }
-@keyframes tool-card-spin { to { transform: rotate(360deg); } }
-@keyframes tool-card-sweep { from { background-position: 130% 0; } to { background-position: -30% 0; } }
-@media (prefers-reduced-motion: reduce) {
-  .tool-card { transition: none; }
-  .tool-card::before, .tool-card::after { animation: none !important; transition: none !important; opacity: 0 !important; }
-  .tool-card:hover { transform: none; }
-}
-.t-head { display: flex; align-items: center; gap: 9px; margin-bottom: 4px; }
-.tool-card .t-icon {
-  position: relative;
-  width: 26px; height: 26px; border-radius: 8px;
-  display: flex; align-items: center; justify-content: center;
-  font-size: 13px; flex-shrink: 0;
-}
-.t-bottom-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: auto; padding-top: 8px; }
-.t-open {
-  flex-shrink: 0;
-  display: inline-flex; align-items: center; gap: 4px;
-  background: var(--tool-accent, var(--accent-gold));
-  color: #0c1024;
-  font-family: var(--font-display);
+.br-link-card:hover { border-color: var(--accent-gold); transform: translateX(2px); }
+.br-link-icon { font-size: 18px; flex: none; }
+.br-link-body { display: flex; flex-direction: column; min-width: 0; flex: 1; }
+.br-link-name { font-weight: 700; font-size: 13px; color: var(--ink); }
+.br-link-url { font-size: 11px; color: var(--ink-soft); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.br-link-arrow { color: var(--ink-soft); font-size: 14px; flex: none; }
+
+/* ---- Betting Resources Links admin panel (Account Management) ----
+   Reuses the same edit-modal/field vocabulary as every other Account
+   Management section rather than inventing new ones. Icon/Name/URL
+   side-by-side in ONE row per the reference design (owner-provided
+   mockup, 2026-08) — originally this was icon+name on one row and url
+   on its own row below; the mockup put all three in a single row with
+   a small card wrapper + header line explaining what the fields feed,
+   so that's what this now matches. Collapses to stacked under 480px
+   same as before. */
+.br-category-list { display: flex; flex-direction: column; gap: 8px; }
+.br-category-item {
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--field-bg);
+  font-size: 12.5px;
   font-weight: 700;
-  font-size: 10.5px;
-  padding: 4px 10px;
-  border-radius: 999px;
-  opacity: 0;
-  transform: translateY(4px);
-  transition: opacity 0.2s ease, transform 0.2s ease;
-  margin-left: auto;
-  white-space: nowrap;
+  color: var(--ink-soft);
+  cursor: pointer;
+  transition: border-color 0.15s ease, color 0.15s ease, background 0.15s ease;
 }
-.tool-card:hover .t-open { opacity: 1; transform: translateY(0); }
-@media (prefers-reduced-motion: reduce) {
-  .t-open { transition: none; }
+.br-category-item:hover { color: var(--ink); }
+.br-category-item.selected {
+  color: var(--ink);
+  border-color: var(--accent-gold);
+  background: color-mix(in srgb, var(--accent-gold) 12%, var(--field-bg));
 }
-.t-badge {
-  position: absolute;
-  top: -5px; right: -5px;
-  min-width: 15px; height: 15px;
-  padding: 0 3px;
-  border-radius: 999px;
-  background: #ef4a72;
-  color: #fff;
-  font-size: 9px;
-  font-weight: 800;
+/* One card per link (the single "rules" link, or each "results" link) —
+   a small header (icon preview + one-line description of what this
+   field group feeds) sits above the Icon/Name/URL row so it's clear
+   which home-card panel each form is editing without needing to leave
+   the modal to check. */
+.br-form-card {
+  border: 1px solid var(--border);
+  background: var(--field-bg);
+  border-radius: 14px;
+  padding: 16px;
+  margin-bottom: 14px;
+}
+.br-form-card-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 14px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--border);
+}
+.br-form-card-icon {
+  width: 30px; height: 30px; flex: none;
+  border-radius: 8px;
+  background: var(--card-bg);
   display: flex; align-items: center; justify-content: center;
+  font-size: 15px;
 }
-.t-badge:empty { display: none; }
-.tool-card .t-name { font-family: var(--font-display); font-weight: 600; font-size: 13px; color: var(--ink); line-height: 1.25; }
-.tool-card .t-desc {
-  font-size: 11px; color: var(--ink-soft); line-height: 1.4;
-  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+.br-form-card-desc { font-size: 12.5px; font-weight: 700; color: var(--ink); flex: 1; }
+/* Results list rows (2026-08 follow-up) — the per-link header banner
+   ("Link #N — shown in the right panel") from the first mockup pass got
+   dropped per a second reference screenshot: with potentially a dozen+
+   results links, a 2-line header per row ate too much vertical space
+   for what it said, and the owner's updated mockup showed plain rows —
+   just the Icon/Name/URL fields (own labels each, same as before) plus
+   a small trash-icon remove button inline at the end of the row instead
+   of a separate header line. The "rules" (single link) card above still
+   keeps its header — only ever one of those, so the extra context line
+   isn't a density problem the way it is repeated N times in the list. */
+.br-result-list { display: flex; flex-direction: column; gap: 10px; margin-bottom: 12px; }
+.br-result-row {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  border: 1px solid var(--border);
+  background: var(--field-bg);
+  border-radius: 12px;
+  padding: 10px 12px;
 }
-.t-sub-stat {
-  font-size: 10px; font-weight: 700; color: var(--tool-accent, var(--ink-soft));
-  min-width: 0; flex: 1 1 auto;
-  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+.br-result-row .field { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; justify-content: center; }
+.br-result-row .field.br-icon-field { flex: 0 0 56px; }
+/* Fixed height on every input in this row (icon/name/url alike) —
+   without this, the icon input's height was following the emoji
+   glyph's own font metrics (emoji line-height/ascent varies by
+   codepoint across browsers), which made rows with different icons
+   render at slightly different heights and threw off row-to-row
+   alignment even though the markup/CSS was otherwise identical. Height
+   is now decided by CSS, not by whichever emoji happens to be in the
+   box. */
+.br-result-row .field input {
+  display: block;
+  height: 40px;
+  line-height: 38px;
+  padding-top: 0;
+  padding-bottom: 0;
+  box-sizing: border-box;
 }
-.t-sub-stat:empty { display: none; }
-.t-sub-stat.has-unsolved {
+.br-result-row .field.br-icon-field input { text-align: center; font-size: 17px; padding-left: 4px; padding-right: 4px; }
+.br-result-row .field label { line-height: 1.2; }
+.edit-fields-row { display: flex; gap: 10px; align-items: flex-end; }
+.edit-fields-row .field { flex: 1; margin: 0; min-width: 0; }
+.edit-fields-row .field.br-icon-field { flex: 0 0 64px; }
+.edit-fields-row .field.br-icon-field input { text-align: center; font-size: 18px; padding-left: 4px; padding-right: 4px; }
+@media (max-width: 480px) {
+  .edit-fields-row { flex-direction: column; align-items: stretch; }
+  .edit-fields-row .field.br-icon-field { flex: none; }
+  .br-result-row { flex-wrap: wrap; }
+  .br-result-row .field.br-icon-field { flex: 0 0 56px; }
+  .br-result-row .field:not(.br-icon-field) { flex: 1 1 100%; }
+}
+.br-result-remove {
+  flex: none;
+  width: 34px; height: 34px;
+  border-radius: 8px;
+  border: none;
+  background: rgba(239, 74, 114, 0.16);
   color: #ef4a72;
-  font-weight: 800;
-  animation: breathe 1.8s ease-in-out infinite;
+  font-size: 13px;
+  line-height: 1;
+  cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  transition: background 0.15s ease, color 0.15s ease;
 }
-@keyframes breathe { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
-/* Generic "needs attention" pulse — reused wherever a card/icon should
-   breathe (e.g. the Announcement tool card's icon while at least one
-   announcement is currently active). Same keyframe as .has-unsolved
-   above, just usable on any element directly. */
-.breathing { animation: breathe 1.8s ease-in-out infinite; }
-@media (max-width: 1020px) {
-  .tool-cards { grid-template-columns: repeat(2, 1fr); }
+.br-result-remove:hover { background: #ef4a72; color: #fff; }
+.br-add-link-btn {
+  width: 100%;
+  padding: 10px;
+  border-radius: 10px;
+  border: 1px dashed var(--border);
+  background: transparent;
+  color: var(--ink-soft);
+  font-size: 12.5px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: border-color 0.15s ease, color 0.15s ease;
 }
-@media (max-width: 560px) {
-  .tool-cards { grid-template-columns: 1fr; }
-}
+.br-add-link-btn:hover { border-color: var(--accent-gold); color: var(--ink); }
 
-@media (max-width: 720px) {
-  .sidebar-toggle-btn {
-    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px;
-    width: 34px; height: 34px; border: none; background: none; cursor: pointer; margin-right: 4px; padding: 0;
-  }
-  .sidebar-toggle-btn span { display: block; width: 19px; height: 2px; border-radius: 2px; background: var(--ink); }
-
-  /* Sidebar becomes an off-canvas drawer instead of a stacked-above-
-     content block — it's out of normal flow now (position:fixed), so
-     .hub-layout/.hub-main keep the SAME fixed-viewport/internal-scroll
-     behavior mobile used to have to opt out of (see the now-removed
-     body.hub-page overflow override this replaced) — nothing left in
-     flow to make that layout break at this width anymore. */
-  .sidebar {
-    position: fixed; top: 61px; left: 0; bottom: 0; z-index: 45;
-    width: 290px; max-width: 82vw; max-height: none;
-    border-right: 1px solid var(--panel-border); border-bottom: none;
-    background: var(--card-bg); box-shadow: var(--shadow);
-    transform: translateX(-100%);
-    transition: transform 0.22s ease;
-  }
-  .sidebar.open { transform: translateX(0); }
-  .sidebar-backdrop.open { display: block; opacity: 1; pointer-events: auto; }
+/* ---- Announcements sidebar (New button / search / status dots) ---- */
+.announce-new-btn {
+  width: 100%;
+  padding: 12px;
+  margin-bottom: 14px;
+  border-radius: 12px;
+  border: 1.5px dashed var(--border);
+  background: transparent;
+  color: var(--ink-soft);
+  font-size: 12.5px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: border-color 0.15s ease, color 0.15s ease, background 0.15s ease;
 }
+.announce-new-btn:hover { border-color: var(--accent-gold); color: var(--ink); background: rgba(200, 145, 47, 0.06); }
+.announce-item .t-title { white-space: normal; overflow: visible; text-overflow: unset; }
+.status-indicator { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
+.status-text { font-size: 10.5px; font-weight: 700; }
+.status-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+.status-dot.breathing { animation: statusBreathe 1.8s ease-in-out infinite; }
+@keyframes statusBreathe {
+  0%, 100% { opacity: 1; box-shadow: 0 0 0 0 rgba(26, 156, 110, 0.45); }
+  50% { opacity: 0.4; box-shadow: 0 0 6px 2px rgba(26, 156, 110, 0.4); }
+}
+/* Edit-modal action buttons: Save always shows/colors the state it will
+   switch TO (green = Active, gray = Inactive); Delete stays a distinct
+   red outline so it doesn't compete with Save for attention. */
+.announce-save-btn {
+  font-size: 11.5px; font-weight: 700; padding: 7px 14px; border-radius: 8px;
+  cursor: pointer; border: 1.5px solid transparent; transition: all 0.15s ease; white-space: nowrap;
+}
+.announce-save-btn:hover { transform: translateY(-1px); }
+.announce-save-btn.state-active { background: rgba(26, 156, 110, 0.16); color: #1a9c6e; }
+.announce-save-btn.state-active:hover { box-shadow: 0 4px 12px -4px rgba(26, 156, 110, 0.5); }
+.announce-save-btn.state-inactive { background: rgba(136, 144, 192, 0.18); color: #8890c0; }
+.announce-save-btn.state-inactive:hover { box-shadow: 0 4px 12px -4px rgba(136, 144, 192, 0.5); }
+.announce-delete-btn {
+  font-size: 12px; font-weight: 700; padding: 7px 12px; border-radius: 8px;
+  cursor: pointer; border: 1.5px solid rgba(239, 74, 114, 0.5); background: none; color: #ef4a72;
+  display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; transition: all 0.15s ease;
+}
+.announce-delete-btn:hover { background: rgba(239, 74, 114, 0.1); border-color: #ef4a72; }
 
 /* ---- TG Reply Threads ---- */
 .threads-shell { display: flex; height: calc(100vh - 61px); }
+/* Wraps the persistent marquee + the sidebar/main-content row — keeps
+   the marquee beside #hubNavMount (not spanning over it), same pattern
+   as .hub-content-col / .subpage-content-col. */
+.threads-content-col { flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; }
+.threads-content-col > .brand-row { flex-shrink: 0; }
+/* Announcement banner now lives here (sibling of .brand-row, above the
+   sidebar/main split below) so it always spans the FULL content width
+   and stays edge-aligned with the marquee above it. It used to be nested
+   one level deeper, inside .threads-right-col — which only spans the
+   width of the right (main) column, not the .threads-sidebar (search +
+   thread-list) column beside it, so the banner rendered narrower than
+   the marquee and visually misaligned with it. See conversation history
+   for the reported bug + before/after screenshots. */
+.threads-content-col > #announcementBanner { flex-shrink: 0; }
+.threads-body-row { display: flex; flex: 1; min-height: 0; }
+/* Right column of the shell — "Back to Home" topline + main content,
+   width-aligned to the content area instead of spanning full-page-width
+   and sitting on top of the sidebar. Same fix already applied to
+   index.html's .hub-right-col — see CHANGES-batch1-modal-cache-layout.md. */
+.threads-right-col { flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; }
+.threads-right-col > .threads-topline { flex-shrink: 0; }
 .threads-sidebar {
-  width: 440px;
+  width: 340px;
   flex-shrink: 0;
+  background: var(--sidebar-bg);
   border-right: 1px solid var(--panel-border);
   padding: 18px 14px 0;
+  overflow-y: auto;
   display: flex;
   flex-direction: column;
-  min-height: 0;
+  backdrop-filter: blur(16px) saturate(160%);
+  -webkit-backdrop-filter: blur(16px) saturate(160%);
 }
 .threads-search {
   display: flex; align-items: center; gap: 8px;
   background: var(--field-bg); border: 1.5px solid var(--border);
-  border-radius: 12px; padding: 9px 12px; margin-bottom: 10px;
+  border-radius: 12px; padding: 9px 12px; margin-bottom: 16px;
 }
 .threads-search input {
   flex: 1; border: none; background: none; outline: none;
   font-size: 13px; color: var(--ink); font-family: inherit;
 }
 
-/* ---- Threads redesign: tab bar (Active / Solved / Recall) replacing
-   the old three stacked collapsible sections, + bigger single-column
-   cards replacing the old compact .thread-item rows. See
-   PATTERNS-bulk-list-operations.md for why "checked" never enters
-   itemRenderKey() in threads.html's JS — the CSS below has no opinion
-   on that, but .thread-item.checked below is exactly the "cheap,
-   structure-preserving class toggle" that pattern depends on. */
-.threads-tabs { display: flex; gap: 8px; margin-bottom: 14px; }
+/* ---- Active / Solved / Recall tabs (2026-08) ----
+   Inactive state: outline only, each tab's own color for border + text
+   (Active = orange, Solved = green, Recall = red). Selected state:
+   solid blue fill + white text for ALL THREE, regardless of that tab's
+   own color — the blue is "this is what you're currently looking at",
+   not a 4th category color. */
+.threads-tabs { display: flex; gap: 6px; margin-bottom: 14px; }
 .threads-tab {
-  flex: 1; display: flex; align-items: center; justify-content: center; gap: 7px;
-  padding: 10px 8px; border-radius: 14px;
-  font-family: var(--font-display); font-weight: 700; font-size: 12.5px;
-  white-space: nowrap;
-  border: 1px solid var(--panel-border); background: var(--sidebar-item-bg);
-  color: var(--ink-soft); cursor: pointer; user-select: none;
+  flex: 1; display: flex; align-items: center; justify-content: center; gap: 5px;
+  padding: 8px 4px; border-radius: 999px; border: 1.5px solid transparent;
+  background: transparent; font-size: 12px; font-weight: 700; cursor: pointer;
+  font-family: inherit; transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
 }
-.threads-tab .dot {
-  width: 18px; height: 18px; border-radius: 6px;
-  display: flex; align-items: center; justify-content: center; font-size: 10px;
-  background: rgba(255, 255, 255, 0.06);
-  flex-shrink: 0;
+.threads-tab-count {
+  border-radius: 999px; padding: 1px 7px; font-size: 10.5px; font-weight: 800;
+  background: rgba(255, 255, 255, 0.08);
 }
-.threads-tab .tab-count {
-  font-size: 10.5px; font-weight: 800; padding: 1px 7px; border-radius: 999px;
-  background: rgba(255, 255, 255, 0.06); color: var(--ink-soft);
+.threads-tab.tab-active { border-color: #e08a3c; color: #e08a3c; }
+.threads-tab.tab-active .threads-tab-count { color: #e08a3c; }
+.threads-tab.tab-solved { border-color: #4fbf6a; color: #4fbf6a; }
+.threads-tab.tab-solved .threads-tab-count { color: #4fbf6a; }
+.threads-tab.tab-recall { border-color: #e0524f; color: #e0524f; }
+.threads-tab.tab-recall .threads-tab-count { color: #e0524f; }
+[data-theme="light"] .threads-tab-count { background: rgba(0, 0, 0, 0.05); }
+.threads-tab.is-active {
+  background: #1d63e0; border-color: #1d63e0; color: #fff;
 }
+.threads-tab.is-active .threads-tab-count { background: #4f8fef; color: #fff; }
 
-/* Resting color per tab identity — Active orange, Solved green, Recall
-   red — so the three read as distinct at rest, not just as generic gray
-   buttons. Whichever one is actually selected overrides all of this
-   with the blue "active" style below (that always wins, regardless of
-   which tab it is), so color here only shows up on the two tabs you're
-   NOT currently looking at. */
-.threads-tab[data-tab="active"]:not(.active) {
-  background: rgba(251, 146, 60, 0.14); color: #fb923c; border-color: transparent;
+/* ---- "All threads" card — subtitle/count/Select toggle at the top of
+   whichever tab is open, and (in Select mode) the Select all + bulk
+   action row right underneath it. */
+.all-threads-card {
+  background: var(--field-bg); border: 1.5px solid var(--border);
+  border-radius: 12px; padding: 10px 12px; margin-bottom: 14px;
 }
-.threads-tab[data-tab="active"]:not(.active) .dot { background: rgba(251, 146, 60, 0.22); }
-.threads-tab[data-tab="active"]:not(.active) .tab-count { background: rgba(251, 146, 60, 0.2); color: #fb923c; }
-
-.threads-tab[data-tab="solved"]:not(.active) {
-  background: rgba(52, 211, 153, 0.14); color: #34d399; border-color: transparent;
+.all-threads-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.all-threads-title { font-size: 13.5px; font-weight: 800; color: var(--ink); }
+.all-threads-sub { font-size: 11px; color: var(--ink-soft); margin-top: 2px; }
+.all-threads-right { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+.all-threads-count {
+  background: var(--pill-bg); border: 1px solid var(--pill-border);
+  border-radius: 999px; padding: 2px 9px; font-size: 11.5px; font-weight: 800; color: var(--ink);
 }
-.threads-tab[data-tab="solved"]:not(.active) .dot { background: rgba(52, 211, 153, 0.22); }
-.threads-tab[data-tab="solved"]:not(.active) .tab-count { background: rgba(52, 211, 153, 0.2); color: #34d399; }
-
-.threads-tab[data-tab="recall"]:not(.active) {
-  background: rgba(239, 68, 68, 0.14); color: #f87171; border-color: transparent;
+.bulk-select-all {
+  display: flex; align-items: center; gap: 7px; font-size: 12px; font-weight: 700;
+  color: var(--ink); cursor: pointer; user-select: none; flex-shrink: 0; white-space: nowrap;
 }
-.threads-tab[data-tab="recall"]:not(.active) .dot { background: rgba(239, 68, 68, 0.22); }
-.threads-tab[data-tab="recall"]:not(.active) .tab-count { background: rgba(239, 68, 68, 0.2); color: #f87171; }
-
-/* Selected tab — always blue, regardless of which of the three it is.
-   Comes after the per-identity rules above so it wins on specificity
-   order for the one case both could apply to (impossible in practice
-   since :not(.active) above already excludes it, but kept last for
-   clarity — this block is the "you are here" state, not a topic color). */
-.threads-tab.active {
-  background: linear-gradient(135deg, #1c63e0 0%, #2ea8f2 100%);
-  border-color: transparent; color: #fff;
-}
-.threads-tab.active .dot { background: rgba(255, 255, 255, 0.22); color: #fff; }
-.threads-tab.active .tab-count { background: rgba(255, 255, 255, 0.2); color: #fff; }
-
-.threads-header {
-  display: flex; align-items: flex-start; gap: 10px;
-  padding: 9px 10px; margin-bottom: 10px;
-  background: var(--sidebar-item-bg); border: 1px solid var(--panel-border); border-radius: 14px;
-}
-.threads-header .bubble-icon {
-  width: 30px; height: 30px; border-radius: 9px; flex-shrink: 0;
-  background: rgba(56, 189, 248, 0.14); color: #38bdf8;
-  display: flex; align-items: center; justify-content: center; font-size: 14px;
-}
-.threads-header .text { flex: 1; min-width: 0; }
-.threads-header .title { font-family: var(--font-display); font-weight: 700; font-size: 14.5px; color: var(--ink); }
-.threads-header .subtitle { font-size: 11px; color: var(--ink-soft); margin-top: 1px; }
-.threads-header .subtitle .new-count { color: #38bdf8; font-weight: 600; }
-.threads-header .count-badge {
-  font-family: var(--font-display); font-weight: 700; font-size: 11.5px;
-  padding: 4px 9px; border-radius: 8px; background: rgba(56, 189, 248, 0.14); color: #38bdf8;
-  flex-shrink: 0;
-}
-.threads-header .select-btn {
-  flex-shrink: 0; font-size: 11px; font-weight: 700; color: var(--ink-soft);
-  background: var(--sidebar-item-bg); border: 1px solid var(--panel-border);
-  border-radius: 9px; padding: 6px 10px; cursor: pointer;
-}
-.threads-header .select-btn:hover { color: var(--ink); border-color: var(--ink-soft); }
-.threads-back-link {
-  display: none; align-items: center; gap: 4px;
-  font-size: 11.5px; color: #38bdf8; cursor: pointer; padding: 0 2px 8px;
-}
-.threads-back-link.open { display: flex; }
-
 .threads-empty { font-size: 12px; color: var(--ink-soft); text-align: center; padding: 24px 10px; }
 .thread-list {
-  flex: 1;
-  min-height: 0;
-  overflow-y: auto;
-  position: relative;
-  padding: 0 0 6px;
+  display: flex; flex-direction: column; gap: 6px; margin-bottom: 18px;
+  padding: 6px; border-radius: 12px;
+  background: rgba(255, 255, 255, 0.025); border: 1px solid var(--panel-border);
 }
+[data-theme="light"] .thread-list { background: rgba(0, 0, 0, 0.02); }
 
-.threads-select-all-row {
-  display: none; align-items: center; gap: 8px;
-  padding: 0 4px 10px; font-size: 11.5px; color: var(--ink-soft);
+/* Recall Chat History — same template as Active/Solved, red-tinted box
+   border so it reads as "sensitive" without being hidden from admins
+   (the count badge itself now lives on the Recall tab pill, styled by
+   .threads-tab.tab-recall above). */
+.threads-section.recall .thread-list { border-color: rgba(239, 68, 68, 0.16); background: rgba(239, 68, 68, 0.03); }
+.recall-item .icon { background: rgba(239, 68, 68, 0.14); color: #f87171; }
+.recall-item .badge {
+  display: inline-block; font-size: 9px; font-weight: 800; text-transform: uppercase;
+  letter-spacing: 0.03em; padding: 1px 6px; border-radius: 6px;
+  background: rgba(239, 68, 68, 0.16); color: #f87171; margin-right: 6px; vertical-align: middle;
 }
-.threads-select-all-row.open { display: flex; }
-.threads-select-all-row input { accent-color: #38bdf8; width: 15px; height: 15px; }
-.threads-select-all-row .spacer { flex: 1; }
-.threads-select-all-row .sel-actions { display: flex; gap: 6px; }
-.threads-select-all-row .sel-actions button {
-  font-family: inherit; font-size: 11px; font-weight: 700; border-radius: 9px;
-  padding: 6px 9px; border: 1px solid var(--panel-border); background: var(--sidebar-item-bg);
-  color: var(--ink); cursor: pointer; white-space: nowrap;
-}
-.threads-select-all-row .sel-actions button:hover { background: var(--sidebar-item-hover); }
-.threads-select-all-row .sel-actions button:disabled { opacity: 0.5; cursor: default; }
-
-/* Bottom bar now holds only Cancel + the selected count — the actions
-   moved up into .threads-select-all-row, right-aligned next to
-   "Select all" (per the approved preview). */
-.threads-select-bar {
-  display: none; align-items: center; gap: 10px;
-  background: var(--sidebar-item-bg); border: 1px solid var(--panel-border);
-  border-radius: 12px; padding: 10px 12px; margin: 8px 0 0;
-  position: sticky; bottom: 0;
-}
-.threads-select-bar.open { display: flex; }
-.threads-select-bar .sel-cancel { color: var(--ink-soft); font-size: 11.5px; font-weight: 700; cursor: pointer; }
-.threads-select-bar .sel-cancel:hover { color: var(--ink); }
-.threads-select-bar .sel-count { font-size: 11.5px; color: var(--ink-soft); }
-.threads-select-bar .sel-count b { color: var(--ink); }
+.recall-item .t-content { font-size: 10.5px; color: var(--ink-soft); margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 .thread-item {
-  display: flex; align-items: flex-start; gap: 12px;
-  padding: 9px; border-radius: 14px;
-  border: 1px solid transparent;
-  cursor: pointer;
+  display: flex; align-items: center; gap: 10px;
+  padding: 9px 10px; border-radius: 12px;
   background: var(--sidebar-item-bg);
-  transition: background 0.15s ease, border-color 0.15s ease;
-  content-visibility: auto;
-  contain-intrinsic-size: 0 60px;
+  border-left: 3px solid transparent;
+  cursor: pointer;
+  transition: background 0.15s ease;
+  position: relative;
 }
 .thread-item:hover { background: var(--sidebar-item-hover); }
-.thread-item.selected { background: var(--sidebar-item-hover); border-color: var(--thread-accent, var(--accent-gold)); }
-.thread-item.checked { background: rgba(56, 189, 248, 0.08); border-color: #38bdf8; }
-.thread-item .icon {
-  width: 36px; height: 36px; border-radius: 11px;
-  display: flex; align-items: center; justify-content: center; font-size: 16px; flex-shrink: 0;
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08);
-}
-.thread-item .check { width: 36px; height: 36px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; }
-.thread-item-checkbox { flex-shrink: 0; width: 16px; height: 16px; accent-color: #38bdf8; cursor: pointer; }
+.thread-item.selected { background: var(--sidebar-item-hover); border-left-color: var(--thread-accent, var(--accent-gold)); }
+.thread-item .icon { width: 26px; height: 26px; border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 13px; flex-shrink: 0; }
 .thread-item .meta { flex: 1; min-width: 0; }
-.thread-item .top-line { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
-.thread-item .t-title { font-size: 13px; font-weight: 700; color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.thread-item .t-time { font-size: 10.5px; color: var(--ink-soft); opacity: 0.75; flex-shrink: 0; }
-.thread-item .bottom-line {
-  display: flex; align-items: center; gap: 8px; margin-top: 3px;
-}
-/* flex:1 + min-width:0 — the submitter/reply-count text absorbs all the
-   slack (and ellipsizes once it can't) so the unread badge + solved
-   checkmark always sit flush together at the row's right edge, instead
-   of "justify-content: space-between" scattering all 3 items across the
-   row with gaps proportional to leftover space — which is what made the
-   badge appear to float at a different spot on every row depending on
-   how long the submitter name was. Fixed 2026-08-15. */
-.thread-item .t-sub { flex: 1 1 auto; min-width: 0; font-size: 11px; color: var(--ink-soft); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.thread-item .t-sub .submitter { color: #38bdf8; font-weight: 600; }
-.thread-item .t-done { color: #34d399; font-size: 12px; flex-shrink: 0; }
-.badge-new {
+.thread-item .t-title { font-size: 12.5px; font-weight: 700; color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.thread-item .t-sub { font-size: 11px; color: var(--ink-soft); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.thread-item .t-done { color: #34d399; font-size: 13px; flex-shrink: 0; }
+.unread-badge {
   flex-shrink: 0;
-  min-width: 19px; height: 19px;
+  min-width: 18px;
+  height: 18px;
   padding: 0 5px;
   border-radius: 999px;
   background: #ef4a72;
@@ -1356,34 +1969,88 @@ body.hub-page .topbar { flex-shrink: 0; }
   align-items: center;
   justify-content: center;
 }
-.thread-kebab {
-  flex-shrink: 0; color: var(--ink-soft); font-size: 15px; letter-spacing: 1px; line-height: 1;
-  padding: 3px 6px; border-radius: 6px; cursor: pointer; align-self: flex-start;
-}
-.thread-kebab:hover { background: var(--sidebar-item-hover); color: var(--ink); }
-.thread-kebab-menu {
-  position: fixed; z-index: 1000; min-width: 170px;
-  background: var(--card-bg); border: 1px solid var(--panel-border); border-radius: 12px;
-  padding: 5px; box-shadow: 0 10px 24px -8px rgba(0, 0, 0, 0.5);
-}
-.thread-kebab-item {
-  display: flex; align-items: center; gap: 9px; padding: 8px 10px; border-radius: 8px;
-  font-size: 12px; font-weight: 600; color: var(--ink); cursor: pointer; white-space: nowrap;
-}
-.thread-kebab-item:hover { background: var(--sidebar-item-hover); }
-.thread-kebab-divider { height: 1px; background: var(--panel-border); margin: 3px 6px; }
 
-/* Recall Chat History rows — same .thread-item base, red-tinted icon +
-   type badge, plus a one-line content preview under the subtitle. */
-.recall-item .icon { background: rgba(239, 68, 68, 0.14); color: #f87171; }
-.recall-item .r-badge {
-  display: inline-block; font-size: 9px; font-weight: 800; text-transform: uppercase;
-  letter-spacing: 0.03em; padding: 1px 6px; border-radius: 6px;
-  background: rgba(239, 68, 68, 0.16); color: #f87171; margin-right: 6px; vertical-align: middle;
+/* ---- Bulk action bar (Select batch mode) — a standalone row below the
+   search box (2026-08 — moved out of .all-threads-card), all three
+   controls (Select all + the two action buttons) on a single line. ---- */
+.bulk-action-bar {
+  display: flex; align-items: center; gap: 8px;
+  background: var(--field-bg); border: 1.5px solid var(--border);
+  border-radius: 12px; padding: 10px 12px; margin-bottom: 14px;
 }
-.recall-item .t-content { font-size: 10.5px; color: var(--ink-soft); margin-top: 3px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bulk-cancel { background: none; border: none; color: var(--ink-soft); font-size: 12px; font-weight: 700; cursor: pointer; }
+.bulk-cancel:hover { color: var(--ink); }
+.bulk-action-btn {
+  flex: 1; padding: 9px 6px; border-radius: 10px; border: 1.5px solid var(--border);
+  background: var(--field-bg); color: var(--ink); font-size: 12px; font-weight: 700; cursor: pointer;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-align: center;
+}
+.bulk-action-btn:hover:not(:disabled) { border-color: var(--accent-gold); }
+.bulk-action-btn:disabled { opacity: 0.45; cursor: not-allowed; }
+/* Same red/green convention as .status-chip.unsolved/.solved above — applied
+   the same way to BOTH bulk buttons (not just Solved/Not solved) so the two
+   rows read consistently: green = this action moves the ticket forward
+   (read, solved), red = this action reverts it (unread, reopened). */
+.bulk-action-btn.tone-positive { background: rgba(52, 211, 153, 0.16); border-color: transparent; color: #1a9c6e; }
+.bulk-action-btn.tone-negative { background: rgba(239, 74, 114, 0.16); border-color: transparent; color: #ef4a72; }
+
+/* ---- Per-item ⋮ menu + Select-mode checkbox ---- */
+.thread-item.select-mode { cursor: pointer; }
+.thread-item-check { width: 16px; height: 16px; flex-shrink: 0; cursor: pointer; }
+.item-menu-btn {
+  flex-shrink: 0; width: 24px; height: 24px; border-radius: 8px; border: none;
+  background: none; color: var(--ink-soft); font-size: 15px; cursor: pointer; line-height: 1;
+}
+.item-menu-btn:hover { background: var(--sidebar-item-hover); color: var(--ink); }
+.item-menu {
+  position: absolute; top: 34px; right: 8px; z-index: 20; min-width: 172px;
+  background: var(--card-bg); border: 1px solid var(--panel-border); border-radius: 10px;
+  padding: 4px; box-shadow: 0 10px 28px -8px rgba(0, 0, 0, 0.45);
+}
+.item-menu-option {
+  display: flex; align-items: center; gap: 8px; padding: 8px 9px; border-radius: 7px;
+  font-size: 12px; font-weight: 600; color: var(--ink); cursor: pointer;
+}
+.item-menu-option:hover { background: var(--sidebar-item-hover); }
+.item-menu-icon { width: 14px; text-align: center; flex-shrink: 0; color: var(--ink-soft); }
+.item-menu-icon.ok { color: #1a9c6e; }
+.item-menu-icon.danger { color: #e0577a; }
+
+/* ---- @ Tag Username autocomplete ---- */
+.mention-dropdown {
+  position: absolute; left: 0; right: 0; bottom: calc(100% + 6px); z-index: 20;
+  max-height: 220px; overflow-y: auto;
+  background: var(--card-bg); border: 1px solid var(--panel-border); border-radius: 10px;
+  padding: 4px; box-shadow: 0 10px 28px -8px rgba(0, 0, 0, 0.45);
+}
+.mention-option {
+  display: flex; align-items: center; gap: 8px; padding: 7px 10px; border-radius: 7px;
+  cursor: pointer; font-size: 12.5px;
+}
+.mention-option.active, .mention-option:hover { background: var(--sidebar-item-hover); }
+.mention-handle { font-weight: 700; color: var(--ink); }
+.mention-from { color: var(--ink-soft); font-size: 11.5px; }
 
 .threads-main { flex: 1; display: flex; flex-direction: column; overflow: hidden; min-height: 0; }
+
+/* ---- Announcement reminder banner (public/assets/announcement-banner.js) ---- */
+#announcementBanner:empty { display: none; }
+.announcement-banner {
+  display: flex; align-items: flex-start; gap: 10px;
+  padding: 10px 24px; background: rgba(200, 145, 47, 0.14);
+  border-top: 1px solid var(--accent-gold); border-bottom: 1px solid var(--accent-gold);
+}
+.announcement-banner-icon { font-size: 16px; flex-shrink: 0; line-height: 1.4; }
+.announcement-banner-body { flex: 1; min-width: 0; }
+.announcement-banner-label { font-size: 10.5px; font-weight: 800; letter-spacing: 0.05em; color: var(--accent-gold); }
+.announcement-banner-textwrap { display: grid; margin-top: 2px; }
+.announcement-banner-text { grid-column: 1; grid-row: 1; font-size: 12.5px; color: var(--ink); line-height: 1.5; }
+.announcement-banner-dots { display: flex; gap: 4px; margin-top: 6px; }
+.announcement-banner-dots span { width: 5px; height: 5px; border-radius: 50%; background: rgba(200, 145, 47, 0.35); }
+.announcement-banner-dots span.on { background: var(--accent-gold); }
+.announcement-banner-close { background: none; border: none; color: var(--accent-gold); font-size: 13px; cursor: pointer; flex-shrink: 0; padding: 2px; }
+.announcement-banner-close:hover { opacity: 0.7; }
+.announcement-banner-icon.breathing, .announcement-banner-label.breathing { animation: breathe 1.8s ease-in-out infinite; }
 .threads-placeholder { flex: 1; display: flex; align-items: center; justify-content: center; color: var(--ink-soft); font-size: 14px; text-align: center; }
 .thread-top-fixed { flex-shrink: 0; padding: 30px 40px 0; }
 .thread-scroll-area { flex: 1; overflow-y: auto; padding: 20px 40px; min-height: 0; }
@@ -1399,24 +2066,17 @@ body.hub-page .topbar { flex-shrink: 0; }
 .icon-btn { width: 32px; height: 32px; border-radius: 10px; border: 1px solid var(--border); background: var(--card-bg); color: var(--required); font-size: 13px; cursor: pointer; }
 .icon-btn:hover { background: rgba(239, 74, 114, 0.1); }
 .icon-btn.spinning { color: var(--required); animation: spin 0.8s linear infinite; }
-/* When a .icon-btn-labeled button spins (currently just Refresh), only
-   the icon glyph should rotate — the button itself must stay still or
-   the visible label text spins with it, which looks broken. */
-.icon-btn-labeled.spinning { animation: none; }
-.icon-btn-labeled .icon-btn-glyph { display: inline-block; }
-.icon-btn-labeled.spinning .icon-btn-glyph { animation: spin 0.8s linear infinite; }
-/* Thread detail header toolbar (Edit/Forward/Recall/Delete/Refresh) —
-   the base .icon-btn above is a fixed 32x32 icon-only square with no
-   room for text; this modifier widens it to fit an icon + visible label
-   instead of relying on the title="" tooltip alone. */
-.icon-btn.icon-btn-labeled {
-  width: auto; height: 34px; padding: 0 12px; display: inline-flex; align-items: center;
-  gap: 6px; font-size: 13px; font-weight: 700; color: var(--ink);
-}
-.icon-btn.icon-btn-labeled span { font-size: 12px; }
+/* Icon + text label variant (e.g. thread-detail-actions toolbar) — same
+   pill family as .icon-btn but auto width, with a short caption next to
+   the emoji instead of an icon-only square. Color goes back to --ink
+   (neutral) since these aren't all "danger" actions like the plain
+   icon-btn's red tint implies. */
+.icon-btn.labeled { width: auto; height: auto; padding: 7px 12px; display: inline-flex; align-items: center; gap: 6px; color: var(--ink); font-size: 12px; font-weight: 700; white-space: nowrap; }
+.icon-btn.labeled:hover { background: var(--field-bg); }
+.icon-btn.labeled.spinning { color: var(--ink); }
 @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
 
-.threads-topline { display: flex; align-items: center; justify-content: flex-start; gap: 14px; padding-left: 24px; }
+.threads-topline { display: flex; align-items: center; justify-content: flex-end; gap: 14px; padding-right: 24px; }
 .agent-whoami { font-size: 12px; font-weight: 600; color: var(--ink-soft); }
 .agent-whoami .role-badge {
   display: inline-block; margin-left: 6px; padding: 2px 8px; border-radius: 20px;
@@ -1614,15 +2274,6 @@ body.hub-page .topbar { flex-shrink: 0; }
 .msg-actions button { border: none; background: none; cursor: pointer; font-size: 10.5px; opacity: 0.55; padding: 0; }
 .msg-actions button:hover { opacity: 1; }
 
-.mention-dropdown {
-  position: absolute; z-index: 50; bottom: 100%; left: 60px; right: 8px; margin-bottom: 6px;
-  background: var(--card-bg); border: 1px solid var(--panel-border); border-radius: 10px;
-  padding: 4px; box-shadow: 0 10px 24px -8px rgba(0, 0, 0, 0.5); max-height: 180px; overflow-y: auto;
-}
-.mention-option { display: flex; align-items: baseline; gap: 8px; padding: 7px 9px; border-radius: 7px; font-size: 12px; color: var(--ink); cursor: pointer; }
-.mention-option:hover, .mention-option.active { background: var(--sidebar-item-hover); }
-.mention-option .mo-handle { font-weight: 700; }
-.mention-option .mo-from { color: var(--ink-soft); font-size: 11px; }
 .reply-box { display: flex; gap: 10px; }
 .reply-box input { flex: 1; border: 1.5px solid var(--border); background: var(--field-bg); border-radius: 12px; padding: 11px 14px; font-size: 13.5px; color: var(--ink); font-family: inherit; }
 .reply-box input:focus { outline: none; border-color: #38bdf8; }
@@ -1632,6 +2283,7 @@ body.hub-page .topbar { flex-shrink: 0; }
 @media (max-width: 820px) {
   body.threads-page { overflow: auto; height: auto; }
   .threads-shell { flex-direction: column; height: auto; }
+  .threads-body-row { flex-direction: column; }
   .threads-main { overflow: visible; }
   .thread-scroll-area { overflow-y: visible; }
   .threads-sidebar { width: 100%; max-height: 320px; }
@@ -1713,49 +2365,6 @@ h1 {
   margin: 0 0 20px;
 }
 
-/* Betting Resources Links panel (Account Management → Betting
-   Resources Links) — each link is its own bordered card with labeled
-   Name/URL fields, rather than two bare stacked inputs, so a list of
-   many links stays readable. See renderBettingLinks() in index.html. */
-.link-edit-row {
-  position: relative;
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  padding: 12px 40px 12px 12px;
-  margin-bottom: 10px;
-  background: var(--field-bg);
-}
-.link-edit-row .edit-fields-row { display: flex; align-items: flex-start; gap: 8px; }
-.link-edit-row .edit-field { flex: 1; min-width: 0; }
-.link-edit-row .edit-field.icon-field { flex: 0 0 56px; }
-.link-edit-row .edit-field.icon-field input { text-align: center; font-size: 16px; padding: 7px 4px; }
-.link-edit-row .edit-label {
-  display: block; font-size: 10.5px; font-weight: 700; letter-spacing: 0.03em;
-  text-transform: uppercase; color: var(--ink-soft); margin-bottom: 4px;
-}
-.link-edit-row input {
-  width: 100%; background: var(--card-bg); border: 1px solid var(--border);
-  border-radius: 8px; padding: 8px 10px; font-size: 12.5px; color: var(--ink); font-family: inherit;
-}
-.link-edit-row input:focus { outline: none; border-color: var(--accent-gold); }
-.link-edit-row input.url-input { font-family: var(--font-mono); font-size: 11.5px; }
-.link-edit-row input[disabled] { background: var(--border); color: var(--ink-soft); }
-.link-edit-row .remove-btn {
-  position: absolute; top: 10px; right: 10px;
-  width: 26px; height: 26px; border-radius: 7px;
-  border: 1px solid var(--border); background: var(--card-bg); color: var(--required); cursor: pointer;
-  font-size: 12px; line-height: 1;
-}
-@media (max-width: 480px) {
-  .link-edit-row .edit-fields-row { flex-direction: column; }
-}
-.add-link-btn {
-  width: 100%; padding: 9px; margin-top: 2px; margin-bottom: 6px;
-  border: 1px dashed var(--border); background: none; border-radius: 8px;
-  color: var(--ink-soft); font-size: 12.5px; cursor: pointer; font-family: inherit;
-}
-.add-link-btn:hover { border-color: var(--accent-gold); color: var(--accent-gold); }
-
 .field { margin-bottom: 18px; }
 
 .field label {
@@ -1788,7 +2397,7 @@ h1 {
   outline: none;
   border-color: #38bdf8;
 }
-.field textarea { resize: vertical; min-height: 170px; }
+.field textarea { resize: vertical; min-height: 90px; }
 
 /* Highlighted "what kind of issue" box */
 .field-emphasize {
@@ -1893,21 +2502,17 @@ h1 {
 .status-msg.ok { color: #1a9c6e; }
 .status-msg.err { color: #e0577a; }
 
-/* ---- Page-to-page fade transition (index.html <-> form.html) ----
-   These are REAL full page navigations (plain <a href>, not an SPA),
-   so this can't be a smooth in-DOM swap like a single-page app — it's a
-   quick fade-out on the page you're leaving, then a fade-in on the page
-   you land on, timed to roughly overlap with the browser's own
-   navigation. See /assets/pageTransition.js for the click-intercept
-   logic that drives this. Deliberately NOT a static `body { opacity: 0 }`
-   rule — the "enter" class is baked directly into the HTML's <body
-   class="..."> in each page (not added by JS), so if the JS file ever
-   fails to load for any reason, the page still renders at full opacity
-   immediately rather than getting stuck invisible. */
-@keyframes pageFadeIn { from { opacity: 0; } to { opacity: 1; } }
-@keyframes pageFadeOut { to { opacity: 0; } }
-body.page-transition-in { animation: pageFadeIn 0.12s ease; }
-body.page-transition-out { animation: pageFadeOut 0.09s ease forwards; }
+/* ---- Page transition: Home <-> Form navigation ("slide" style, matches
+   transition-preview.html option 2) ----
+   Home (index.html) applies these to .hub-layout (sidebar + main content,
+   header/brand-row stay put); Form (form.html) applies these to
+   .form-page (topbar/back-pill stay put). See app.js/index.html inline
+   script for the click-intercept + setTimeout(navigate) wiring — CSS
+   alone can't delay a real cross-page navigation. */
+.page-slide-out { animation: pageSlideOut 0.2s ease forwards; }
+.page-slide-in { animation: pageSlideIn 0.28s cubic-bezier(.22, .9, .34, 1) forwards; }
+@keyframes pageSlideOut { to { opacity: 0; transform: translateX(-24px) scale(0.98); } }
+@keyframes pageSlideIn { from { opacity: 0; transform: translateX(24px); } to { opacity: 1; transform: translateX(0); } }
 
 /* ---- "Edit fields — syncs Telegram + Sheet" modal, threads.html only.
    Field rows themselves reuse the existing .field/label/input/select/
@@ -1938,12 +2543,10 @@ body.page-transition-out { animation: pageFadeOut 0.09s ease forwards; }
 .edit-details-status.err { color: #e0577a; }
 @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
 
-/* "Generate to another Topic" (forward.js) — the bidirectional reference
-   cards rendered in buildSummaryHTML() in threads.html: "↩️ Forwarded
-   from ..." on the new ticket, "↗️ Forwarded to ..." on the original.
-   Dashed border deliberately distinguishes it from .thread-summary-card
-   (solid border) — this is a pointer to ANOTHER ticket, not this
-   ticket's own content. */
+/* ---- "Forwarded from/to" reference cards (threads.html) — same idea as
+   the quoted "Original ticket" card already used in reply threads, just
+   for cross-Topic links instead of cross-message ones. Clickable, jumps
+   straight to the linked ticket via openThread(). */
 .forward-link-card {
   background: rgba(255, 255, 255, 0.03);
   border: 1px dashed var(--panel-border);
@@ -1957,7 +2560,7 @@ body.page-transition-out { animation: pageFadeOut 0.09s ease forwards; }
 .forward-link-card:hover { border-color: var(--accent-gold); background: rgba(255, 255, 255, 0.05); }
 .forward-link-time { color: var(--ink-soft); font-size: 11.5px; }
 
-/* Withdraw Issue — duplicate-TID guard */
+/* ---- Withdraw Issue: duplicate-TID inline warning (public/assets/app.js) ---- */
 .tid-warning {
   margin-left: 8px;
   font-size: 12px;
@@ -1966,491 +2569,12 @@ body.page-transition-out { animation: pageFadeOut 0.09s ease forwards; }
 }
 .tid-warning.checking { color: var(--ink-soft); font-weight: 500; font-style: italic; }
 
+/* Withdraw Issue: TID input itself, not just the label warning — see
+   setTidState() in app.js, which is the single place that toggles this
+   class alongside the warning text and Submit's disabled state, so all
+   three always agree with each other. */
 .field input.field-error {
   border-color: var(--required);
   background: color-mix(in srgb, var(--field-bg) 85%, var(--required) 15%);
 }
 .field input.field-error:focus { border-color: var(--required); }
-
-/* ================================================================
-   Announcement banner (public/assets/announcement-banner.js)
-   ================================================================ */
-#announcementBanner:empty { display: none; }
-.ann-banner {
-  position: relative;
-  flex-shrink: 0;
-  display: flex;
-  align-items: flex-start;
-  gap: 12px;
-  padding: 10px 40px 10px 24px;
-  background: linear-gradient(90deg, rgba(245, 158, 11, 0.14), rgba(245, 158, 11, 0.05));
-  border-top: 1px solid rgba(245, 158, 11, 0.3);
-  border-bottom: 1px solid rgba(245, 158, 11, 0.3);
-  color: var(--ink);
-}
-.ann-banner-icon {
-  font-size: 15px; flex-shrink: 0; margin-top: 1px;
-  animation: breathe 1.8s ease-in-out infinite;
-}
-.ann-banner-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
-.ann-banner-label {
-  font-size: 10px; font-weight: 800; letter-spacing: 0.08em; text-transform: uppercase;
-  color: #b45309;
-  animation: breathe 1.8s ease-in-out infinite;
-}
-[data-theme="dark"] .ann-banner-label { color: #f59e0b; }
-/* Overlapping-crossfade trick via CSS Grid: both text nodes share the
-   same grid cell, so the wrap auto-sizes to whichever is tallest right
-   now — needed because the message text WRAPS across lines (responsive
-   to window width / browser zoom, per the reference screenshots) rather
-   than truncating to a single line, so its height isn't a fixed
-   constant we could hardcode. */
-.ann-banner-text-wrap { display: grid; }
-.ann-banner-text {
-  grid-row: 1; grid-column: 1;
-  font-size: 13px; font-weight: 600; color: var(--ink); line-height: 1.45;
-  white-space: normal; overflow-wrap: break-word;
-  opacity: 0; transform: translateX(0);
-  transition: opacity 2.2s ease, transform 2.2s ease;
-}
-.ann-banner-text.ann-current { opacity: 1; transform: translateX(0); }
-.ann-banner-text.ann-entering { opacity: 0; transform: translateX(24px); }
-.ann-banner-text.ann-leaving { opacity: 0; transform: translateX(0); }
-.ann-banner-dots { display: flex; gap: 5px; flex-shrink: 0; margin-top: 2px; }
-.ann-banner-dot { width: 5px; height: 5px; border-radius: 50%; background: rgba(180, 83, 9, 0.3); transition: background 0.2s ease; }
-[data-theme="dark"] .ann-banner-dot { background: rgba(245, 158, 11, 0.28); }
-.ann-banner-dot.active { background: #b45309; }
-[data-theme="dark"] .ann-banner-dot.active { background: #f59e0b; }
-.ann-banner-close {
-  position: absolute; top: 8px; right: 14px;
-  flex-shrink: 0; border: none; background: none; cursor: pointer;
-  color: var(--ink-soft); font-size: 13px; line-height: 1; padding: 4px;
-  border-radius: 6px;
-}
-.ann-banner-close:hover { color: var(--ink); background: rgba(0, 0, 0, 0.08); }
-
-/* ================================================================
-   Site-wide toast (feedback popup) styles.
-
-   One rule set shared by every page via window.showToast(message, type) —
-   see /assets/toast.js. Success and failure are deliberately styled very
-   differently (see toast.js for why they also *behave* differently):
-   success is a quick, quiet confirmation; failure is visually heavier
-   (thicker border, tinted background, darker overlay) because it usually
-   needs to be read carefully, not just glanced at.
-   ================================================================ */
-#globalToastOverlay {
-  position: fixed;
-  inset: 0;
-  z-index: 9999;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  /* Not a modal — never intercept clicks. This also lets "click anywhere
-     to dismiss" (for error toasts) reuse a plain document-level click
-     listener instead of needing its own hit target. */
-  pointer-events: none;
-  background: rgba(5, 7, 20, 0);
-  transition: background 0.25s ease;
-}
-#globalToastOverlay.toast-show { background: rgba(5, 7, 20, 0.45); }
-#globalToastOverlay.toast-overlay-err.toast-show { background: rgba(5, 7, 20, 0.6); }
-#globalToastOverlay .toast-card {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  background: var(--card-bg);
-  border: 1px solid var(--panel-border);
-  border-radius: 14px;
-  padding: 16px 26px;
-  font-size: 13px;
-  font-weight: 700;
-  color: var(--ink);
-  text-align: center;
-  max-width: min(440px, 82vw);
-  box-shadow: 0 20px 40px -12px rgba(0, 0, 0, 0.45);
-  opacity: 0;
-  transform: translateY(-8px) scale(0.94);
-  transition: opacity 0.2s ease, transform 0.2s ease;
-}
-#globalToastOverlay.toast-show .toast-card {
-  opacity: 1;
-  transform: translateY(0) scale(1);
-}
-#globalToastOverlay .toast-icon { font-size: 17px; line-height: 1; flex: none; }
-#globalToastOverlay .toast-card.toast-ok {
-  border-color: rgba(26, 156, 110, 0.4);
-}
-#globalToastOverlay .toast-card.toast-ok .toast-icon { color: #1a9c6e; }
-#globalToastOverlay .toast-card.toast-err {
-  border: 2px solid #e0577a;
-  background: rgba(224, 87, 122, 0.1);
-  text-align: left;
-}
-#globalToastOverlay .toast-card.toast-err .toast-icon { color: #e0577a; }
-#globalToastOverlay .toast-body { display: flex; flex-direction: column; gap: 4px; }
-#globalToastOverlay .toast-hint {
-  font-size: 11px;
-  font-weight: 500;
-  opacity: 0.75;
-}
-
-/* ================================================================
-   Announcements management page (public/announcements.html)
-   ================================================================ */
-html:has(body.announcements-page), body.announcements-page {
-  height: 100%; overflow: hidden; display: flex; flex-direction: column;
-}
-body.announcements-page .topbar { flex-shrink: 0; }
-body.announcements-page #announcementBanner { flex-shrink: 0; }
-body.announcements-page .ann-page-backrow { flex-shrink: 0; }
-body.announcements-page .ann-shell { flex: 1; min-height: 0; }
-
-.ann-page-backrow { padding: 8px 24px 0; }
-/* When the announcement banner is actually showing above this row (it's
-   empty — no padding/border of its own — when there's nothing active to
-   show), the banner's own bottom border already anchors the top of the
-   page visually, so the row below it needs less breathing room than
-   when it's the very first thing on the page. */
-#announcementBanner:has(.ann-banner) + .ann-page-backrow { padding-top: 2px; }
-.ann-shell { display: flex; height: 100%; overflow: hidden; }
-.ann-sidebar {
-  width: 300px; flex-shrink: 0; border-right: 1px solid var(--panel-border);
-  padding: 16px; overflow-y: auto;
-}
-.ann-sidebar .threads-search { margin-bottom: 12px; }
-.ann-list-item {
-  position: relative;
-  display: flex; flex-direction: column; gap: 3px;
-  padding: 10px 12px; border-radius: 12px; cursor: pointer;
-  border-left: 3px solid transparent;
-  margin-bottom: 4px;
-  background: var(--sidebar-item-bg);
-}
-.ann-list-item:hover { background: var(--sidebar-item-hover); }
-.ann-list-item.selected { background: var(--sidebar-item-hover); border-left-color: var(--accent-gold); }
-.ann-list-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
-.ann-list-topic { font-size: 12.5px; font-weight: 700; color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.ann-list-status { display: inline-flex; align-items: center; gap: 4px; font-size: 10.5px; font-weight: 700; flex-shrink: 0; }
-.ann-list-status .dot { width: 6px; height: 6px; border-radius: 50%; }
-.ann-list-status.active .dot { background: #34d399; animation: ann-pulse 1.8s ease-in-out infinite; }
-@keyframes ann-pulse {
-  0%, 100% { opacity: 1; box-shadow: 0 0 0 0 rgba(52, 211, 153, 0.55); }
-  50% { opacity: 0.75; box-shadow: 0 0 0 4px rgba(52, 211, 153, 0); }
-}
-.ann-list-status.inactive .dot { background: var(--ink-soft); }
-.ann-list-status.scheduled .dot { background: #38bdf8; }
-.ann-list-status.expired .dot { background: #e0577a; }
-.ann-list-meta { font-size: 10.5px; color: var(--ink-soft); }
-.ann-new-btn {
-  width: 100%; margin-bottom: 10px; padding: 9px 12px; border-radius: 12px;
-  border: 1.5px dashed var(--border); background: none; color: var(--ink-soft);
-  font-weight: 700; font-size: 12.5px; cursor: pointer;
-}
-.ann-new-btn:hover { border-color: var(--accent-gold); color: var(--ink); }
-
-.ann-main { flex: 1; min-width: 0; display: flex; align-items: stretch; justify-content: center; padding: 20px; overflow: hidden; }
-.ann-form-card {
-  width: 640px; max-width: 100%; height: 100%;
-  display: flex; flex-direction: column;
-  background: var(--card-bg); border: 1px solid var(--panel-border);
-  border-radius: var(--radius); box-shadow: var(--shadow);
-  overflow: hidden;
-}
-.ann-form-scroll { flex: 1; min-height: 0; overflow-y: auto; padding: 24px; }
-.ann-form-footer {
-  flex-shrink: 0; display: flex; justify-content: flex-end; gap: 8px;
-  padding: 14px 24px; border-top: 1px solid var(--panel-border);
-}
-.ann-form-meta { font-size: 11px; color: var(--ink-soft); margin-top: 4px; }
-.ann-datetime-row { display: flex; gap: 10px; }
-.ann-datetime-row .field { flex: 1; }
-.btn-danger {
-  border: 1.5px solid #e0577a; background: none; color: #e0577a;
-  border-radius: 10px; padding: 9px 16px; font-size: 13px; font-weight: 700; cursor: pointer;
-}
-.btn-danger:hover { background: rgba(224, 87, 122, 0.1); }
-.ann-empty-state { display: flex; align-items: center; justify-content: center; height: 100%; color: var(--ink-soft); font-size: 13px; }
-
-/* ---- IP Access dashboard (ip-access-panel.js) ---- */
-.edit-modal.wide { max-width: 940px; }
-:root { --ipa-ip-color: #0f7a52; }
-[data-theme="dark"] { --ipa-ip-color: #34d399; }
-.ipa-ip-text { font-family: var(--font-mono); color: var(--ipa-ip-color); font-weight: 600; }
-
-.ipa-stat-cards {
-  display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px;
-  margin-bottom: 16px;
-}
-.ipa-stat-card {
-  background: var(--field-bg); border: 1px solid var(--border); border-radius: 12px;
-  padding: 14px 16px; cursor: pointer; transition: border-color 0.15s ease, background 0.15s ease;
-}
-.ipa-stat-card:hover { border-color: var(--accent-gold); }
-/* Which card's table(s) are currently shown below — see activeView in
-   ip-access-panel.js. Left border instead of full-card recolor so it
-   reads as "selected filter", not "this number is now a warning". */
-.ipa-stat-card-active { border-color: var(--accent-gold); background: var(--sidebar-item-hover); box-shadow: inset 3px 0 0 var(--accent-gold); }
-.ipa-stat-label { font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--ink-soft); margin-bottom: 6px; }
-.ipa-stat-value { font-size: 24px; font-weight: 700; font-family: var(--font-display); color: var(--ink); }
-.ipa-stat-approved { color: #16a34a; }
-[data-theme="dark"] .ipa-stat-approved { color: #34d399; }
-.ipa-stat-pending { color: #d97706; }
-[data-theme="dark"] .ipa-stat-pending { color: #f3c463; }
-.ipa-stat-blocked { color: #e0577a; }
-
-/* Pending "breathing light" — only while there's actually something
-   waiting (pending > 0). 0 pending stays the plain, calm card style
-   above; this is purely additive on top of it. Same 1.8s timing as
-   maintenance-breathing-light.css's fs-breathe so it reads as the same
-   "needs attention" language used elsewhere in the app, not a one-off. */
-.ipa-pending-alert { animation: ipa-pulse 1.8s ease-in-out infinite; }
-@keyframes ipa-pulse {
-  0%, 100% { box-shadow: 0 0 0 0 rgba(217, 119, 6, 0.35); border-color: #d97706; }
-  50% { box-shadow: 0 0 0 5px rgba(217, 119, 6, 0); border-color: #f3c463; }
-}
-[data-theme="dark"] .ipa-pending-alert { animation-name: ipa-pulse-dark; }
-@keyframes ipa-pulse-dark {
-  0%, 100% { box-shadow: 0 0 0 0 rgba(243, 196, 99, 0.4); border-color: #f3c463; }
-  50% { box-shadow: 0 0 0 5px rgba(243, 196, 99, 0); border-color: #f3c463; }
-}
-
-/* Relocated into .edit-modal-header-row, next to the ✕ close button
-   (was a full-width row above the tables). Smaller than the dashboard's
-   other buttons on purpose — this is header chrome now, not a primary
-   action competing with the stat cards for attention. */
-.ipa-header-actions { display: flex; gap: 8px; }
-.ipa-header-actions .ipa-ghost-btn { padding: 6px 12px; font-size: 12px; width: auto; }
-.ipa-ghost-btn {
-  background: var(--field-bg); color: var(--ink); box-shadow: none;
-  border: 1px solid var(--border);
-}
-
-.ipa-collapsible { border: 1px solid var(--border); border-radius: 12px; margin-bottom: 10px; overflow: hidden; }
-.ipa-collapsible-header {
-  padding: 12px 16px; font-weight: 700; font-size: 13.5px; cursor: pointer;
-  display: flex; align-items: center; gap: 8px; user-select: none;
-  background: var(--field-bg);
-}
-.ipa-chev { display: inline-block; transition: transform 0.15s ease; color: var(--ink-soft); }
-.ipa-collapsible-body { padding: 14px 16px 16px; }
-.ipa-form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; align-items: end; }
-.ipa-form-row .field { margin: 0; }
-.ipa-input-with-btn { display: flex; gap: 8px; }
-.ipa-input-with-btn input { flex: 1; }
-.ipa-inline-btn {
-  flex-shrink: 0; border: 1px solid var(--border); background: var(--field-bg); color: var(--ink);
-  border-radius: 10px; padding: 0 16px; font-size: 13px; font-weight: 700; cursor: pointer;
-}
-.ipa-inline-btn:hover { background: var(--panel-border); }
-.ipa-inline-btn-amber { background: linear-gradient(135deg, #f3c463, #e0a531); color: #1b2559; border-color: transparent; }
-.ipa-inline-btn-amber:hover { filter: brightness(1.05); }
-.ipa-form-hint { font-size: 11.5px; color: var(--ink-soft); margin: 8px 0 0; }
-.ipa-settled-hint { margin: 4px 0 16px; }
-@media (max-width: 640px) {
-  .ipa-form-row { grid-template-columns: 1fr; }
-}
-
-.ipa-hint { font-size: 12px; color: var(--ink-soft); margin: 4px 0 16px; }
-
-.ipa-table-section { margin-bottom: 20px; }
-.ipa-table-header-row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
-.ipa-table-title { font-weight: 700; font-size: 13.5px; }
-.ipa-table-count { color: var(--ink-soft); font-weight: 400; font-size: 12px; }
-.ipa-page-size select {
-  font-size: 12px; border: 1px solid var(--border); border-radius: 8px;
-  background: var(--field-bg); color: var(--ink); padding: 4px 8px;
-}
-.ipa-table { border: 1px solid var(--border); border-radius: 12px; overflow: hidden; }
-.ipa-row {
-  display: grid; gap: 10px; padding: 10px 14px; align-items: center;
-  font-size: 12.5px; border-bottom: 1px solid var(--border);
-}
-.ipa-row:last-child { border-bottom: none; }
-.ipa-row-head {
-  font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.03em;
-  color: var(--ink-soft); font-weight: 700; background: var(--field-bg);
-}
-.ipa-row > div:last-child, .ipa-row-head > div:last-child { text-align: right; }
-/* Column divider lines. Not on the last column — it's the right-aligned
-   Actions column, a line right before it just crowds the row-btn text. */
-.ipa-row > div:not(:last-child), .ipa-row-head > div:not(:last-child) {
-  border-right: 1px solid var(--border); padding-right: 10px;
-}
-@media (max-width: 720px) {
-  /* Stacked single-column layout below — a right border here would just
-     be a stray line under each field, not a column separator anymore. */
-  .ipa-row > div:not(:last-child), .ipa-row-head > div:not(:last-child) { border-right: none; padding-right: 0; }
-}
-.ipa-row-actions { display: flex; gap: 8px; justify-content: flex-end; }
-.ipa-row-actions .row-btn, .ipa-table .row-btn {
-  background: none; border: none;
-  color: var(--label-blue); cursor: pointer; font-size: 12.5px; font-weight: 700;
-  padding: 0; text-decoration: underline; text-underline-offset: 2px;
-}
-.ipa-row-actions .row-btn:hover, .ipa-table .row-btn:hover { opacity: 0.75; }
-.ipa-empty-row { padding: 20px; text-align: center; color: var(--ink-soft); font-size: 12.5px; }
-
-.ipa-pagination { display: flex; align-items: center; justify-content: flex-end; gap: 14px; margin-top: 10px; }
-/* Previous/Next used class="row-btn" but sat inside .ipa-pagination, which
-   wasn't part of either selector that actually styles that class
-   (.ipa-row-actions .row-btn / .ipa-table .row-btn below) — so these two
-   were silently falling back to the bare, unstyled browser default button
-   (white fill, black border), the "white box" bug. Explicit rule here
-   instead of widening one of those selectors to include .ipa-pagination,
-   so this stays easy to find/adjust independent of the row-action buttons. */
-.ipa-pagination .row-btn {
-  background: none; border: none; color: var(--label-blue);
-  font-size: 12.5px; font-weight: 700; padding: 0;
-  text-decoration: underline; text-underline-offset: 2px; cursor: pointer;
-}
-.ipa-pagination .row-btn:hover:not(:disabled) { opacity: 0.75; }
-.ipa-page-indicator { font-size: 12px; color: var(--ink-soft); }
-.ipa-pagination .row-btn:disabled { opacity: 0.4; cursor: not-allowed; }
-
-@media (max-width: 720px) {
-  .ipa-stat-cards { grid-template-columns: repeat(2, 1fr); }
-  .ipa-row, .ipa-row-head { grid-template-columns: 1fr !important; gap: 2px; }
-  .ipa-row-head { display: none; }
-  .ipa-row { border: 1px solid var(--border); border-radius: 10px; margin-bottom: 8px; }
-}
-
-/* ---- Active Agents ---- */
-
-/* Header — icon square + title/subtitle on the left, online-count pill +
-   refresh + Record on the right. Reference: business-owner-supplied
-   "Online Users" mock (icon tile, live count pill, spinning refresh). */
-.aa-header-row { align-items: flex-start; flex-wrap: wrap; row-gap: 10px; }
-.aa-header-left { display: flex; align-items: center; gap: 12px; min-width: 0; }
-.aa-header-icon {
-  width: 42px; height: 42px; border-radius: 12px; flex-shrink: 0;
-  display: flex; align-items: center; justify-content: center; font-size: 19px;
-  background: rgba(52, 211, 153, 0.16); border: 1px solid rgba(52, 211, 153, 0.3);
-}
-.aa-header-title { font-size: 16px; }
-.aa-header-subtitle { margin: 2px 0 0; font-size: 12px; color: var(--ink-soft); }
-.aa-header-right { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
-.aa-online-pill {
-  font-size: 12px; font-weight: 700; padding: 6px 12px; border-radius: 999px;
-  background: rgba(22, 163, 74, 0.14); color: #16a34a; border: 1px solid rgba(22, 163, 74, 0.3);
-  white-space: nowrap;
-}
-[data-theme="dark"] .aa-online-pill { background: rgba(52, 211, 153, 0.14); color: #34d399; border-color: rgba(52, 211, 153, 0.3); }
-.aa-icon-btn {
-  width: 30px; height: 30px; border-radius: 8px; flex-shrink: 0;
-  display: flex; align-items: center; justify-content: center;
-  background: var(--field-bg); border: 1px solid var(--border); color: var(--ink);
-  font-size: 15px; line-height: 1; cursor: pointer; transition: border-color 0.15s ease;
-}
-.aa-icon-btn:hover:not(:disabled) { border-color: var(--accent-gold); }
-.aa-icon-btn:disabled { opacity: 0.6; cursor: not-allowed; }
-.aa-icon-btn.aa-spinning { animation: aa-spin 0.6s linear infinite; }
-@keyframes aa-spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
-
-.aa-search-row { display: flex; align-items: center; gap: 12px; margin-bottom: 14px; flex-wrap: wrap; }
-
-/* Only Active Agents uses a 3-card layout (Total/Online/Offline) — IP
-   Access's 4-card dashboard keeps the shared .ipa-stat-cards default of
-   repeat(4, 1fr) untouched. */
-.ipa-stat-cards.aa-stat-cards-3 { grid-template-columns: repeat(3, 1fr); }
-@media (max-width: 720px) {
-  .ipa-stat-cards.aa-stat-cards-3 { grid-template-columns: repeat(3, 1fr); }
-}
-
-/* Scrollable roster list — thin themed scrollbar comes free from the
-   project-wide `*` rule near the top of this file; no extra rule needed. */
-.aa-roster-scroll { max-height: 430px; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; padding-right: 4px; }
-
-.aa-list-row {
-  display: flex; align-items: center; gap: 14px;
-  background: var(--field-bg); border: 1px solid var(--border); border-radius: 14px;
-  padding: 12px 16px;
-}
-.aa-avatar-wrap { position: relative; flex-shrink: 0; }
-.aa-avatar {
-  width: 42px; height: 42px; border-radius: 50%;
-  display: flex; align-items: center; justify-content: center;
-  font-size: 14px; font-weight: 700; color: #fff; font-family: var(--font-display);
-}
-/* Status dot cut into the avatar's corner, ring matching the row
-   background so it reads as "notched into" the avatar rather than just
-   sitting on top of it — same trick the reference mock uses. */
-.aa-avatar-dot {
-  position: absolute; bottom: -1px; right: -1px;
-  width: 13px; height: 13px; border-radius: 50%;
-  border: 2.5px solid var(--field-bg);
-}
-.aa-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; vertical-align: middle; }
-.aa-dot-online { background: #16a34a; }
-[data-theme="dark"] .aa-dot-online { background: #34d399; }
-.aa-dot-offline { background: var(--ink-soft); }
-
-.aa-roster-info { min-width: 0; flex: 1; }
-.aa-roster-name { font-weight: 700; font-size: 13.5px; color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.aa-roster-fullname { font-size: 11px; color: var(--ink-soft); margin-top: 1px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.aa-pill-row { display: flex; gap: 6px; margin-top: 5px; flex-wrap: wrap; }
-.aa-pill {
-  font-size: 10.5px; font-weight: 600; color: var(--ink-soft);
-  background: var(--card-bg); border: 1px solid var(--border); border-radius: 999px;
-  padding: 2px 9px; white-space: nowrap;
-}
-.aa-roster-right { flex-shrink: 0; display: flex; flex-direction: column; align-items: flex-end; gap: 4px; }
-.aa-status-pill {
-  display: inline-flex; align-items: center; gap: 5px;
-  font-size: 11px; font-weight: 700; padding: 3px 10px; border-radius: 999px;
-  white-space: nowrap; background: var(--card-bg); border: 1px solid var(--border);
-}
-.aa-status-online { color: #16a34a; border-color: rgba(22, 163, 74, 0.35); }
-[data-theme="dark"] .aa-status-online { color: #34d399; border-color: rgba(52, 211, 153, 0.35); }
-.aa-status-offline { color: var(--ink-soft); }
-.aa-roster-time { font-size: 10.5px; color: var(--ink-soft); }
-
-.aa-footer-bar {
-  display: flex; align-items: center; justify-content: space-between;
-  margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--panel-border);
-  font-size: 11px; color: var(--ink-soft);
-}
-.aa-footer-left { display: flex; align-items: center; gap: 6px; }
-.aa-footer-livedot { animation: aa-pulse-dot 1.8s ease-in-out infinite; }
-@keyframes aa-pulse-dot { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
-
-/* ---- Active Agents "Record" popup — search + clickable agent list ---- */
-.aa-record-search-input {
-  width: 100%; box-sizing: border-box; margin: 4px 0 14px;
-  background: var(--field-bg); border: 1.5px solid var(--border); border-radius: 10px;
-  padding: 10px 14px; font-size: 13px; color: var(--ink); font-family: inherit;
-}
-.aa-record-search-input:focus { outline: none; border-color: var(--accent-gold); }
-.aa-record-agent-list {
-  max-height: 260px; overflow-y: auto; display: flex; flex-direction: column; gap: 6px;
-  margin-bottom: 16px; padding-right: 4px;
-}
-.aa-record-agent-row {
-  display: flex; align-items: center; gap: 12px;
-  background: var(--field-bg); border: 1px solid var(--border); border-radius: 10px;
-  padding: 9px 14px; cursor: pointer; transition: border-color 0.15s ease, background 0.15s ease;
-}
-.aa-record-agent-row:hover { border-color: var(--accent-gold); }
-.aa-record-agent-row-active { border-color: var(--accent-gold); background: var(--sidebar-item-hover); box-shadow: inset 3px 0 0 var(--accent-gold); }
-.aa-record-avatar {
-  width: 30px; height: 30px; border-radius: 50%; flex-shrink: 0;
-  display: flex; align-items: center; justify-content: center;
-  font-size: 12px; font-weight: 700; color: var(--ink);
-  background: var(--sidebar-item-hover); border: 1px solid var(--border);
-}
-.aa-record-agent-name { flex: 1; min-width: 0; font-size: 13px; font-weight: 600; color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-
-/* ---- Active Agents "Record" detail view (single agent) ---- */
-.aa-record-detail-header { display: flex; align-items: center; gap: 10px; margin-bottom: 6px; }
-.aa-record-detail-avatar { width: 34px; height: 34px; font-size: 13px; }
-.aa-record-detail-name { font-weight: 700; font-size: 15px; color: var(--ink); flex: 1; min-width: 0; }
-.aa-record-detail-summary { font-size: 12px; color: var(--ink-soft); }
-.aa-record-row-today { color: var(--accent-gold); font-weight: 700; background: rgba(243, 196, 99, 0.08); }
-.aa-record-row-today > div:first-child { color: var(--accent-gold); }
-
-@media (max-width: 720px) {
-  .aa-header-right { width: 100%; justify-content: space-between; }
-  .aa-search-row #aaSearchInput { width: 100% !important; }
-  .aa-list-row { flex-wrap: wrap; }
-  .aa-roster-right { flex-direction: row; align-items: center; margin-left: 56px; }
-}

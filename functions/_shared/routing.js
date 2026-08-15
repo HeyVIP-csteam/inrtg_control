@@ -23,77 +23,137 @@
  * once for the whole project — see README.md.
  */
 
+// PKR market — 9 platforms, brand new deployment (does NOT reuse the old
+// INR chatId/topicId/sheetId values, which belong to a different
+// production Cloudflare Pages project / Telegram bot / KV+R2 namespace).
+// Every chatId/topicId/sheetId below is a placeholder ("") until the real
+// PKR Telegram groups+topics and Google Sheets exist — see the file header
+// comment above for how to obtain each one. Sheet logging simply no-ops
+// (not an error) for any brand/module still left at sheetId: "".
 export const BRANDS = {
   crickex: {
     name: "Crickex",
-    sheetId: "10vMJWW7XLbvRV47Q_tqqTV_U13oA_3VGpHSo-df9I54",
+    sheetId: "1M0rAQeqkD50ytzwhD31HOQ-e8nEuckLhpMsq-ua_Kic",
     telegram: {
-      default: { chatId: "-1004488354399", topicId: null },
-      qa: { chatId: "-1004488354399", topicId: 3 },
-      account_issue: { chatId: "-1004488354399", topicId: 10 },
-      risk_issue: { chatId: "-1004488354399", topicId: 17 },
-      promotion_request: { chatId: "-1003844665813", topicId: 30 },
-      daily_report: { chatId: "-1004488354399", topicId: 22 },
-      genie_issue: { chatId: "-1004488354399", topicId: 24 },
+      default: { chatId: "", topicId: null },
+      qa: { chatId: "", topicId: null },
+      account_issue: { chatId: "", topicId: null },
+      risk_issue: { chatId: "", topicId: null },
+      promotion_request: { chatId: "", topicId: null },
+      daily_report: { chatId: "", topicId: null },
+      genie_issue: { chatId: "", topicId: null },
       withdraw_issue: { chatId: "", topicId: null },
     },
   },
   betjili: {
     name: "Betjili",
-    sheetId: "1jEIomHdq9BBiwI8AcpWCB0IJolcHYWw1tlT3DR8WzeQ",
+    sheetId: "1sZRJoFwzdASNjm75Lx9ppckLfsPQtzMapcWMqRnV7eE",
     telegram: {
-      default: { chatId: "-1004488354399", topicId: null },
-      qa: { chatId: "-1004488354399", topicId: 3 },
-      account_issue: { chatId: "-1004488354399", topicId: 10 },
-      risk_issue: { chatId: "-1004488354399", topicId: 17 },
-      promotion_request: { chatId: "-1003844665813", topicId: 30 },
-      daily_report: { chatId: "-1004488354399", topicId: 22 },
-      genie_issue: { chatId: "-1004488354399", topicId: 24 },
+      default: { chatId: "", topicId: null },
+      qa: { chatId: "", topicId: null },
+      account_issue: { chatId: "", topicId: null },
+      risk_issue: { chatId: "", topicId: null },
+      promotion_request: { chatId: "", topicId: null },
+      daily_report: { chatId: "", topicId: null },
+      genie_issue: { chatId: "", topicId: null },
       withdraw_issue: { chatId: "", topicId: null },
     },
   },
   mostplay: {
     name: "Mostplay",
-    sheetId: "1Phq6Fsw4ouoJumW2iz54y2YnfQzDp8hBdRL3h-cu5M4",
+    sheetId: "1d01hM568DnE9Hl8n362cT3dgGmhHrtWQTwjRZetL3lw",
     telegram: {
-      default: { chatId: "-1004488354399", topicId: null },
-      qa: { chatId: "-1004488354399", topicId: 3 },
-      account_issue: { chatId: "-1004488354399", topicId: 10 },
-      risk_issue: { chatId: "-1004488354399", topicId: 17 },
-      promotion_request: { chatId: "-1003844665813", topicId: 30 },
-      daily_report: { chatId: "-1004488354399", topicId: 22 },
-      genie_issue: { chatId: "-1004488354399", topicId: 24 },
+      default: { chatId: "", topicId: null },
+      qa: { chatId: "", topicId: null },
+      account_issue: { chatId: "", topicId: null },
+      risk_issue: { chatId: "", topicId: null },
+      promotion_request: { chatId: "", topicId: null },
+      daily_report: { chatId: "", topicId: null },
+      genie_issue: { chatId: "", topicId: null },
       withdraw_issue: { chatId: "", topicId: null },
     },
   },
-  betvisa: {
-    name: "BetVisa",
-    // The long ID in the sheet's URL: https://docs.google.com/spreadsheets/d/<THIS PART>/edit
-    // Leave "" to disable sheet logging entirely for this brand.
-    sheetId: "17wXVfUS8QywtiT8AiHxBr3iycKnWCR5vAJbCcboLJUs",
+  jeetwin: {
+    name: "Jeetwin",
+    sheetId: "1G2QiwogGIe5HeucHqWQk5OzLUkSpyKGNa0jjcJPsnk0",
     telegram: {
-      // Used when a module has no specific entry below.
-      default: { chatId: "-1004488354399", topicId: null },
-      qa: { chatId: "-1004488354399", topicId: 3 },
-      account_issue: { chatId: "-1004488354399", topicId: 10 },
-      risk_issue: { chatId: "-1004488354399", topicId: 17 },
-      promotion_request: { chatId: "-1003844665813", topicId: 30 },
-      daily_report: { chatId: "-1004488354399", topicId: 22 },
-      genie_issue: { chatId: "-1004488354399", topicId: 24 },
+      default: { chatId: "", topicId: null },
+      qa: { chatId: "", topicId: null },
+      account_issue: { chatId: "", topicId: null },
+      risk_issue: { chatId: "", topicId: null },
+      promotion_request: { chatId: "", topicId: null },
+      daily_report: { chatId: "", topicId: null },
+      genie_issue: { chatId: "", topicId: null },
       withdraw_issue: { chatId: "", topicId: null },
     },
   },
-  jeetway: {
-    name: "Jeetway",
-    sheetId: "1tQdhnCwSl-ybwlIFGcK2oPVaApnU9vsloHboaFtsb_4",
+  sbj66: {
+    name: "Sbj66",
+    sheetId: "1YWdTDmhHv9TCyJBNOWBOKGiZNybmMx7EDAPgmrYFMRw",
     telegram: {
-      default: { chatId: "-1004488354399", topicId: null },
-      qa: { chatId: "-1004488354399", topicId: 3 },
-      account_issue: { chatId: "-1004488354399", topicId: 10 },
-      risk_issue: { chatId: "-1004488354399", topicId: 17 },
-      promotion_request: { chatId: "-1003844665813", topicId: 30 },
-      daily_report: { chatId: "-1004488354399", topicId: 22 },
-      genie_issue: { chatId: "-1004488354399", topicId: 24 },
+      default: { chatId: "", topicId: null },
+      qa: { chatId: "", topicId: null },
+      account_issue: { chatId: "", topicId: null },
+      risk_issue: { chatId: "", topicId: null },
+      promotion_request: { chatId: "", topicId: null },
+      daily_report: { chatId: "", topicId: null },
+      genie_issue: { chatId: "", topicId: null },
+      withdraw_issue: { chatId: "", topicId: null },
+    },
+  },
+  heybaji: {
+    name: "Heybaji",
+    sheetId: "1xYvEMc7gycphUINVPUqTXpevlQkFZVsXTzeNN2K7ooI",
+    telegram: {
+      default: { chatId: "", topicId: null },
+      qa: { chatId: "", topicId: null },
+      account_issue: { chatId: "", topicId: null },
+      risk_issue: { chatId: "", topicId: null },
+      promotion_request: { chatId: "", topicId: null },
+      daily_report: { chatId: "", topicId: null },
+      genie_issue: { chatId: "", topicId: null },
+      withdraw_issue: { chatId: "", topicId: null },
+    },
+  },
+  superbaji: {
+    name: "Superbaji",
+    sheetId: "1wxXhwQ_Nyh5Al7yAbGHsqFhLc8FV2oTUQRhwGCSn268",
+    telegram: {
+      default: { chatId: "", topicId: null },
+      qa: { chatId: "", topicId: null },
+      account_issue: { chatId: "", topicId: null },
+      risk_issue: { chatId: "", topicId: null },
+      promotion_request: { chatId: "", topicId: null },
+      daily_report: { chatId: "", topicId: null },
+      genie_issue: { chatId: "", topicId: null },
+      withdraw_issue: { chatId: "", topicId: null },
+    },
+  },
+  kv8: {
+    name: "KV8",
+    sheetId: "1wyq16ABqlbkHI0R7YvEBRzQPUEgmStstaCyJkbH2yPY",
+    telegram: {
+      default: { chatId: "", topicId: null },
+      qa: { chatId: "", topicId: null },
+      account_issue: { chatId: "", topicId: null },
+      risk_issue: { chatId: "", topicId: null },
+      promotion_request: { chatId: "", topicId: null },
+      daily_report: { chatId: "", topicId: null },
+      genie_issue: { chatId: "", topicId: null },
+      withdraw_issue: { chatId: "", topicId: null },
+    },
+  },
+  darazplay: {
+    name: "Darazplay",
+    sheetId: "1LZF08hAXDLwTQ1KYyXiQ8Zmu9TLO_N7ywpKEJBO8vjE",
+    telegram: {
+      default: { chatId: "", topicId: null },
+      qa: { chatId: "", topicId: null },
+      account_issue: { chatId: "", topicId: null },
+      risk_issue: { chatId: "", topicId: null },
+      promotion_request: { chatId: "", topicId: null },
+      daily_report: { chatId: "", topicId: null },
+      genie_issue: { chatId: "", topicId: null },
       withdraw_issue: { chatId: "", topicId: null },
     },
   },
@@ -108,10 +168,8 @@ export const RECORD_TO_SHEET = {
   promotion_request: true,
   daily_report: true,
   genie_issue: true,
-  // Real Sheet structure already confirmed (tab "Withdraw Issue", columns
-  // A-I: Date/Brand/Username/Issue Type/TID/Submitted Amount/Received
-  // Amount/Remark/PIC — see SHEET_LAYOUT.withdraw_issue below) — set
-  // straight to true, no "verify structure first" precaution needed.
+  // Sheet structure confirmed (see SHEET_LAYOUT.withdraw_issue below) —
+  // no more guessing needed, safe to turn on.
   withdraw_issue: true,
 };
 
@@ -124,31 +182,6 @@ export const MODULE_META = {
   daily_report: { emoji: "📊", name: "Daily Report", accent: "#34D399" },
   genie_issue: { emoji: "🤖", name: "Genie Issue", accent: "#A78BFA" },
   withdraw_issue: { emoji: "💸", name: "Withdraw Issue", accent: "#4ADE80" },
-};
-
-/**
- * Risk Issue only: certain selections auto-fill the Remark with fixed,
- * pre-approved wording instead of whatever the agent typed — keeps phrasing
- * to the Risk team consistent. Checked in this field order (issueType first,
- * then accountStatus, then cancelType); first match wins. A selection not
- * listed here just falls through to whatever the agent typed in Remark.
- */
-export const RISK_ISSUE_AUTO_REMARKS = {
-  issueType: {
-    "Bonus Auto Force": "The player claimed the bonus, but it was automatically force-served.",
-  },
-  accountStatus: {
-    "Suspended -- player wants to deposit":
-      "𝗛𝗶 𝘁𝗲𝗮𝗺, Account showing 𝘀𝘂𝘀𝗽𝗲𝗻𝗱𝗲𝗱, Is it possible to Activate? The player want to make a 𝗱𝗲𝗽𝗼𝘀𝗶𝘁.",
-    "Account Inactive": "𝗛𝗶 𝘁𝗲𝗮𝗺, 𝗔𝗰𝗰𝗼𝘂𝗻𝘁 𝘀𝗵𝗼𝘄𝗶𝗻𝗴 𝗶𝗻𝗮𝗰𝘁𝗶𝘃𝗲, 𝗜𝘀 𝗶𝘁 𝗽𝗼𝘀𝘀𝗶𝗯𝗹𝗲 𝘁𝗼 𝗮𝗰𝘁𝗶𝘃𝗮𝘁𝗲?",
-    "Suspended -- Player has been warned":
-      "𝗛𝗶 𝘁𝗲𝗮𝗺, We have warned the player. 𝗜𝘀 𝗶𝘁 𝗽𝗼𝘀𝘀𝗶𝗯𝗹𝗲 𝘁𝗼 𝗮𝗰𝘁𝗶𝘃𝗮𝘁𝗲 𝘁𝗵𝗶𝘀 𝗮𝗰𝗰𝗼𝘂𝗻𝘁?",
-  },
-  cancelType: {
-    "Cancel with 10% Penalty":
-      "𝗛𝗶 𝘁𝗲𝗮𝗺, Please help cancel this bonus with a 10% penalty as per the player's request, Thanks.",
-    "Cancel without Penalty": "𝗛𝗶 𝘁𝗲𝗮𝗺,\nPlease help to cancel this bonus as per player request. Thanks.",
-  },
 };
 
 /**
@@ -173,11 +206,6 @@ export const RISK_ISSUE_FIELD_EMOJI = {
   aadharPan: "🪪",
   cancelType: "📌",
   issueDescription: "📝",
-  bankAccountNo: "🔢",
-  bankAccountHolderName: "🧑",
-  bankIfscCode: "🏷️",
-  bankBranch: "🏢",
-  bankName: "🏦",
 };
 
 /**
@@ -191,33 +219,33 @@ export const ACCOUNT_ISSUE_FIELD_STYLE = {
   registerWrongNumber: { emoji: "❌", label: "Wrong Number" },
   playerCorrectNumber: { emoji: "✅", label: "Correct Number" },
   addNumber: { emoji: "➕" },
-  nid: { emoji: "🆔" }, // "Aadhar-Pan Card Number" field, used for Add Mobile Number Verify
+  nid: { emoji: "🆔" }, // "CNIC Card Number" field (key kept as "nid" internally), used for Add Mobile Number Verify
   removeNumber: { emoji: "➖" },
   gmail: { emoji: "📧" },
   removeGmail: { emoji: "🗑" },
   previousGmail: { emoji: "📤" },
   updateNewGmail: { emoji: "📥" },
-  previousNumber: { emoji: "📤" },
-  updateNewNumber: { emoji: "📥" },
   messageType: { emoji: "📨" },
   updateRequest: { emoji: "✏️" },
   fullName: { emoji: "🧾" },
   aadharPan: { emoji: "🆔" },
-  // -- Update Information (cascading Request dropdown + its child fields) --
-  updateInfoType: { emoji: "📋", label: "Request" },
+  // -- Update Information (issueType = "Update Information") --
+  updateInfoType: { emoji: "📋" },
   previousName: { emoji: "📤" },
   newName: { emoji: "📥" },
   previousBirthDate: { emoji: "📤" },
   newBirthDate: { emoji: "📥" },
-  realName: { emoji: "🧾", label: "Real Name" },
+  realName: { emoji: "🧾" },
   birthDate: { emoji: "🎂" },
 };
 
 /**
  * Emoji (and optional label override) per field, for the Telegram
- * message Withdraw Issue's submissions produce. "issueType"/"username"/
- * "remark" are handled separately (fixed header/footer lines), don't
- * need an entry here.
+ * message Withdraw Issue's submissions produce. See
+ * buildWithdrawIssueDynamicMessage() (_shared/messageBuilders.js) for
+ * how this gets used — "issueType"/"username"/"remark" are handled
+ * separately by that function (they get their own fixed header/footer
+ * lines) and deliberately don't need an entry here.
  */
 export const WITHDRAW_ISSUE_FIELD_STYLE = {
   tid: { emoji: "🆔" },
@@ -237,62 +265,149 @@ export const WITHDRAW_ISSUE_FIELD_STYLE = {
  * is which column the generate-next-TID button reads (usually same as
  * startColumn, since TID is column A on these sheets).
  */
+// PKR market: 19 confirmed brand+promotion combinations, filled in this
+// session from the business owner's reference sheet screenshot (column
+// order: TID, Date, Username, Amount, Remarks, Platform, PIC — all
+// starting at column A, all sheets one tab per promotion). "Remarks"
+// holds the promotion name itself (the "promotion" field's value, e.g.
+// "Birthday Bonus"), not a free-text note — that's what the reference
+// sheet showed. "Platform" uses "brandCurrency" (not plain "brand") to
+// get the confirmed "<Brand> PKR" format in that column, matching the
+// screenshot exactly (see resolveColumnValues in submit.js for what that
+// key does and how it differs from plain "brand").
 export const PROMOTION_SHEET_CONFIG = {
-  "betvisa|Birthday Bonus": {
-    sheetId: "1_aLEvpJoVqyFAHMhYfzIQMvAv_TxaLx55MsxLHiby0w",
-    tab: "BV Birthday Bonus",
-    startColumn: "A",
-    tidColumn: "A",
-    columns: ["tid", "date", "username", "promotion", "nid", "tier", "amount", "brand", "pic"],
-  },
   "crickex|Birthday Bonus": {
-    sheetId: "1dAtM3Q5eSR2lmtlEs33fl1sq5d5H9AC-938_Ky5C9c4",
-    tab: "Birthday Bonus 2026",
+    sheetId: "1DyPqvlNWlSKBwNmw84hK8jNcSpFtyTSI421DSNc6r68",
+    tab: "Birthday Bonus",
     startColumn: "A",
     tidColumn: "A",
-    columns: ["tid", "date", "username", "amount", "promotion", "brand", "nid", "pic"],
+    columns: ["tid", "date", "username", "amount", "promotion", "brandCurrency", "pic"],
   },
   "betjili|Birthday Bonus": {
-    sheetId: "1O6LeDa1Gs7EiAfqGF_lY6hpCieREOzc9L8x33bbBW1Y",
-    tab: "BJ Birthday Bonus",
+    sheetId: "1t72vFMdTYosUChQtmtz_MUkqNRqt20MBTDYqI5HSsuE",
+    tab: "Birthday Bonus",
     startColumn: "A",
     tidColumn: "A",
-    columns: ["tid", "date", "username", "amount", "promotion", "brand", "nid", "pic"],
+    columns: ["tid", "date", "username", "amount", "promotion", "brandCurrency", "pic"],
   },
-  "betjili|Review Bonus": {
-    sheetId: "1O6LeDa1Gs7EiAfqGF_lY6hpCieREOzc9L8x33bbBW1Y",
-    tab: "FB Review Bonus",
-    startColumn: "A",
-    tidColumn: "A",
-    columns: ["tid", "username", "date", "amount", "promotion", "brand", "pic"],
-  },
-  "mostplay|Birthday Bonus": {
-    sheetId: "1loAloFiu55xkhIm_77uBvLPPWBX8fw6UbVLcNdXdDx0",
-    tab: "MP Birthday Bonus",
-    startColumn: "A",
-    tidColumn: "A",
-    columns: ["tid", "date", "username", "amount", "promotion", "brand", "nid", "pic"],
-  },
-  "mostplay|Facebook Review Free Bonus": {
-    sheetId: "1loAloFiu55xkhIm_77uBvLPPWBX8fw6UbVLcNdXdDx0",
+  "betjili|Facebook Review Free Bonus": {
+    sheetId: "1t72vFMdTYosUChQtmtz_MUkqNRqt20MBTDYqI5HSsuE",
     tab: "Facebook Review Free Bonus",
     startColumn: "A",
     tidColumn: "A",
-    columns: ["tid", "username", "date", "amount", "promotion", "brand", "pic"],
+    columns: ["tid", "date", "username", "amount", "promotion", "brandCurrency", "pic"],
   },
-  "jeetway|Birthday Bonus": {
-    sheetId: "1ouR19qfDPfr580BjfH52mrTKLUqeq1r_2tdm1ueoi3w",
-    tab: "JW Birthday Bonus",
+  "betjili|Rs 500 Free Cash On App Download-PKR": {
+    sheetId: "1t72vFMdTYosUChQtmtz_MUkqNRqt20MBTDYqI5HSsuE",
+    tab: "Download & Claim",
     startColumn: "A",
     tidColumn: "A",
-    columns: ["tid", "date", "username", "promotion", "nid", "tier", "amount", "brand", "pic"],
+    columns: ["tid", "date", "username", "amount", "promotion", "brandCurrency", "pic"],
   },
-  "jeetway|Review Bonus": {
-    sheetId: "1ouR19qfDPfr580BjfH52mrTKLUqeq1r_2tdm1ueoi3w",
-    tab: "FB Review Bonus",
+  "mostplay|Birthday Bonus": {
+    sheetId: "11UkGw0n1k7WlPCxsI6F4edBNWgvSyUKEpEGVuGmVvck",
+    tab: "Birthday Bonus",
     startColumn: "A",
     tidColumn: "A",
-    columns: ["tid", "username", "date", "amount", "promotion", "brand", "pic"],
+    columns: ["tid", "date", "username", "amount", "promotion", "brandCurrency", "pic"],
+  },
+  "mostplay|Facebook Review Free Bonus": {
+    sheetId: "11UkGw0n1k7WlPCxsI6F4edBNWgvSyUKEpEGVuGmVvck",
+    tab: "Facebook Review Free Bonus",
+    startColumn: "A",
+    tidColumn: "A",
+    columns: ["tid", "date", "username", "amount", "promotion", "brandCurrency", "pic"],
+  },
+  "mostplay|Download & Claim": {
+    sheetId: "11UkGw0n1k7WlPCxsI6F4edBNWgvSyUKEpEGVuGmVvck",
+    tab: "Download & Claim",
+    startColumn: "A",
+    tidColumn: "A",
+    columns: ["tid", "date", "username", "amount", "promotion", "brandCurrency", "pic"],
+  },
+  "jeetwin|Birthday Bonus": {
+    sheetId: "1fIpfR2a8NtZVYujT9ub_s_J9A51cIf67votyBmm4j0c",
+    tab: "Birthday Bonus",
+    startColumn: "A",
+    tidColumn: "A",
+    columns: ["tid", "date", "username", "amount", "promotion", "brandCurrency", "pic"],
+  },
+  "jeetwin|Download JeetWin APP & Claim Cash": {
+    sheetId: "1fIpfR2a8NtZVYujT9ub_s_J9A51cIf67votyBmm4j0c",
+    tab: "Download & Claim",
+    startColumn: "A",
+    tidColumn: "A",
+    columns: ["tid", "date", "username", "amount", "promotion", "brandCurrency", "pic"],
+  },
+  "heybaji|Birthday Bonus": {
+    sheetId: "1pzodV-4NuvJuI4qrJ_xWXMlyAx18Q_ATZdpCMUI8wEU",
+    tab: "Birthday Bonus",
+    startColumn: "A",
+    tidColumn: "A",
+    columns: ["tid", "date", "username", "amount", "promotion", "brandCurrency", "pic"],
+  },
+  "heybaji|Download HeyBaji APP & Claim Cash": {
+    sheetId: "1pzodV-4NuvJuI4qrJ_xWXMlyAx18Q_ATZdpCMUI8wEU",
+    tab: "Download & Claim",
+    startColumn: "A",
+    tidColumn: "A",
+    columns: ["tid", "date", "username", "amount", "promotion", "brandCurrency", "pic"],
+  },
+  "superbaji|Birthday Bonus": {
+    sheetId: "1k_Nn-NPLHVogFZjDdMuAVCRJFDM6wsAplrpYfNfidEc",
+    tab: "Birthday Bonus",
+    startColumn: "A",
+    tidColumn: "A",
+    columns: ["tid", "date", "username", "amount", "promotion", "brandCurrency", "pic"],
+  },
+  "superbaji|Download SuperBaji APP & Claim Cash": {
+    sheetId: "1k_Nn-NPLHVogFZjDdMuAVCRJFDM6wsAplrpYfNfidEc",
+    tab: "Download & Claim",
+    startColumn: "A",
+    tidColumn: "A",
+    columns: ["tid", "date", "username", "amount", "promotion", "brandCurrency", "pic"],
+  },
+  "sbj66|Birthday Bonus": {
+    sheetId: "1sLHwgKubzY-DrbvrZWmAi6A8RHwClMD4Nn9C1sEzF_s",
+    tab: "Birthday Bonus",
+    startColumn: "A",
+    tidColumn: "A",
+    columns: ["tid", "date", "username", "amount", "promotion", "brandCurrency", "pic"],
+  },
+  "sbj66|Download SBJ66 APP & Claim Cash": {
+    sheetId: "1sLHwgKubzY-DrbvrZWmAi6A8RHwClMD4Nn9C1sEzF_s",
+    tab: "Download & Claim",
+    startColumn: "A",
+    tidColumn: "A",
+    columns: ["tid", "date", "username", "amount", "promotion", "brandCurrency", "pic"],
+  },
+  "kv8|Birthday Bonus": {
+    sheetId: "1Yiput5AMiRdubIt5h4qQBnPAR4XottEdRbqKZToGa9U",
+    tab: "Birthday Bonus",
+    startColumn: "A",
+    tidColumn: "A",
+    columns: ["tid", "date", "username", "amount", "promotion", "brandCurrency", "pic"],
+  },
+  "kv8|Download KV8 APP & Claim 199 Cash": {
+    sheetId: "1Yiput5AMiRdubIt5h4qQBnPAR4XottEdRbqKZToGa9U",
+    tab: "Download & Claim",
+    startColumn: "A",
+    tidColumn: "A",
+    columns: ["tid", "date", "username", "amount", "promotion", "brandCurrency", "pic"],
+  },
+  "darazplay|Birthday Bonus": {
+    sheetId: "1sAswzEwGsxI3MshvRnPreIaH5seJzwK_9mvOeyxd8EI",
+    tab: "Birthday Bonus",
+    startColumn: "A",
+    tidColumn: "A",
+    columns: ["tid", "date", "username", "amount", "promotion", "brandCurrency", "pic"],
+  },
+  "darazplay|Rs.200 Download DarazPlay App": {
+    sheetId: "1sAswzEwGsxI3MshvRnPreIaH5seJzwK_9mvOeyxd8EI",
+    tab: "Download & Claim",
+    startColumn: "A",
+    tidColumn: "A",
+    columns: ["tid", "date", "username", "amount", "promotion", "brandCurrency", "pic"],
   },
 };
 
@@ -333,15 +448,47 @@ const PROMOTION_ROWS_UNIFIED = [
   { label: "To be added", key: { fixed: "Manually" } },
 ];
 
+// PKR market's own version of the row set above — same idea, minus the
+// "NID NO" row. PKR's promotion_request form (schemas.js) doesn't collect
+// an NID/CNIC field at all for promotions (confirmed against the business
+// owner's reference Google Sheet screenshot, which has no NID column
+// either — TID/Date/Username/Amount/Remarks/Platform/PIC, 7 columns) —
+// unlike INR's Birthday Bonus flow, which does. Used by every PKR
+// brand+promotion combo in PROMOTION_MESSAGE_TEMPLATE below.
+const PROMOTION_ROWS_PKR = [
+  { label: "TID", key: "tid" },
+  { label: "Date", key: "date" },
+  { label: "Username", key: "username" },
+  { label: "Amount to be Added", key: "amount" },
+  { label: "Remarks", key: "promotion" },
+  { label: "Processed BY", key: "pic" },
+  { label: "Platform", key: "brand" },
+  { label: "To be added", key: { fixed: "Manually" } },
+];
+
+// PKR market: all 19 confirmed brand+promotion combinations use
+// PROMOTION_ROWS_PKR (see its own comment above — same idea as
+// PROMOTION_ROWS_UNIFIED, minus the NID row PKR doesn't collect).
 export const PROMOTION_MESSAGE_TEMPLATE = {
-  "crickex|Birthday Bonus": PROMOTION_ROWS_UNIFIED,
-  "betjili|Birthday Bonus": PROMOTION_ROWS_UNIFIED,
-  "mostplay|Birthday Bonus": PROMOTION_ROWS_UNIFIED,
-  "betvisa|Birthday Bonus": PROMOTION_ROWS_UNIFIED,
-  "jeetway|Birthday Bonus": PROMOTION_ROWS_UNIFIED,
-  "betjili|Review Bonus": PROMOTION_ROWS_UNIFIED,
-  "mostplay|Facebook Review Free Bonus": PROMOTION_ROWS_UNIFIED,
-  "jeetway|Review Bonus": PROMOTION_ROWS_UNIFIED,
+  "crickex|Birthday Bonus": PROMOTION_ROWS_PKR,
+  "betjili|Birthday Bonus": PROMOTION_ROWS_PKR,
+  "betjili|Facebook Review Free Bonus": PROMOTION_ROWS_PKR,
+  "betjili|Rs 500 Free Cash On App Download-PKR": PROMOTION_ROWS_PKR,
+  "mostplay|Birthday Bonus": PROMOTION_ROWS_PKR,
+  "mostplay|Facebook Review Free Bonus": PROMOTION_ROWS_PKR,
+  "mostplay|Download & Claim": PROMOTION_ROWS_PKR,
+  "jeetwin|Birthday Bonus": PROMOTION_ROWS_PKR,
+  "jeetwin|Download JeetWin APP & Claim Cash": PROMOTION_ROWS_PKR,
+  "heybaji|Birthday Bonus": PROMOTION_ROWS_PKR,
+  "heybaji|Download HeyBaji APP & Claim Cash": PROMOTION_ROWS_PKR,
+  "superbaji|Birthday Bonus": PROMOTION_ROWS_PKR,
+  "superbaji|Download SuperBaji APP & Claim Cash": PROMOTION_ROWS_PKR,
+  "sbj66|Birthday Bonus": PROMOTION_ROWS_PKR,
+  "sbj66|Download SBJ66 APP & Claim Cash": PROMOTION_ROWS_PKR,
+  "kv8|Birthday Bonus": PROMOTION_ROWS_PKR,
+  "kv8|Download KV8 APP & Claim 199 Cash": PROMOTION_ROWS_PKR,
+  "darazplay|Birthday Bonus": PROMOTION_ROWS_PKR,
+  "darazplay|Rs.200 Download DarazPlay App": PROMOTION_ROWS_PKR,
 };
 
 /**
@@ -396,8 +543,7 @@ export const MESSAGE_TEMPLATE = {
           { emoji: "👤", label: "Username", key: "uid", tight: true },
           { emoji: "🎁", label: "Bonus Code", key: "bonusCode", tight: true },
           { emoji: "📌", label: "Cancel Type", key: "cancelType" },
-          { emoji: "📝", label: "Remark", key: "remark" },
-          { emoji: "💬", key: "autoRemark", raw: true },
+          { emoji: "📝", label: "Remark", key: "remark", skipIfEmpty: true },
           { emoji: "👷", label: "PIC", key: "pic" },
         ],
       },
@@ -464,32 +610,9 @@ export const SHEET_LAYOUT = {
     startColumn: "B",
     columns: ["brand", "issueDetails", "chatLinks", "pic"],
   },
-  // Confirmed against the real Sheet (screenshot from business owner) —
-  // starts at column A (Date is the very first column, unlike most other
-  // modules which start at B), and deliberately has NO Screenshot Link
-  // column — business owner confirmed Withdraw Issue attachments don't
-  // need to be logged to the Sheet (they still show up fine in TG Reply
-  // Threads either way, since that's driven by Telegram's own file_id,
-  // completely independent of whether this module writes to a Sheet at
-  // all — see SCREENSHOT_R2_ENABLED, which withdraw_issue is
-  // deliberately NOT in).
-  withdraw_issue: {
-    tab: "Withdraw Issue",
-    startColumn: "A",
-    columns: ["autoDate", "brand", "username", "issueType", "tid", "submittedAmount", "receivedAmount", "remark", "pic"],
-  },
   account_issue: {
     tab: "Account Issue",
     startColumn: "B",
-    // "Customer Number Change" reuses two columns that are otherwise
-    // unused for it (Gmail-related fields, and nid/aadharPan) instead of
-    // needing a brand new Sheet column — safe because SHEET_LAYOUT
-    // "first non-empty wins" groups are per-ROW, and only one issueType
-    // is ever active per submission, so there's no real collision:
-    // previousNumber only ever has a value on a "Customer Number Change"
-    // row, at which point gmail/removeGmail/previousGmail/updateNewGmail
-    // are all empty anyway (and vice versa for any other issue type).
-    //
     // "Update Information" issue type's fields (updateInfoType/previousName/
     // newName/previousBirthDate/newBirthDate/realName/birthDate) are
     // deliberately NOT listed below — the reference Sheet has no columns
@@ -500,8 +623,8 @@ export const SHEET_LAYOUT = {
       "brand",
       "uid",
       { details: ["registerNumber", "registerWrongNumber"] },
-      { details: ["gmail", "removeGmail", "previousGmail", "updateNewGmail", "previousNumber"] },
-      { details: ["nid", "aadharPan", "updateNewNumber"] },
+      { details: ["gmail", "removeGmail", "previousGmail", "updateNewGmail"] },
+      { details: ["nid", "aadharPan"] },
       "issueType",
       "screenshotLink",
       "remark",
@@ -536,6 +659,18 @@ export const SHEET_LAYOUT = {
     leftBlock: { startColumn: "B", width: 12, shiftValue: "Day Shift" },
     rightBlock: { startColumn: "O", width: 12, shiftValue: "Night Shift" },
     columns: dailyReportColumns(),
+  },
+  // Unlike every other module's sheet, this one's Date column is A (not
+  // B) and there's deliberately NO Screenshot Link column at all —
+  // matched against the real "Withdraw Issue" tab, confirmed column by
+  // column, not guessed. submittedAmount/receivedAmount both write "-"
+  // for any Issue Type except "Withdraw Amount Received Less" (the only
+  // one that actually collects them) via the plain-string column
+  // lookup's fieldMap[col]-is-empty fallback in resolveColumnValues().
+  withdraw_issue: {
+    tab: "Withdraw Issue",
+    startColumn: "A",
+    columns: ["autoDate", "brand", "username", "issueType", "tid", "submittedAmount", "receivedAmount", "remark", "pic"],
   },
 };
 

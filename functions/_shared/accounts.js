@@ -47,233 +47,192 @@
 const OFFICES_INDEX_KEY = "offices-index";
 const ACCOUNTS_INDEX_KEY = "accounts-index";
 
-// Role hierarchy — each tier can act on anything STRICTLY below it (same
-// rank can't manage same rank either — see canManage() in
-// functions/api/admin/accounts.js). "owner" sits above superadmin: hidden
-// from every account listing, can't be assigned through the website at
-// all (see ASSIGNABLE_ROLES below and saveAccount()'s role handling),
-// and is the only rank exempt from the office/IP login requirement (see
-// officeIpCheckPasses()). Created once, directly in KV, outside the
-// website entirely — see OWNER_ROLE_SETUP.md for that one-time step.
+// Role hierarchy — each tier can act on anything strictly below it (see
+// the per-endpoint checks in functions/api/admin/*.js and
+// functions/api/account/*.js for exactly what each tier can do).
+//
+// "owner" (added 2026-07) sits above superadmin and is DELIBERATELY not
+// creatable/assignable through any app UI or API endpoint — see the
+// ASSIGNABLE_ROLES note right below and saveAccount()'s handling of the
+// `role` field. The only way an "owner" account comes into existence is
+// a direct KV write (e.g. via `wrangler kv key put`), outside the app
+// entirely. This is intentional: there is no code path anywhere in this
+// app — not even as SuperAdmin — that can create, promote to, or edit an
+// owner account. That's what makes the role meaningful as a hard ceiling
+// rather than just "one more tier someone could talk their way into."
 export const ROLE_RANK = { agent: 0, senior: 1, admin: 2, superadmin: 3, owner: 4 };
 const VALID_ROLES = Object.keys(ROLE_RANK);
-// "owner" deliberately excluded — saveAccount() below only ever accepts
-// a role from THIS list, so there is no code path anywhere (regardless
-// of what a caller further up the stack does or doesn't check) that can
-// result in a new "owner" account. The only way to create one is the
-// direct-KV-write process in OWNER_ROLE_SETUP.md.
+// Roles that CAN be typed into a `role` field and actually take effect —
+// i.e. VALID_ROLES minus "owner". Used by saveAccount() below so that
+// even a hand-crafted request with `role: "owner"` against this function
+// directly (bypassing functions/api/admin/accounts.js's own explicit
+// rejection of that value) still can't create or promote anyone to
+// owner. Defense in depth, not the only place this is blocked.
 const ASSIGNABLE_ROLES = VALID_ROLES.filter((r) => r !== "owner");
 export function rankOf(role) { return ROLE_RANK[role] ?? ROLE_RANK.agent; }
 
-// ---- Account Management Access ----
+// ---- Account Management Access — per-section, per-account admin
+// permissions (2026-07). Sits ON TOP of the rank system above: rank still
+// decides WHO you can act on (canManage(), defined per-endpoint), this
+// decides WHICH admin-area sections an account can even see, and for the
+// subset in EDITABLE_ADMIN_SECTIONS, whether it can also EDIT them (as
+// opposed to just viewing).
 //
-// The sidebar's "Account Management" dropdown has 4 gated items: Create
-// Account, Whitelist IP, TG Group/Channel, Agent Profile (Reset Password
-// is a 5th subitem but is intentionally NOT in this list/gate at all —
-// every rank keeps seeing it, unconditionally, same as before). Which of
-// the 4 gated items an account can see/edit is a per-account,
-// Owner-controlled choice ON TOP OF a rank floor — the floor still has to
-// be met (an "agent"-rank account can never see any of these, regardless
-// of any override), but within that floor the Owner decides per-account
-// via `allowedAdminSections` ("all" | array of ids | unset) and, for the
-// 3 editable sections, `adminSectionEditAccess` ("all" | array of ids |
-// unset).
+// DEFAULTS ARE RANK-TIERED, not flat deny-all — an account whose
+// allowedAdminSections/adminSectionEditAccess have never been explicitly
+// touched inherits a default computed from ITS CURRENT rank (see
+// defaultSectionsForRank()/defaultEditForRank() below):
+//   agent      -> sees nothing (Reset Password is separate, ungated)
+//   senior     -> createAccount only
+//   admin      -> createAccount + whitelistIp, both VIEW ONLY
+//   superadmin -> every section, fully editable
+//   owner      -> unconditionally unrestricted (never even consults these
+//                 fields — see the `role === "owner"` shortcuts below)
+// This mirrors exactly what the old flat rank checks used to grant
+// before this became a per-account choice, so turning this feature on
+// doesn't silently strip existing SuperAdmins of access they already
+// had, NOR does it silently hand an Agent/Senior more than they used to
+// have. The instant an Owner (or a delegate — see
+// canManageOthersAdminAccess() below) explicitly sets EITHER field on an
+// account (even to an empty array), that concrete value wins forever
+// after and stops following rank changes — a deliberate customization,
+// once made, doesn't get silently reset by a later promotion/demotion.
 //
-// SECURITY FIX — 2026-07-28: `unset` used to mean "show/allow everything
-// the rank floor alone would permit", i.e. every Admin+ account defaulted
-// to seeing (and, once the account.js UI is opened, being one Owner click
-// away from being granted) ALL FOUR sections the moment it crossed a
-// floor, with no deliberate Owner action required. That is exactly
-// backwards for a permissions feature — a brand new Admin- or
-// SuperAdmin-rank account should start LOCKED DOWN to a safe minimum and
-// require the Owner to deliberately widen it, not the other way round.
-// `unset` now falls back to a role-based default preset (below) instead
-// of "everything the floor allows". The Owner can still override any
-// individual account, in either direction (narrower OR wider than its
-// role's default — e.g. dropping a SuperAdmin to view-only, or handing an
-// Admin extra sections), by explicitly setting allowedAdminSections /
-// adminSectionEditAccess on that account — that explicit array/"all"
-// value always wins over the role default below.
-export const ADMIN_SECTIONS_LIST = [
-  { id: "createAccount", name: "Create Account", icon: "➕", floorRank: ROLE_RANK.senior },
-  { id: "whitelistIp", name: "IP Access", icon: "🌐", floorRank: ROLE_RANK.admin },
-  { id: "tgRoutes", name: "TG Group / Channel", icon: "📡", floorRank: ROLE_RANK.admin },
-  { id: "agentProfile", name: "Agent Profile", icon: "🪪", floorRank: ROLE_RANK.admin },
-  // Settings admin panel — @ mention history backfill (TG Reply
-  // Threads) + the announcement banner's rotation speed. Same tier as
-  // tgRoutes (both are feature-control panels, not raw account/
-  // financial data).
-  { id: "settings", name: "Settings", icon: "⚙️", floorRank: ROLE_RANK.admin },
-  // Sensitive config surface (wrong link = CS reading/editing the wrong
-  // brand's live deposit data) — floor is superadmin, not admin, so
-  // Admin/Senior never see it at all unless individually granted via
-  // allowedAdminSections, same opt-in-only pattern as the others.
-  { id: "depositSheets", name: "Deposit Sheet Link", icon: "🧾", floorRank: ROLE_RANK.superadmin },
-  // Live-editable link list behind the "HeyVIP Betting Rules" home card
-  // (public/betting-resources.html) — SuperAdmin-tier, same shape as
-  // tgRoutes: reading the page itself is open to any logged-in agent,
-  // only EDITING the link list is gated here.
-  { id: "bettingLinks", name: "Betting Resources Links", icon: "🔗", floorRank: ROLE_RANK.superadmin },
-  // Home-page brand-pill marquee links (public/index.html's brand row —
-  // was previously "any logged-in agent" via the pill's own ✏️ button;
-  // moved here 2026-08-15 so only the Owner (or whoever the Owner grants
-  // this section to) can change where a brand's pill opens). Same
-  // public-read/gated-write shape as bettingLinks: any logged-in agent
-  // can still SEE and click the pills (GET /api/brand-config stays
-  // unauthenticated), only EDITING a link is gated here.
-  { id: "webLinks", name: "Web Link", icon: "🔗", floorRank: ROLE_RANK.superadmin },
-  // NOTE — "announcements" and "activeAgents" USED to live here (both
-  // superadmin-tier, Owner-controlled Account Management Access items).
-  // Moved out, 2026-08-10 — they're now OWNER_TOPIC_ITEMS below, living
-  // in the Agent Profile's "Topic access" list instead of Account
-  // Management Access. See the comment on OWNER_TOPIC_ITEMS for why, and
-  // canAccessOwnerTopic() for the enforcement.
-];
+// See functions/api/admin/{accounts,offices,routes}.js for where these
+// gate the actual server-side actions, and public/index.html for the
+// sidebar-visibility + Agent Profile checkbox UI this controls (which
+// mirrors this same rank-tiered default logic client-side for rendering
+// only — the server here is what's actually enforced).
+// "bettingLinks" (2026-08) gates the HeyVIP Betting Rules hub card's
+// admin panel (Account Management → Betting Resources Links — edits the
+// link list at /betting-resources.html; see functions/api/admin/
+// betting-resources.js). Deliberately NOT added to any bucket in
+// defaultSectionsForRank()/defaultEditForRank() below, same treatment as
+// every other section that only became SuperAdmin's-by-default when it
+// was introduced — falling through to "rank >= superadmin -> all" is
+// what makes it superadmin-and-above only out of the box, with Owner
+// able to hand it to a specific lower-ranked account same as any other
+// section. Browsing the resulting page itself is NOT gated by this at
+// all — every logged-in agent can see it, this only controls who can
+// edit the link list (see functions/api/betting-resources.js's plain
+// verifyRequest() check vs this section's canSeeAdminSection() gate).
+// "webLink" (2026-08) gates the per-brand "Pill Link" editor — the URL
+// each brand's pill on the Home page's marquee row opens when clicked.
+// Previously this had NO section gate at all (any logged-in agent could
+// POST /api/brand-config — see that file's own history); it's now
+// EDITABLE_ADMIN_SECTIONS-gated same as its Integration Portal siblings
+// below. Falls through to "rank >= superadmin -> all" same as every
+// other section that's superadmin-and-above by default, same treatment
+// tgRoutes/depositSheets/bettingLinks already got.
+//
+// "integrationPortal" (2026-08) is a pure VISIBILITY gate, not tied to
+// any single piece of content — it controls whether the "Integration
+// Portal" sidebar group (public/index.html + hub-nav.js) shows up at
+// all for an account, on top of (not instead of) that account's
+// individual access to tgRoutes/depositSheets/bettingLinks/webLink
+// underneath it. Same single-checkbox-grants-both-View-and-Edit
+// treatment as "announcements" in Topic Access (see the ap_announceSee/
+// ap_integrationPortalSee handling in public/index.html and the
+// matching POST-body handling in functions/api/admin/accounts.js) —
+// NOT one of EDITABLE_ADMIN_SECTIONS since there's no separate content
+// to view-vs-edit here, just "can see this group or not."
+export const ADMIN_SECTIONS = ["createAccount", "whitelistIp", "tgRoutes", "depositSheets", "settings", "agentProfile", "announcements", "bettingLinks", "webLink", "integrationPortal"];
+export const EDITABLE_ADMIN_SECTIONS = ["whitelistIp", "tgRoutes", "depositSheets", "settings", "agentProfile", "announcements", "bettingLinks", "webLink"];
 
-// Role-based defaults, used ONLY when the Owner has never explicitly set
-// allowedAdminSections / adminSectionEditAccess on that specific account.
-//   - agent:      sees none of the 4 (Reset Password only, ungated)
-//   - senior:     Create Account only (the one section its floor unlocks)
-//   - admin:      Whitelist IP (view-only)
-//   - superadmin: every remaining section, all fully editable
-//   - owner:      always full access — short-circuited before these are
-//                 ever consulted, see canSeeAdminSection()/canEditAdminSection()
-export const ADMIN_SECTIONS_DEFAULT_SEEN = {
-  agent: [],
-  senior: ["createAccount"],
-  admin: ["whitelistIp"],
-  superadmin: ["createAccount", "whitelistIp", "tgRoutes", "agentProfile", "depositSheets", "settings", "bettingLinks", "webLinks"],
-};
-export const ADMIN_SECTIONS_DEFAULT_EDIT = {
-  agent: [],
-  senior: [],
-  admin: [], // Whitelist IP visible but view-only by default
-  superadmin: ["whitelistIp", "tgRoutes", "agentProfile", "depositSheets", "settings", "bettingLinks", "webLinks"],
-};
-
-// ---- Owner Topics ("Topic access", Owner-gated items) ----
-//
-// MOVED, 2026-08-10: "Announcements" and "Active Agents" used to be
-// Account Management Access items (ADMIN_SECTIONS_LIST above) —
-// superadmin-tier, but editable by ANY Owner-delegated account via
-// canManageOthersAdminAccess() (canGrantAdminAccess), same as every
-// other Account Management Access item. Per a direct request, both moved
-// into the Agent Personal Profile's "Topic access" list instead (next to
-// the real form-module checkboxes, e.g. qa/account_issue/...) — but they
-// are NOT real form modules (there's no form.html?module=announcements),
-// so they are NOT added to allowedModules/window.MODULES. They live in
-// this separate, parallel list instead, and are rendered inline with the
-// module checkboxes purely as a UI grouping — see
-// public/index.html's OWNER_TOPIC_ITEMS + openAgentProfileModal().
-//
-// Deliberately its OWN field (`ownerTopicAccess`, see saveAccount()
-// below) rather than reusing `allowedModules`:
-//   - `allowedModules` defaults to "all" for every account (new or
-//     pre-existing) — reusing it here would mean every account
-//     automatically got Announcements/Active Agents access the moment
-//     this shipped, exactly backwards for something that's supposed to
-//     require deliberate Owner action.
-//   - `allowedModules === "all"` is also achieved just by an agent
-//     having every REAL topic checked — that can't be allowed to
-//     silently double as "and also grant these two Owner-gated items",
-//     see canAccessOwnerTopic() below.
-//
-// STRICTLY Owner-only to grant (not delegable via canGrantAdminAccess,
-// unlike Account Management Access) — enforced in
-// functions/api/admin/accounts.js. `ownerTopicAccess` defaults to an
-// EMPTY array for every account, new or pre-existing — nobody is
-// grandfathered in; the Owner has to explicitly check the box for each
-// account, same "opt-in-only" principle the rest of this file uses.
-//
-// No rank floor, on purpose (2026-08-14 — previously had one, see git
-// history): the Owner checking the box for an account IS the access
-// decision, full stop — an `agent`-ranked account the Owner has
-// deliberately opted in to Active Agents gets it, same as an admin
-// would. Layering a rank requirement on top of an explicit per-account
-// grant just means the Owner's own click can silently not take effect
-// depending on the target's role, which defeats the point of a
-// per-account opt-in list in the first place.
-export const OWNER_TOPIC_ITEMS = [
-  { id: "announcements", name: "Announcements", icon: "📢" },
-  { id: "activeAgents", name: "Active Agents", icon: "👥" },
-  // Added 2026-08-15 — the "Integration Portal" sidebar group (TG Group/
-  // Channel, Deposit Sheet Link, Betting Resources Links, Web Link) now
-  // needs an EXPLICIT per-account grant here before it shows in the
-  // sidebar at all, on top of (not instead of) the existing
-  // "Integration Portal Access" checkboxes in Account Management Access
-  // (see EDITABLE ADMIN_SECTIONS / canSeeAdminSection for tgRoutes/
-  // depositSheets/bettingLinks/webLinks). Same reasoning as everywhere
-  // else this list is used: this is a coarse "can this account see the
-  // menu entry at all" gate, separate from the finer "which of the 4
-  // items inside it, view or edit" gate underneath — an account needs
-  // BOTH checked to actually see anything (see the sidebar visibility
-  // check in public/index.html).
-  { id: "integrationPortal", name: "Integration Portal", icon: "🔗" },
-];
-
-export function canAccessOwnerTopic(account, topicId) {
-  if (!account) return true; // bootstrap mode — same full trust bootstrapPassword already had
-  if (account.role === "owner") return true;
-  const topic = OWNER_TOPIC_ITEMS.find((t) => t.id === topicId);
-  if (!topic) return false;
-  // No "all" shortcut either (see the comment above) — explicit
-  // membership in ownerTopicAccess is the ONLY way in, regardless of
-  // rank or of what allowedModules holds.
-  return Array.isArray(account.ownerTopicAccess) && account.ownerTopicAccess.includes(topicId);
+function defaultSectionsForRank(rank) {
+  if (rank >= ROLE_RANK.superadmin) return "all";
+  if (rank >= ROLE_RANK.admin) return ["createAccount", "whitelistIp", "announcements"];
+  if (rank >= ROLE_RANK.senior) return ["createAccount"];
+  return []; // agent
+}
+function defaultEditForRank(rank) {
+  if (rank >= ROLE_RANK.superadmin) return "all";
+  if (rank >= ROLE_RANK.admin) return ["announcements"];
+  return [];
 }
 
+/** Can `account` even SEE this admin section? Rank-tiered default, see note above. */
 export function canSeeAdminSection(account, sectionId) {
-  if (!account) return true; // bootstrap mode — same full trust bootstrapPassword already had
+  if (!account) return true; // bootstrap/setup mode
   if (account.role === "owner") return true;
-  const section = ADMIN_SECTIONS_LIST.find((s) => s.id === sectionId);
-  if (!section) return false;
-  if (rankOf(account.role) < section.floorRank) return false;
-  if (account.allowedAdminSections === "all") return true;
-  if (Array.isArray(account.allowedAdminSections)) return account.allowedAdminSections.includes(sectionId);
-  // Unset — never explicitly touched by the Owner — falls back to this
-  // account's role default (see ADMIN_SECTIONS_DEFAULT_SEEN above), NOT
-  // to "everything the floor allows" like before the 2026-07-28 fix.
-  return (ADMIN_SECTIONS_DEFAULT_SEEN[account.role] || []).includes(sectionId);
+  const sections = account.allowedAdminSections !== undefined ? account.allowedAdminSections : defaultSectionsForRank(rankOf(account.role));
+  if (sections === "all") return true;
+  return Array.isArray(sections) && sections.includes(sectionId);
 }
 
-// Only the Owner — or an account the Owner has explicitly delegated this
-// to via the "Can manage Account Management Access for other accounts"
-// checkbox (`canGrantAdminAccess`) — can grant/restrict OTHER accounts'
-// Account Management Access (both the see-it layer above and the edit-it
-// layer below). The delegation flag itself can only ever be set by the
-// real Owner (enforced in functions/api/admin/accounts.js, not here) —
-// so a delegated account can extend Account Management Access to others,
-// but can never hand out the delegation power itself, and (per the
-// caller-side rank check in accounts.js) can only act on accounts
-// ranked below its own.
-export function canManageOthersAdminAccess(account) {
-  return !!account && (account.role === "owner" || account.canGrantAdminAccess === true);
-}
-
-// View-vs-Edit split, for the 3 sections where "seeing it" and "changing
-// it" are meaningfully different actions. "createAccount" has no
-// view-only mode — creating an account IS the whole action, so it's
-// excluded here and stays governed by canSeeAdminSection() alone.
-//
-// DESIGN: this is the ONLY gate for edit rights on these 3 sections —
-// rank plays no further role beyond already being required to pass
-// canSeeAdminSection() above. An Admin-rank account CAN be granted
-// Can-Edit on e.g. whitelistIp, and a SuperAdmin CAN be left at
-// View-only. (The separate "actor must outrank the TARGET account" rule
-// for Agent Profile edits, in functions/api/admin/accounts.js, is a
-// different, still-active protection — not replaced by this.)
-export const EDITABLE_ADMIN_SECTIONS = ["whitelistIp", "tgRoutes", "agentProfile", "depositSheets", "settings", "bettingLinks", "webLinks"];
-
+/** Can `account` EDIT (not just view) this section? Requires view access first. */
 export function canEditAdminSection(account, sectionId) {
-  if (!account) return true; // bootstrap mode
+  if (!account) return true; // bootstrap/setup mode
   if (account.role === "owner") return true;
   if (!canSeeAdminSection(account, sectionId)) return false;
-  if (account.adminSectionEditAccess === "all") return true;
-  if (Array.isArray(account.adminSectionEditAccess)) return account.adminSectionEditAccess.includes(sectionId);
-  // Unset — role-default edit level (see ADMIN_SECTIONS_DEFAULT_EDIT
-  // above). Previously defaulted to "no edit" for everyone, which was
-  // safe but ALSO wrongly capped SuperAdmin at view-only by default.
-  return (ADMIN_SECTIONS_DEFAULT_EDIT[account.role] || []).includes(sectionId);
+  const edit = account.adminSectionEditAccess !== undefined ? account.adminSectionEditAccess : defaultEditForRank(rankOf(account.role));
+  if (edit === "all") return true;
+  return Array.isArray(edit) && edit.includes(sectionId);
+}
+
+/**
+ * Can `account` edit OTHER accounts' allowedAdminSections /
+ * adminSectionEditAccess at all? Owner always can (source of all
+ * delegation); anyone else needs canManageAdminAccess === true, which
+ * only Owner may ever set (enforced in functions/api/admin/accounts.js,
+ * not here — this function only reads the flag).
+ */
+export function canManageOthersAdminAccess(account) {
+  return !!account && (account.role === "owner" || !!account.canManageAdminAccess);
+}
+
+/**
+ * Can `account` see the Active Agents presence feature? UNLIKE every
+ * other admin section above, this is deliberately NOT rank-tiered —
+ * there is no default any role gets for free, not even SuperAdmin, and
+ * there is no rank floor blocking Agent/Senior from being granted it
+ * either. It is a flat, per-account boolean that only an Owner can ever
+ * set (enforced in functions/api/admin/accounts.js, mirroring how
+ * canManageAdminAccess is owner-only above) — Owner decides, account by
+ * account, full stop. Owner itself always sees it, same as every other
+ * section.
+ */
+export function canViewActiveAgents(account) {
+  if (!account) return false;
+  if (account.role === "owner") return true;
+  return !!account.canViewActiveAgents;
+}
+
+/**
+ * Add or remove exactly ONE section id from a stored allowedAdminSections/
+ * adminSectionEditAccess value, WITHOUT touching any other section in it.
+ * `effectiveCurrent` must already be resolved to a concrete "all" or array
+ * (i.e. the caller has already applied whatever rank-tiered default
+ * applies when the account has no explicit value — see
+ * effectiveAllowedAdminSections()/effectiveAdminSectionEditAccess() below,
+ * which both callers use). The result is always a concrete array (never
+ * "all"), since "all minus one" can no longer be expressed as "all".
+ *
+ * Added for the 2026-08 move of "announcements" out of the Account
+ * Management Access checklist and into Topic Access (see
+ * public/index.html's Agent Profile modal) — that move lets whoever
+ * manages an account's Topic Access toggle Announcement too, WITHOUT
+ * giving them a way to touch the other 7 (still Owner/delegate-only)
+ * sections. This helper is what makes that a safe single-item
+ * add/remove instead of requiring the caller to submit (and thus be
+ * trusted with) the whole array.
+ */
+export function withSectionToggled(effectiveCurrent, sectionId, on, allSections) {
+  const base = effectiveCurrent === "all" ? allSections.slice() : (Array.isArray(effectiveCurrent) ? effectiveCurrent.slice() : []);
+  const idx = base.indexOf(sectionId);
+  if (on && idx === -1) base.push(sectionId);
+  if (!on && idx !== -1) base.splice(idx, 1);
+  return base;
+}
+
+/** Resolves an account's effective allowedAdminSections ("all"/array), applying the rank-tiered default when not explicitly set. */
+export function effectiveAllowedAdminSections(account) {
+  return account.allowedAdminSections !== undefined ? account.allowedAdminSections : defaultSectionsForRank(rankOf(account.role));
+}
+
+/** Resolves an account's effective adminSectionEditAccess ("all"/array), applying the rank-tiered default when not explicitly set. */
+export function effectiveAdminSectionEditAccess(account) {
+  return account.adminSectionEditAccess !== undefined ? account.adminSectionEditAccess : defaultEditForRank(rankOf(account.role));
 }
 
 // ---- password hashing (PBKDF2 via Web Crypto, available in Workers) ----
@@ -441,9 +400,26 @@ export async function getOffice(env, id) {
   return raw ? JSON.parse(raw) : null;
 }
 
-export async function saveOffice(env, { id, name, allowedIPs }) {
+export async function saveOffice(env, { id, name, allowedIPs, ipMeta }) {
   const officeId = id || `off_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
-  const office = { id: officeId, name, allowedIPs: (allowedIPs || []).map((ip) => ip.trim()).filter(Boolean) };
+  const cleanIPs = (allowedIPs || []).map((ip) => ip.trim()).filter(Boolean);
+  // ipMeta (see _shared/ipAccess.js) tracks who added each IP and how
+  // (Approved / Manual) for the IP Access dashboard's "Added By"/"Date"
+  // columns. The OLD raw-textarea Whitelist IP form (public/index.html's
+  // openAcctModal("whitelist")) never sends this param at all — for that
+  // caller, preserve whatever metadata already existed on this office,
+  // dropping only the entries for IPs no longer present (so metadata
+  // can't quietly pile up for IPs someone removed via that older form).
+  // ip-access.js's own callers always pass ipMeta explicitly and take
+  // this branch entirely.
+  let meta = ipMeta;
+  if (!meta) {
+    const existing = id ? await getOffice(env, id) : null;
+    const existingMeta = existing?.ipMeta || {};
+    meta = {};
+    for (const ip of cleanIPs) if (existingMeta[ip]) meta[ip] = existingMeta[ip];
+  }
+  const office = { id: officeId, name, allowedIPs: cleanIPs, ipMeta: meta };
   await env.THREADS_KV.put(`office:${officeId}`, JSON.stringify(office));
   if (!id) {
     const raw = await env.THREADS_KV.get(OFFICES_INDEX_KEY);
@@ -465,15 +441,27 @@ export async function deleteOffice(env, id) {
 
 // ---- accounts ----
 
-// The ONE data exit point for "list every account" — anyAdminExists(),
-// anySuperAdminExists(), and GET /api/admin/accounts (functions/api/
-// admin/accounts.js) all go through this, so filtering owner out HERE
-// makes it disappear from all three automatically, with no risk of one
-// of them forgetting to filter separately. `viewerUsername` defaults to
-// undefined (fully hidden, including from itself) — only pass it when
-// the caller has already confirmed the CURRENT viewer IS that owner
-// account, which lets exactly that one row through so an owner viewing
-// their own Agent Profile table can see themselves.
+// Filters out any "owner" account — this is the SINGLE choke point every
+// other list of accounts in the app goes through (GET /api/admin/accounts,
+// anyAdminExists(), anySuperAdminExists(), etc.), so hiding it HERE means
+// it's hidden EVERYWHERE automatically, for every role including
+// SuperAdmin — nobody browsing Account Management, no matter their rank,
+// ever sees an owner account's username or that one exists.
+//
+// ONE deliberate exception (2026-07): `viewerUsername`, if passed, is
+// allowed to see an owner row for THAT EXACT username only — this is
+// what lets an owner see themselves in their own Agent Profile table
+// (so they can edit their own fullName/PID like anyone else would),
+// without exposing them to anyone else, including another owner account
+// if one ever existed. Every OTHER caller (anyAdminExists(),
+// anySuperAdminExists(), and any call site that doesn't explicitly pass
+// this) gets the fully-hidden behavior by default — passing nothing here
+// is the safe default, not an opt-in.
+//
+// A DIRECT lookup by exact username (getAccount() below) still finds it
+// regardless of any of this — that's necessary for the owner to be able
+// to log in at all — but nothing that enumerates "all accounts" ever
+// surfaces it to anyone but that one account.
 export async function listAccounts(env, { viewerUsername } = {}) {
   const raw = await env.THREADS_KV.get(ACCOUNTS_INDEX_KEY);
   const usernames = raw ? JSON.parse(raw) : [];
@@ -501,7 +489,7 @@ function stripSecret(account) {
 // `passwordChangedBy` is only meaningful when `password` is also given —
 // the username of whoever triggered the change (their own, for
 // self-service; the admin's, for an admin-driven reset).
-export async function saveAccount(env, { username, password, passwordChangedBy, role, officeId, allowedBrands, allowedModules, allowedAdminSections, adminSectionEditAccess, canGrantAdminAccess, ownerTopicAccess, fullName, pid }) {
+export async function saveAccount(env, { username, password, passwordChangedBy, role, officeId, allowedBrands, allowedModules, fullName, pid, allowedAdminSections, adminSectionEditAccess, canManageAdminAccess, canViewActiveAgents }) {
   const key = username.toLowerCase();
   const existing = await getAccount(env, key);
   let salt = existing?.salt;
@@ -526,30 +514,18 @@ export async function saveAccount(env, { username, password, passwordChangedBy, 
   }
   if (!salt || !hash) throw new Error("A password is required for a new account.");
 
-  // ASSIGNABLE_ROLES (not VALID_ROLES) on purpose — see its definition
-  // above. If anything, anywhere, ever passes role: "owner" here: an
-  // existing account keeps its current role unchanged (never downgraded,
-  // never "upgraded" to owner); a brand-new account falls back to
-  // "agent". This is the actual enforcement point — every other check
-  // (canManage(), the explicit early rejection in
-  // functions/api/admin/accounts.js, etc.) is defense in depth on top of
-  // this, not instead of it.
-  const finalRole = role !== undefined
-    ? (ASSIGNABLE_ROLES.includes(role) ? role : (existing?.role || "agent"))
-    : (existing?.role || "agent");
-
-  // Default Can-Edit set for a NEW account, or any pre-existing account
-  // that has never had adminSectionEditAccess explicitly touched yet —
-  // mirrors what rank ALONE used to determine before this became a
-  // per-account choice (SuperAdmin+ could edit Whitelist IP/Agent
-  // Profile outright, TG Routes too; everyone else was view-only or
-  // couldn't see it at all). This exists purely so switching this
-  // feature on doesn't silently downgrade every existing SuperAdmin to
-  // view-only — the Owner doesn't have to manually re-grant Can-Edit to
-  // accounts that already effectively had it. The instant the Owner
-  // explicitly sets this field (even to an empty array), that value wins
-  // forever after.
-  const defaultAdminSectionEditAccess = rankOf(finalRole) >= ROLE_RANK.superadmin ? "all" : [];
+  // ASSIGNABLE_ROLES (not VALID_ROLES) — "owner" is a real, valid role (an
+  // existing owner account keeps working, patch-saves that don't touch
+  // `role` leave it alone via the `existing?.role` fallback below), but
+  // it can never be the RESULT of someone explicitly setting `role` to
+  // it. If `role === "owner"` is sent, this falls through to
+  // `existing?.role || "agent"` — which means an ATTEMPT to promote an
+  // existing account to owner silently keeps that account's CURRENT role
+  // unchanged (does not demote an existing owner, does not promote
+  // anyone else), and an attempt to CREATE a brand-new account with role
+  // "owner" gets "agent" instead. Either way, this function can never be
+  // the mechanism that produces a new owner.
+  const finalRole = role !== undefined ? (ASSIGNABLE_ROLES.includes(role) ? role : (existing?.role || "agent")) : (existing?.role || "agent");
 
   const account = {
     username: key,
@@ -557,54 +533,41 @@ export async function saveAccount(env, { username, password, passwordChangedBy, 
     hash,
     iterations,
     tokenVersion,
-    // ASSIGNABLE_ROLES (not VALID_ROLES) on purpose — see finalRole above,
-    // computed once and reused so the same value backs both this field
-    // and the Can-Edit default below.
     role: finalRole,
     officeId: officeId !== undefined ? (officeId || null) : (existing?.officeId ?? null),
     allowedBrands: allowedBrands !== undefined
       ? (allowedBrands === "all" ? "all" : (Array.isArray(allowedBrands) ? allowedBrands : []))
       : (existing?.allowedBrands ?? []),
-    // Topic Access, in the Agent Personal Profile modal. Same shape as
-    // allowedBrands ("all" or an explicit array of module ids), but
-    // defaults to "all" — not []  — both for brand-new accounts AND for
-    // any pre-existing account saved before this field existed. Business
-    // decision: new accounts start with every topic visible, and nobody
-    // gets retroactively locked out of topics they already had access to
-    // just because this feature shipped after they were created.
+    // Same shape as allowedBrands ("all" or an array of module ids), but
+    // defaults to "all" instead of [] — a brand-less new account should
+    // see nothing until someone grants brands, but a module-less new
+    // account should NOT default to seeing zero Topics; that would make
+    // every brand-new agent (and every pre-existing account from before
+    // this field existed) unable to submit anything until a SuperAdmin
+    // manually re-grants every module. See canSeeModule() below.
     allowedModules: allowedModules !== undefined
       ? (allowedModules === "all" ? "all" : (Array.isArray(allowedModules) ? allowedModules : []))
       : (existing?.allowedModules ?? "all"),
-    // Account Management Access — which of the 4 admin-sidebar sections
-    // this account can even see. "all" | array of ids | left unset
-    // entirely (never touched by the Owner, so canSeeAdminSection() falls
-    // back to rank-floor-only behavior — see that function's comment).
+    fullName: fullName !== undefined ? fullName : (existing?.fullName || ""),
+    pid: pid !== undefined ? pid : (existing?.pid || ""),
+    // Left UNSET (undefined, i.e. omitted from the stored JSON) when
+    // never explicitly provided — canSeeAdminSection()/
+    // canEditAdminSection() compute a rank-tiered default on the fly for
+    // as long as it stays unset. Only writing a concrete value here when
+    // the caller actually provided one is what makes "hasn't been
+    // customized yet" and "was deliberately set to nothing" two
+    // distinguishable states instead of collapsing to the same [].
     allowedAdminSections: allowedAdminSections !== undefined
       ? (allowedAdminSections === "all" ? "all" : (Array.isArray(allowedAdminSections) ? allowedAdminSections : []))
       : existing?.allowedAdminSections,
-    // Of the sections this account can see, which it can also EDIT (vs.
-    // View only). See canEditAdminSection() + defaultAdminSectionEditAccess
-    // above for why the fallback is role-based instead of just [].
     adminSectionEditAccess: adminSectionEditAccess !== undefined
       ? (adminSectionEditAccess === "all" ? "all" : (Array.isArray(adminSectionEditAccess) ? adminSectionEditAccess : []))
-      : (existing?.adminSectionEditAccess !== undefined ? existing.adminSectionEditAccess : defaultAdminSectionEditAccess),
-    // "Can manage Account Management Access for other accounts" — lets
-    // this account act as a delegate for canManageOthersAdminAccess()
-    // (see that function). Owner-only to set (enforced in
-    // functions/api/admin/accounts.js) — defaults to false for every
-    // account, new or pre-existing, so nobody gains this power just by
-    // this field shipping.
-    canGrantAdminAccess: canGrantAdminAccess !== undefined ? !!canGrantAdminAccess : (existing?.canGrantAdminAccess || false),
-    // Owner Topics ("Topic access" list — Announcements / Active
-    // Agents). Always an explicit array, never "all" — see
-    // OWNER_TOPIC_ITEMS above for why. Defaults to [] (locked out) for
-    // every account, new or pre-existing; only an explicit Owner save
-    // ever changes it.
-    ownerTopicAccess: ownerTopicAccess !== undefined
-      ? (Array.isArray(ownerTopicAccess) ? ownerTopicAccess : [])
-      : (existing?.ownerTopicAccess ?? []),
-    fullName: fullName !== undefined ? fullName : (existing?.fullName || ""),
-    pid: pid !== undefined ? pid : (existing?.pid || ""),
+      : existing?.adminSectionEditAccess,
+    canManageAdminAccess: canManageAdminAccess !== undefined ? !!canManageAdminAccess : !!existing?.canManageAdminAccess,
+    // Owner-only flag, see canViewActiveAgents() above — same
+    // patch/merge semantics as canManageAdminAccess: omitted keeps
+    // whatever was there, explicit true/false overwrites it.
+    canViewActiveAgents: canViewActiveAgents !== undefined ? !!canViewActiveAgents : !!existing?.canViewActiveAgents,
     lastActiveAt: existing?.lastActiveAt || null,
     lastPasswordChange,
     // Lock state is intentionally NOT a parameter of saveAccount() — it's
@@ -695,15 +658,15 @@ async function touchLastActive(env, account) {
 
 /**
  * Whether an account passes the office/IP check for a given request.
- * Owner is the ONE deliberate exception now — SuperAdmin used to be
- * exempt too, but per OWNER_ROLE_SETUP.md's design, SuperAdmin now MUST
- * be bound to an office with a matching IP just like every other visible
- * role; an account with no officeId that isn't Owner fails this outright
- * instead of silently skipping the check. Shared by verifyRequest()
- * (every protected endpoint) AND auth/login.js (the login form itself,
- * which can't just call verifyRequest() since there's no verified
- * identity yet at that point) so the two can never drift out of sync
- * with each other.
+ * Owner is the ONE deliberate exception (changed 2026-07 — SuperAdmin
+ * used to be exempt too; SuperAdmin now goes through the SAME check as
+ * everyone else and MUST be bound to an office with a matching IP to log
+ * in, same as Admin/Senior/Agent). An account with no officeId that
+ * isn't Owner fails this outright instead of silently skipping the
+ * check. Shared by verifyRequest() (every protected endpoint) AND
+ * auth/login.js (the login form itself, which can't just call
+ * verifyRequest() since there's no verified identity yet at that point)
+ * so the two can never drift out of sync with each other.
  */
 export async function officeIpCheckPasses(env, account, request) {
   if (account.role === "owner") return true;
@@ -742,18 +705,6 @@ export async function verifyRequest(request, env) {
   // is stale even if its signature and expiry are both still valid.
   if ((account.tokenVersion || 0) !== payload.v) return null;
 
-  // IP Access blocklist check — deliberately a raw KV read here instead
-  // of importing isIpBlocked() from _shared/ipAccess.js, because that
-  // module imports getOffice()/saveOffice()/setAccountLocked()/
-  // listOffices() FROM this file — importing back from here would be a
-  // circular module dependency. It's one line either way; not worth the
-  // risk of a bundler mishandling the cycle. Keep the `ipblock:<ip>` key
-  // shape in sync with _shared/ipAccess.js if that ever changes. Checked
-  // before officeIpCheckPasses() — cheaper (no office KV read) and a
-  // blocked IP should never even get to see "not on the approved list"
-  // wording, just the block message (mirrored in login.js).
-  if (await env.THREADS_KV.get(`ipblock:${requestIP(request)}`)) return null;
-
   if (!(await officeIpCheckPasses(env, account, request))) return null;
 
   await touchLastActive(env, account);
@@ -766,11 +717,12 @@ export function canSeeBrand(account, brandName) {
   return Array.isArray(account.allowedBrands) && account.allowedBrands.includes(brandName);
 }
 
-// Topic Access — same shape/rules as canSeeBrand above (admin & superadmin
-// are never restricted; only "agent"-rank accounts can be limited to a
-// subset of topics/modules via the Agent Personal Profile modal).
 export function canSeeModule(account, moduleId) {
-  if (rankOf(account.role) >= ROLE_RANK.admin) return true;
+  if (rankOf(account.role) >= ROLE_RANK.admin) return true; // admin & superadmin see everything
+  // `undefined` here (not just "all") covers accounts saved before this
+  // field existed — saveAccount() backfills existing accounts to "all"
+  // on their next save, but an account that's never been re-saved since
+  // this feature shipped won't have the field at all yet.
   if (account.allowedModules === "all" || account.allowedModules === undefined) return true;
   return Array.isArray(account.allowedModules) && account.allowedModules.includes(moduleId);
 }

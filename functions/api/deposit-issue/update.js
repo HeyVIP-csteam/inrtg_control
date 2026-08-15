@@ -1,31 +1,27 @@
-/**
- * POST /api/deposit-issue/update
- *
- * Writes back exactly ONE column — CS Remarks — the only CS-editable
- * field on the real INR sheet. The column letter comes from
- * ISSUE_COLUMNS (functions/_shared/depositColumns.js), same for every
- * brand's Deposit Issue sheet — Deposit Backup uses a different layout
- * entirely, but that module has no update endpoint (read-only), so it's
- * irrelevant here.
- *
- * Takes { sheetId, tabName, rowIndex, csRemarks }. `sheetId` is resolved
- * back to a brand (via the live "Deposit Sheet Link" overrides, not
- * trusted blindly) so canSeeBrand() can be enforced — an agent scoped to
- * one brand can't write to another brand's sheet just because they
- * know/guess its sheetId.
- */
-import { verifyRequest, canSeeBrand } from "../../_shared/accounts.js";
-import { BRANDS } from "../../_shared/routing.js";
-import { getAllDepositSheetOverrides } from "../../_shared/depositSheets.js";
-import { updateRowByColumns } from "../../_shared/googleSheets.js";
 import { getAccessToken } from "../../_shared/googleOAuth.js";
-import { ISSUE_COLUMNS } from "../../_shared/depositColumns.js";
+import { verifyRequest, canSeeBrand } from "../../_shared/accounts.js";
+import { PKR_BRANDS, getAllDepositSheetOverrides } from "../../_shared/depositSheets.js";
 
-const MODULE_SLOT = "depositIssue"; // must match search.js / sheet-links.js
-const CS_REMARKS_COL = ISSUE_COLUMNS.csRemarks;
+// Must match search.js's MODULE_SLOT and hardcoded Crickex default — see
+// that file for the full explanation of the KV-override-over-code-default
+// layering.
+const MODULE_SLOT = "depositIssue";
+const DEFAULT_CRICKEX_SHEET_ID = "1HByPuZMuuYZL9S5fPPGjb8RAmCwNVgKXvuLgVBbVM-E";
+const EDITABLE_RANGE_COLS = "P:S"; // CS PIC, Player Contact No, Status CS, Correct UID
 
+// Now that each brand can point at a different Sheet, the frontend has
+// to tell us WHICH sheetId a given row came from (search.js already
+// includes it on every result — see curDep.sheetId in deposit-issue.html).
+// Rather than trusting that value blindly, resolve it back to a brand
+// two ways: (1) confirms it's actually one of the currently-configured
+// Deposit Issue sheets, not an arbitrary Sheet ID the OAuth account
+// happens to have edit access to, and (2) tells us which brand it is,
+// so canSeeBrand() can be enforced below (an agent scoped to Crickex
+// only shouldn't be able to write to Betjili's sheet just because they
+// know/guess its sheetId).
 async function findBrandForSheetId(env, sheetId) {
-  const overrides = await getAllDepositSheetOverrides(env, MODULE_SLOT, Object.keys(BRANDS));
+  if (sheetId === DEFAULT_CRICKEX_SHEET_ID) return "crickex";
+  const overrides = await getAllDepositSheetOverrides(env, MODULE_SLOT, PKR_BRANDS.map((b) => b.id));
   const entry = Object.entries(overrides).find(([, o]) => o.sheetId === sheetId);
   return entry ? entry[0] : null;
 }
@@ -34,7 +30,7 @@ export async function onRequestPost(context) {
   try {
     return await handleUpdate(context);
   } catch (e) {
-    return json({ ok: false, error: `Update failed: ${String((e && e.message) || e)}` }, 500);
+    return json({ ok: false, error: `Update failed: ${String(e && e.message || e)}` }, 500);
   }
 }
 
@@ -49,7 +45,7 @@ async function handleUpdate({ request, env }) {
     return json({ ok: false, error: "Invalid JSON body." }, 400);
   }
 
-  const { sheetId, tabName, rowIndex, csRemarks } = body || {};
+  const { sheetId, tabName, rowIndex, csPIC, playerContactNo, statusCS, correctUid } = body || {};
   if (!sheetId || !tabName || !rowIndex) {
     return json({ ok: false, error: "Missing sheetId, tabName, or rowIndex." }, 400);
   }
@@ -61,20 +57,37 @@ async function handleUpdate({ request, env }) {
   if (!brandId) {
     return json({ ok: false, error: "That Sheet isn't one of the currently configured Deposit Issue sheets — try searching again." }, 400);
   }
-  if (!canSeeBrand(account, BRANDS[brandId].name)) {
+  const brandMeta = PKR_BRANDS.find((b) => b.id === brandId);
+  if (!canSeeBrand(account, brandMeta.name)) {
     return json({ ok: false, error: "You don't have access to this brand." }, 403);
   }
 
-  try {
-    const token = await getAccessToken(env);
-    await updateRowByColumns(env, sheetId, tabName, CS_REMARKS_COL, rowIndex, [csRemarks || ""], token);
-  } catch (e) {
-    return json({ ok: false, error: `Sheets API error: ${String((e && e.message) || e)}` }, 502);
+  const accessToken = await getAccessToken(env);
+  const range = `'${tabName}'!${EDITABLE_RANGE_COLS.split(":")[0]}${rowIndex}:${EDITABLE_RANGE_COLS.split(":")[1]}${rowIndex}`;
+  const url = `https://sheets.googleapis.com/v4/spreadsheets/${sheetId}/values/${encodeURIComponent(range)}?valueInputOption=RAW`;
+
+  const res = await fetch(url, {
+    method: "PUT",
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      range,
+      majorDimension: "ROWS",
+      values: [[csPIC || "", playerContactNo || "", statusCS || "", correctUid || ""]],
+    }),
+  });
+
+  const data = await res.json();
+  if (!res.ok) {
+    return json({ ok: false, error: `Sheets API error: ${data.error?.message || res.status}` }, 502);
   }
 
-  return json({ ok: true });
+  return json({ ok: true, updatedRange: data.updatedRange || range });
 }
 
 function json(obj, status = 200) {
-  return new Response(JSON.stringify(obj), { status, headers: { "Content-Type": "application/json", "Cache-Control": "no-store" } });
+  return new Response(JSON.stringify(obj), { status, headers: { "Content-Type": "application/json" } });
 }
+

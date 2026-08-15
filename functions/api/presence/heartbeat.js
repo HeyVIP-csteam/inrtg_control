@@ -1,53 +1,47 @@
 /**
- * POST /api/presence/heartbeat  { device: "desktop"|"mobile" } -> "I'm online"
- * POST /api/presence/heartbeat  { status: "offline" }          -> tab closing (beacon)
+ * POST /api/presence/heartbeat
  *
- * Called by every logged-in agent's browser every ~15s (see
- * public/assets/presence-heartbeat.js) — NOT gated by "activeAgents"
- * Account Management Access, deliberately: every agent needs to be able
- * to report their OWN presence for the board to mean anything, whether
- * or not they personally have permission to view the board. Any
- * authenticated account, any rank, can only ever write its own
- * `presence:current:<own username>` record — never another account's,
- * see authenticateStaff() below using the token's own username.
+ * Called every 15s by public/assets/presence-heartbeat.js for any
+ * logged-in agent (no Active Agents permission required to SEND a
+ * heartbeat about yourself — canViewActiveAgents only gates who can
+ * VIEW the resulting data, not who gets tracked; everyone logged in is
+ * tracked, same as the existing lastActiveAt mechanism).
  *
- * Two states only (online/offline) — see _shared/presence.js's header
- * comment for why "inactive" was removed. `device` is client-detected
- * from the User-Agent (real per-agent data, not a static label) — see
- * presence-heartbeat.js.
+ * Body: { status: "online"|"inactive", device: "desktop"|"mobile",
+ *         browser: "Chrome 128", os: "Windows" }
  */
 import { authenticateStaff, ROLE_RANK } from "../../_shared/accounts.js";
-import { recordHeartbeat, markOffline } from "../../_shared/presence.js";
+import { recordHeartbeat } from "../../_shared/presence.js";
 
 export async function onRequestPost(context) {
   try {
-    return await handlePost(context);
+    return await handle(context);
   } catch (e) {
-    return json({ ok: false, error: `Unexpected server error: ${String(e && e.message || e)}` }, 500);
+    return json({ ok: false, error: `Unexpected server error: ${String((e && e.message) || e)}` }, 500);
   }
 }
 
-async function handlePost({ request, env }) {
+async function handle({ request, env }) {
   if (!env.THREADS_KV) return json({ ok: false, error: "THREADS_KV is not bound yet." }, 500);
   const auth = await authenticateStaff(request, env, ROLE_RANK.agent);
   if (!auth.ok || !auth.account) return json({ ok: false, error: "Not authorized." }, 401);
 
-  let body = {};
+  let body;
   try {
     body = await request.json();
   } catch {
-    // Empty body is fine — a plain heartbeat carries no payload at all.
+    return json({ ok: false, error: "Invalid JSON body." }, 400);
   }
 
-  if (body.status === "offline") {
-    await markOffline(env, auth.account.username);
-    return json({ ok: true });
-  }
+  const status = body.status === "inactive" ? "inactive" : "online";
+  const device = body.device === "mobile" ? "mobile" : "desktop";
+  const browser = (body.browser || "Unknown browser").slice(0, 40);
+  const os = (body.os || "Unknown OS").slice(0, 40);
 
-  const result = await recordHeartbeat(env, auth.account.username, body.device);
-  return json({ ok: true, written: result.written });
+  const fresh = await recordHeartbeat(env, auth.account.username, { status, device, browser, os });
+  return json({ ok: true, presence: fresh });
 }
 
 function json(obj, status = 200) {
-  return new Response(JSON.stringify(obj), { status, headers: { "Content-Type": "application/json", "Cache-Control": "no-store" } });
+  return new Response(JSON.stringify(obj), { status, headers: { "content-type": "application/json" } });
 }

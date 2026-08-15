@@ -4,52 +4,46 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>TG Reply Threads</title>
+<script src="/assets/theme.js?v=c61fb537"></script>
 <style>
-  /* Space photo (dark-shaded, same overlay math as .sf-shade in
-     style.css) as the very first paint, before style.css/starfield.js
-     load — same reasoning as index.html's copy of this rule; see the
-     comment there for the full write-up. */
-  html {
-    background-color: #090c1c;
-    background-image:
-      linear-gradient(180deg, rgba(3,4,13,0.35) 0%, rgba(3,4,13,0.55) 55%, rgba(3,4,13,0.75) 100%),
-      url('/assets/img/bg-space.jpg');
-    background-size: cover;
-    background-position: center;
-    background-repeat: no-repeat;
-    background-attachment: fixed;
-  }
-
-  /* Light-theme override — theme.js (loaded right after this block, and
-     synchronous/non-deferred) sets data-theme on <html> before first
-     paint, so this genuinely applies from frame one rather than flashing
-     in late. The photo is nearly invisible under the light theme's own
-     heavy overlay anyway (see --sf-shade's 0.55-0.72 alpha for
-     [data-theme="light"] in style.css), so rather than fight CSS filter
-     limitations (filter can't be scoped to just a background-image on
-     <html> without also filtering all real content once it loads), this
-     just reuses the light theme's plain --page-bg gradient values
-     directly (kept in sync manually — see :root in style.css if that
-     gradient ever changes) with no photo layer at all. Visually
-     indistinguishable from the real thing once starfield.js mounts. */
-  html[data-theme="light"] {
-    background-color: #dbe7fb;
-    background-image:
-      radial-gradient(900px 500px at 90% 0%, #eaf1ff 0%, transparent 55%),
-      linear-gradient(160deg, #dbe7fb 0%, #d9cef4 45%, #cdbdf2 75%, #c4b2ee 100%);
-  }
+/* Inline placeholder canvas background — first thing the browser parses
+   in <head>, so it paints before any network request (external CSS, the
+   photo itself) resolves. Values are hard-coded here (can't use var()
+   yet — style.css may not have loaded) but are kept in exact sync with
+   the "real" html{}/html[data-theme=light]{} rule in style.css, so the
+   moment that stylesheet finishes loading there is zero visible change.
+   Must stay inline and first — an external <link> here would leave a
+   blank gap for a network round trip before anything paints. Only sets
+   background on <html>, never <body>: <body> has its own
+   theme-toggle transition, and animating from this photo to some other
+   background would try to interpolate image -> gradient, which browsers
+   can't do and would just look like a broken flash. */
+html {
+  background-color: #090c1c;
+  background-image:
+    linear-gradient(180deg, rgba(3,4,13,0.35) 0%, rgba(3,4,13,0.55) 55%, rgba(3,4,13,0.75) 100%),
+    url('/assets/img/bg-space.jpg');
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+  background-attachment: fixed;
+}
+html[data-theme="light"] {
+  background-color: #dbe7fb;
+  background-image:
+    radial-gradient(900px 500px at 90% 0%, #eaf1ff 0%, transparent 55%),
+    linear-gradient(160deg, #dbe7fb 0%, #d9cef4 45%, #cdbdf2 75%, #c4b2ee 100%);
+}
 </style>
-<link rel="preconnect" href="https://fonts.googleapis.com" />
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-<link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;600&display=swap" onload="this.onload=null;this.rel='stylesheet'" />
-<noscript><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;600&display=swap" /></noscript>
-<link rel="stylesheet" href="/assets/style.css?v=63a5348a" />
-<script src="/assets/theme.js?v=5b27e630"></script>
+<link rel="stylesheet" href="/assets/style.css?v=467b5a4c" />
+<link rel="stylesheet" href="/assets/toast.css?v=5779b14e" />
+<script src="/assets/toast.js?v=d9d84724"></script>
 <script src="/assets/starfield.js?v=b6e92821" defer></script>
-<script src="/assets/authguard.js?v=9dba9c0c"></script>
-<script src="/assets/presence-heartbeat.js?v=921f46cb"></script>
+<script src="/assets/authguard.js?v=19b1b251"></script>
+<script src="/assets/presence-heartbeat.js?v=a0820d9b"></script>
+<script src="/assets/announcement-banner.js?v=26c15118" defer></script>
+<script src="/assets/schemas.js?v=189eea70"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/twemoji.min.js"></script>
-<script src="/assets/schemas.js?v=b5c55f4a"></script>
 </head>
 <body class="threads-page">
   <!-- Attachment lightbox — populated live by viewAttachment() below.
@@ -62,7 +56,7 @@
   <header class="topbar">
     <div class="topbar-left">
       <img src="/assets/img/logo.webp" alt="HeyVIP" class="logo-img" />
-      <span class="wordmark">INR CS TEAM - TBC</span>
+      <span class="wordmark">PKR CS TEAM - TBC</span>
     </div>
     <div class="topbar-right">
       <span class="clock" id="liveClock"></span>
@@ -70,58 +64,97 @@
     </div>
   </header>
 
-  <div id="announcementBanner"></div>
-
-  <div class="threads-topline">
-    <a href="/" class="back-pill">&larr; Back to Home</a>
-  </div>
-
   <div class="threads-shell" id="threadsShell">
+    <aside class="sidebar" id="hubNavMount"></aside>
+    <div class="threads-content-col">
+      <nav class="brand-row" id="pageBrandRow"><div class="brand-row-track"></div></nav>
+      <div id="announcementBanner"></div>
+      <div class="threads-body-row">
     <aside class="threads-sidebar">
-      <div class="threads-tabs" id="threadsTabs"></div>
-
-      <div class="threads-back-link" id="threadsBackLink">← Back to Active / Solved</div>
-
-      <div class="threads-header" id="threadsHeader">
-        <div class="bubble-icon" id="threadsHeaderIcon">💬</div>
-        <div class="text">
-          <div class="title" id="threadsHeaderTitle">All Threads</div>
-          <div class="subtitle" id="threadsHeaderSubtitle"></div>
-        </div>
-        <div class="count-badge" id="threadsHeaderCount">0</div>
-        <div class="select-btn" id="threadsSelectToggleBtn">Select</div>
+      <div class="threads-tabs" id="threadsTabs">
+        <button type="button" class="threads-tab tab-active" data-tab="active" id="tabActive">
+          <span class="threads-tab-label">Active</span>
+          <span class="threads-tab-count" id="activeCount">0</span>
+        </button>
+        <button type="button" class="threads-tab tab-solved" data-tab="solved" id="tabSolved">
+          <span class="threads-tab-label">Solved</span>
+          <span class="threads-tab-count" id="solvedCount">0</span>
+        </button>
+        <button type="button" class="threads-tab tab-recall" data-tab="recall" id="tabRecall" style="display:none;">
+          <span class="threads-tab-label">Recall</span>
+          <span class="threads-tab-count" id="recallCount">0</span>
+        </button>
       </div>
 
-      <div class="threads-search" id="threadsSearchBar">
+      <div class="all-threads-card">
+        <div class="all-threads-row">
+          <div class="all-threads-titles">
+            <div class="all-threads-title">All threads</div>
+            <div class="all-threads-sub" id="allThreadsSub">Active threads · 0 new replies</div>
+          </div>
+          <div class="all-threads-right">
+            <span class="all-threads-count" id="allThreadsCount">0</span>
+            <button type="button" class="bulk-cancel" id="selectToggleBtn">Select</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="threads-search">
         <span>🔍</span>
         <input type="text" id="threadSearch" placeholder="Search username, TID, UID..." autocomplete="off" />
       </div>
 
-      <div class="threads-select-all-row" id="threadsSelectAllRow">
-        <input type="checkbox" class="select-all-checkbox" id="threadsSelectAll" />
-        <span>Select all</span>
-        <div class="spacer"></div>
-        <div class="sel-actions">
-          <button type="button" id="selMarkReadBtn"><span style="color:#38bdf8;">✓</span> Mark as read</button>
-          <button type="button" id="selSolveBtn"><span style="color:#34d399;">✅</span> Solved</button>
-        </div>
+      <div class="bulk-action-bar" id="bulkActionBar" style="display:none;">
+        <label class="bulk-select-all"><input type="checkbox" id="tabSelectAll" />Select all</label>
+        <button type="button" class="bulk-action-btn" id="bulkReadBtn"></button>
+        <button type="button" class="bulk-action-btn" id="bulkSolveBtn"></button>
       </div>
 
-      <div class="thread-list" id="threadList"></div>
+      <div class="threads-section" id="activeSection" data-tab-panel="active">
+        <div class="thread-list" id="activeList"></div>
+      </div>
 
-      <div class="threads-select-bar" id="threadsSelectBar">
-        <span class="sel-cancel" id="selCancelBtn">Cancel</span>
-        <span class="sel-count"><b id="selCount">0</b> selected</span>
+      <div class="threads-section" id="solvedSection" data-tab-panel="solved" style="display:none;">
+        <div class="thread-list" id="solvedList"></div>
+      </div>
+
+      <div class="threads-section recall" id="recallSection" data-tab-panel="recall" style="display:none;">
+        <div class="thread-list" id="recallList"></div>
       </div>
     </aside>
 
-    <main class="threads-main" id="threadsMain">
+    <div class="threads-right-col">
+      <main class="threads-main" id="threadsMain">
       <div class="threads-placeholder">Pick a thread on the left, or submit a form to start one.</div>
     </main>
+    </div>
+      </div>
+    </div>
   </div>
 
-
+  <script src="/assets/hub-nav.js?v=d86d0bdd"></script>
+  <script src="/assets/brand-row.js?v=ea371f55"></script>
   <script>
+    window.HubNav.mount("hubNavMount", {});
+    window.BrandRow.mount("pageBrandRow");
+
+    // ---- Note on feedback (alert vs. the site-wide toast) --------------
+    // This page deliberately keeps native alert() for send/edit/recall/
+    // delete failures instead of the /assets/toast.js "click anywhere to
+    // dismiss" error toast used elsewhere in the app. Two reasons, both
+    // from feedback-toast-system-design.md's list of intentional
+    // exceptions, not an oversight:
+    //   1. Replying to a thread is the highest-frequency action in the
+    //      whole app (this is where agents spend most of their shift). A
+    //      toast that has to be clicked away every single time it fails
+    //      would be a constant tap-tax on exactly the busiest screen.
+    //   2. A few of these messages (the "Telegram updated but the Sheet
+    //      row couldn't be updated" ones) carry a real error string the
+    //      agent needs to read and act on, not just glance at — alert()
+    //      blocking until dismissed suits that better than a popup that
+    //      might get missed mid-scroll.
+    // Successful sends/edits/deletes aren't toasted either, since the
+    // change is already visible in the thread/list right away.
     window.initThemeToggle();
 
     window.initClock();
@@ -140,14 +173,24 @@
 
     function bootDashboard() {
       const auth = getAuth();
-      // Recall Chat History is now a tab, but still admin-or-above only —
-      // the server 401s the endpoint for anyone else regardless, this
-      // just avoids showing a tab that leads nowhere for an agent/senior.
+      // Recall Chat History (the old hidden deletion-log dot) is a normal
+      // section now, but still admin-or-above only — the server 401s it
+      // for anyone else regardless, this just avoids showing a dead-end
+      // section to an agent/senior who'd get nothing useful out of it.
       // Rank-based (not a literal "admin" string match) so SuperAdmin
       // sees it too — matches functions/_shared/accounts.js ROLE_RANK.
+      // Includes "owner" (2026-07) for the same reason described in
+      // index.html's copy of this same constant — otherwise an Owner
+      // session would silently compute as rank 0 here via `?? 0` below.
       const ROLE_RANK = { agent: 0, senior: 1, admin: 2, superadmin: 3, owner: 4 };
-      isAdmin = (ROLE_RANK[auth.role] ?? 0) >= ROLE_RANK.admin;
-      renderTabs();
+      const isAdmin = (ROLE_RANK[auth.role] ?? 0) >= ROLE_RANK.admin;
+      // Only the TAB BUTTON's visibility is decided here — actual panel
+      // visibility (#recallSection's display) is entirely owned by
+      // switchTab() now (data-tab-panel), so this must never also poke
+      // that style directly or it'd show Recall's panel alongside
+      // whichever tab is actually selected.
+      isAdminForRecall = isAdmin;
+      document.getElementById("tabRecall").style.display = isAdmin ? "" : "none";
       loadList();
       if (isAdmin) loadRecallLog();
       polishEmoji();
@@ -162,19 +205,10 @@
       // over for no benefit, while still adding needless request volume.
       // 30s keeps the sidebar feeling reasonably live without that waste.
       pollTimer = setInterval(() => {
-        // Defensive: if this page's own DOM is gone (navigated away via
-        // spa-shell and, in some rare still-in-flight-navigation edge
-        // case, this timer wasn't cleaned up with it — see spa-shell.js's
-        // capturingFor comment), stop polling instead of throwing on a
-        // null element. Self-healing rather than relying solely on the
-        // shell to always catch every timer.
-        if (!document.getElementById("threadSearch")) { clearInterval(pollTimer); return; }
         refreshOpenThread();
       }, 6000);
       listPollTimer = setInterval(() => {
-        const searchEl = document.getElementById("threadSearch");
-        if (!searchEl) { clearInterval(listPollTimer); return; }
-        loadList(searchEl.value);
+        loadList(document.getElementById("threadSearch").value);
         if (isAdmin) loadRecallLog();
       }, 30000);
     }
@@ -189,14 +223,28 @@
     let pollTimer = null;
     let listPollTimer = null;
     let searchTimer = null;
-    let isAdmin = false;              // set once in bootDashboard(), read by renderTabs()
-    let currentTab = "active";        // "active" | "solved" | "recall" — which of the
-                                       // formerly-stacked sections is showing right now
 
-    // ---- Select mode (bulk Mark as read / Solved) ---------------------
-    let selectMode = false;
-    const checkedThreadIds = new Set();
-    let openKebabId = null;
+    // ---- Sidebar diffed rendering ---------------------------------------
+    // id -> { el, key } for every thread-item currently in the DOM (active
+    // OR solved — one shared map, since a thread can move between the two
+    // sections, e.g. a TG follow-up auto-reopening an already-solved
+    // ticket server-side, see threads.js). renderLists() below reuses
+    // these nodes (and just relocates/patches them) instead of wiping and
+    // recreating the whole sidebar on every 6s poll — see renderLists().
+    const renderedItemEls = new Map();
+
+    // ---- ⋮ menu + Select batch mode -----------------------------------
+    let openItemMenuId = null;   // which thread's ⋮ dropdown is currently open (sidebar only, not select mode)
+    let selectMode = false;      // sidebar is showing checkboxes instead of ⋮
+    let selectedIds = new Set(); // checked thread ids, can span both Active and Solved
+
+    // ---- @ Tag Username --------------------------------------------------
+    // Candidates fetched from /api/mention-candidates, cached in memory
+    // per brand+module (see loadMentionCandidatesForThread) so re-opening
+    // the same thread, or @-ing more than once in it, doesn't re-fetch.
+    const mentionCandidatesCache = {}; // "brandId::module" -> [{handle, from}, ...]
+    let currentMentionCandidates = []; // merged list for whichever thread is open
+    let mentionActiveIndex = -1;
 
     // ---- Local "optimistic" sidebar patches --------------------------
     // The sidebar list comes from THREADS_KV.list() (see threads.js),
@@ -251,18 +299,63 @@
       }
     }
 
-    const threadList = document.getElementById("threadList");
+    const activeList = document.getElementById("activeList");
+    const solvedList = document.getElementById("solvedList");
+    const activeCount = document.getElementById("activeCount");
+    const solvedCount = document.getElementById("solvedCount");
     const main = document.getElementById("threadsMain");
-    const threadsTabs = document.getElementById("threadsTabs");
-    const threadsBackLink = document.getElementById("threadsBackLink");
-    const threadsHeaderIcon = document.getElementById("threadsHeaderIcon");
-    const threadsHeaderTitle = document.getElementById("threadsHeaderTitle");
-    const threadsHeaderSubtitle = document.getElementById("threadsHeaderSubtitle");
-    const threadsHeaderCount = document.getElementById("threadsHeaderCount");
-    const threadsSelectToggleBtn = document.getElementById("threadsSelectToggleBtn");
-    const threadsSearchBar = document.getElementById("threadsSearchBar");
-    const threadsSelectAllRow = document.getElementById("threadsSelectAllRow");
-    const threadsSelectAll = document.getElementById("threadsSelectAll");
+
+    // ---- Active/Solved/Recall tabs (2026-08 — replaces the old always-
+    // stacked collapsible sections). Only one panel is visible at a
+    // time; switching tabs also exits Select mode (selection never
+    // spans tabs — simpler than the old two-independent-select-alls
+    // design, and matches how the single "Select all" checkbox below is
+    // scoped to whichever tab is open). Recall has no Select mode at
+    // all (no bulk actions ever applied to it, same as before — its
+    // items don't even render a ⋮ menu, see renderRecallList()).
+    let currentTab = "active";
+    let isAdminForRecall = false; // set in bootDashboard(); gates the Recall tab itself
+
+    function switchTab(tab) {
+      if (tab === "recall" && !isAdminForRecall) return;
+      if (selectMode) { selectMode = false; selectedIds.clear(); }
+      openItemMenuId = null;
+      currentTab = tab;
+      document.querySelectorAll(".threads-section[data-tab-panel]").forEach((sec) => {
+        sec.style.display = sec.dataset.tabPanel === tab ? "" : "none";
+      });
+      document.querySelectorAll(".threads-tab").forEach((btn) => {
+        btn.classList.toggle("is-active", btn.dataset.tab === tab);
+      });
+      renderLists();
+      if (tab === "recall") renderRecallList();
+    }
+    document.querySelectorAll(".threads-tab").forEach((btn) => {
+      btn.addEventListener("click", () => switchTab(btn.dataset.tab));
+    });
+    switchTab("active"); // sets the initial panel/tab visual state before any data has loaded
+
+    document.getElementById("selectToggleBtn").addEventListener("click", () => {
+      selectMode = !selectMode;
+      selectedIds.clear();
+      renderLists();
+    });
+    document.getElementById("bulkReadBtn").addEventListener("click", runBulkReadToggle);
+    document.getElementById("bulkSolveBtn").addEventListener("click", runBulkSolveToggle);
+    document.getElementById("tabSelectAll").addEventListener("click", (e) => e.stopPropagation());
+    document.getElementById("tabSelectAll").addEventListener("change", (e) => {
+      selectMode = true;
+      const arr = currentTab === "active" ? activeThreads : (currentTab === "solved" ? solvedThreads : []);
+      arr.forEach((t) => (e.target.checked ? selectedIds.add(t.id) : selectedIds.delete(t.id)));
+      renderLists();
+    });
+    // Click anywhere outside an open ⋮ dropdown closes it — the menu and
+    // its own trigger button both stop propagation on their own clicks
+    // (see buildItemMenu/renderItem), so anything that reaches here is
+    // genuinely "elsewhere".
+    document.addEventListener("click", () => {
+      if (openItemMenuId !== null) { openItemMenuId = null; renderLists(); }
+    });
 
     const RECALL_TYPE_META = {
       "delete-thread": { icon: "🗑", badge: "Deleted" },
@@ -270,10 +363,9 @@
       "recall-reply": { icon: "↩️", badge: "Recalled reply" },
     };
 
-    // Admin-only — loadRecallLog() is only ever called when isAdmin is
-    // true (see bootDashboard/switchTab), and the server 401s the
-    // endpoint for anyone else regardless, so this never actually runs
-    // for a non-admin account even if something called it directly.
+    // Admin-only — the whole #recallSection is display:none for non-admins
+    // (set in bootDashboard), and the server 401s this endpoint for them
+    // too, so this never actually runs for a non-admin account.
     async function loadRecallLog() {
       try {
         const res = await authFetch("/api/deletion-log", { cache: "no-store" });
@@ -281,50 +373,33 @@
         const data = await res.json();
         if (!data.ok) return;
         recallEntries = data.entries || [];
-        renderTabs(); // Recall tab's count badge needs to reflect the fresh entry count
-        if (currentTab === "recall") renderRecallList();
+        renderRecallList();
       } catch {
         // Network hiccup — leave the list as-is, try again next poll.
       }
     }
 
-    // Renders straight into the shared #threadList container — same one
-    // Active/Solved use — since only one of the three is ever visible at
-    // a time now (see switchTab). Deliberately NOT run through the
-    // virtualized renderer above: this list is a low-frequency audit
-    // log, not a live queue agents are bulk-acting on and not something
-    // that grows into the thousands, so a plain innerHTML replace is
-    // simpler and gives up nothing worth having here.
     function renderRecallList() {
-      // Both branches below replace #threadList's entire innerHTML,
-      // which destroys the virtualized-list scaffold's sizer element
-      // (see renderVirtualList/ensureVirtualScaffold above) without
-      // telling it — if `sizerEl` still pointed at that now-detached
-      // node, switching back to Active/Solved afterward would silently
-      // stop updating the *real* scroll height (rows would still
-      // render, but the scrollbar/scroll math would be wrong). Resetting
-      // it here forces a clean rebuild next time this tab has items.
-      sizerEl = null;
+      document.getElementById("recallCount").textContent = recallEntries.length;
+      const list = document.getElementById("recallList");
       if (!recallEntries.length) {
-        threadList.innerHTML = '<div class="threads-empty">No deletions logged yet.</div>';
+        list.innerHTML = '<div class="threads-empty">No deletions logged yet.</div>';
         return;
       }
-      threadList.innerHTML = recallEntries.map((e) => {
+      list.innerHTML = recallEntries.map((e) => {
         const meta = RECALL_TYPE_META[e.type] || { icon: "🗑", badge: e.type };
         return `
           <div class="thread-item recall-item">
             <div class="icon">${meta.icon}</div>
             <div class="meta">
-              <div class="top-line">
-                <div class="t-title"><span class="r-badge">${escapeHtml(meta.badge)}</span>${escapeHtml(e.threadTitle || "")}</div>
-                <div class="t-time">${timeAgo(e.ts)}</div>
-              </div>
-              <div class="bottom-line"><div class="t-sub">${escapeHtml(e.by || "unknown")}${e.brand ? " · " + escapeHtml(e.brand) : ""}</div></div>
+              <div class="t-title"><span class="badge">${escapeHtml(meta.badge)}</span>${escapeHtml(e.threadTitle || "")}</div>
+              <div class="t-sub">${escapeHtml(e.by || "unknown")} · ${timeAgo(e.ts)}${e.brand ? " · " + escapeHtml(e.brand) : ""}</div>
               <div class="t-content">${escapeHtml((e.content || "").slice(0, 120))}</div>
             </div>
           </div>`;
       }).join("");
       polishEmoji();
+      updateAllThreadsCard();
     }
 
     document.getElementById("threadSearch").addEventListener("input", (e) => {
@@ -418,466 +493,271 @@
       localStorage.setItem(`lastseen:${id}`, String(count));
     }
 
-    // ---- Diffed sidebar rendering (see sidebar-diffed-rendering.md) ----
-    // id -> { el, key } — which real DOM node each thread currently maps
-    // to, and the "fingerprint" that node's content was last built from.
-    // Deliberately ONE shared table, not split per-section (active/solved):
-    // a thread can move between sections (e.g. Solved -> reopened by a new
-    // customer message in threads.js), and a shared table turns that into
-    // a plain "fingerprint changed -> reuse+reposition the same node" case
-    // instead of needing special cross-table migration logic.
-    const renderedItemEls = new Map();
-
-    // Every field that can change how renderItem() below looks/behaves
-    // needs to be in here — a missed field means "data changed but the
-    // row silently doesn't update" (fingerprint stays the same).
-    //
-    // Deliberately EXCLUDES checkedThreadIds.has(t.id): whether a row is
-    // checked changes constantly (every click, and especially Select
-    // All/None which flips it for every row in the section at once) but
-    // never changes the row's *structure* — only a class and a checkbox's
-    // `.checked` property. If it were part of the fingerprint, toggling
-    // Select All on a large list (hundreds+ rows) would invalidate every
-    // row's fingerprint simultaneously and force a full remove+recreate+
-    // re-bind-listeners pass across all of them in one synchronous tick —
-    // a real, user-visible freeze, not just "diffing overhead". Checked
-    // state is synced separately in reconcileSection via syncCheckedState,
-    // which is cheap enough to run unconditionally on every row every pass.
+    // Everything renderItem()'s markup/handlers depend on — if none of
+    // this changed since the node was last built, the existing DOM node
+    // can be reused as-is (see renderLists()) instead of torn down and
+    // recreated.
     function itemRenderKey(t) {
-      const unread = Math.max(0, (t.replyCount || 0) - getSeenCount(t.id));
       return [
         t.title, t.submitter, t.lastActivity, t.replyCount, t.solved,
-        t.accent, t.icon, unread,
-        t.id === selectedId,            // selected/open row
-        selectMode,                     // bulk-select mode toggles the row's whole markup
+        t.accent, t.icon, getSeenCount(t.id),
+        t.id === selectedId, selectMode, selectedIds.has(t.id),
+        openItemMenuId === t.id,
       ].join("|");
     }
 
-    // Cheap, structure-preserving sync of just the checked visual state —
-    // no element creation, no innerHTML, no listener rebinding. Safe to
-    // call on every row every reconcile pass (reused or freshly built).
-    function syncCheckedState(entry, t) {
-      const isChecked = checkedThreadIds.has(t.id);
-      entry.el.classList.toggle("checked", isChecked);
-      if (selectMode) {
-        const cb = entry.el.querySelector(".thread-item-checkbox");
-        if (cb && cb.checked !== isChecked) cb.checked = isChecked;
-      }
-    }
-
-    // ---- Virtualized list rendering ---------------------------------
-    // Replaces the old reconcileSection(), which built a real DOM node
-    // for every single item every time — fine for Active (usually a
-    // handful of threads) but the actual cost behind "clicking Solved
-    // (1600+ threads) is laggy every time", including after a full page
-    // reload (Home → back into Threads), where the renderedItemEls
-    // cache from a previous tab-switch has nothing to reuse anyway.
-    //
-    // The fix: only the rows physically inside (plus a small overscan
-    // buffer around) #threadList's visible viewport ever become real
-    // DOM nodes. Everything else exists purely as `items[i]` — a single
-    // absolutely-positioned "sizer" element gives #threadList the
-    // correct total scrollHeight so the scrollbar/scrolling feel exactly
-    // like a normal list, and each visible row is positioned with an
-    // explicit `top: i * ROW_HEIGHT` instead of relying on normal
-    // document flow. This means opening a 1600-thread tab costs the same
-    // ~20-30 DOM nodes as opening a 1-thread tab — the 1600 only affects
-    // the sizer's height (one number), never how many nodes get built.
-    //
-    // CARD_HEIGHT is forced onto every row via inline style (height +
-    // overflow:hidden + box-sizing:border-box) rather than measured from
-    // a real rendered row — an earlier version tried to *measure* one
-    // row and use that as ROW_HEIGHT, which produced the empty-looking
-    // gaps between cards: the measurement ran before twemoji.parse()
-    // had finished swapping emoji characters for <img> tags, so it
-    // sometimes captured a slightly-too-short pre-emoji height, then
-    // positioned every row that height apart while the real (post-
-    // emoji) row was taller — the gap between cards WAS real leftover
-    // space, not an illusion. Forcing a fixed height instead makes every
-    // row's on-screen size a deterministic constant instead of something
-    // dependent on measurement timing, so there's nothing left to get
-    // out of sync.
-    const CARD_HEIGHT = 60; // .thread-item's own content (icon/text) comfortably fits within this — padding(9*2) + max(icon 36, two lines of text ~33) ≈ 54, plus a few px of breathing room
-    const ROW_GAP = 6;      // visual gap between cards, replaces the old flex `gap` (absolutely-positioned rows don't get flex gap for free)
-    const ROW_HEIGHT = CARD_HEIGHT + ROW_GAP;
-    const OVERSCAN_ROWS = 8; // extra rows rendered just outside the viewport so fast scrolling doesn't show blank gaps for a frame
-    let sizerEl = null;          // the element whose height makes #threadList's scrollbar correct; null whenever the scaffold needs rebuilding
-    let currentVirtualItems = []; // the array the scroll listener re-renders against — always the tab's items array from the most recent renderVirtualList() call
-
-    function ensureVirtualScaffold() {
-      if (sizerEl) return;
-      threadList.innerHTML = "";
-      sizerEl = document.createElement("div");
-      sizerEl.setAttribute("aria-hidden", "true");
-      sizerEl.style.cssText = "position:absolute;top:0;left:0;width:1px;pointer-events:none;visibility:hidden;";
-      threadList.appendChild(sizerEl);
-    }
-
-    function renderVirtualList(items) {
-      currentVirtualItems = items;
-      ensureVirtualScaffold();
-      renderVirtualWindow();
-    }
-
-    let virtualRafPending = false;
-    function scheduleVirtualWindowRender() {
-      if (virtualRafPending) return;
-      virtualRafPending = true;
-      requestAnimationFrame(() => { virtualRafPending = false; renderVirtualWindow(); });
-    }
-
-    function renderVirtualWindow() {
-      const items = currentVirtualItems;
-      if (!items.length || !sizerEl) return;
-      sizerEl.style.height = (items.length * ROW_HEIGHT) + "px";
-
-      const scrollTop = threadList.scrollTop;
-      const viewportH = threadList.clientHeight || 500;
-      let start = Math.floor(scrollTop / ROW_HEIGHT) - OVERSCAN_ROWS;
-      let end = Math.ceil((scrollTop + viewportH) / ROW_HEIGHT) + OVERSCAN_ROWS;
-      start = Math.max(0, start);
-      end = Math.min(items.length, end);
-
-      const touchedEls = [];
-      const windowIds = new Set();
-
-      for (let i = start; i < end; i++) {
-        const item = items[i];
-        windowIds.add(item.id);
-        const key = itemRenderKey(item);
-        let entry = renderedItemEls.get(item.id);
-        if (!entry || entry.key !== key) {
-          if (entry && entry.el.parentNode) entry.el.remove();
-          entry = { el: renderItem(item), key };
-          entry.el.style.position = "absolute";
-          entry.el.style.left = "0";
-          entry.el.style.right = "0";
-          entry.el.style.height = CARD_HEIGHT + "px";
-          entry.el.style.overflow = "hidden";
-          entry.el.style.boxSizing = "border-box";
-          renderedItemEls.set(item.id, entry);
-          touchedEls.push(entry.el);
-        }
-        entry.el.style.top = (i * ROW_HEIGHT) + "px"; // every row's top, reused or not — its index can shift even when its own data didn't change (e.g. a new thread landed above it)
-        syncCheckedState(entry, item);
-        if (entry.el.parentNode !== threadList) threadList.appendChild(entry.el);
-      }
-
-      // Detach anything that scrolled out of the window (or belonged to
-      // a tab switched away from) this pass. Left IN renderedItemEls —
-      // scrolling back, or switching tabs back, finds the cached
-      // { el, key } and reuses it outright instead of rebuilding, same
-      // principle as everywhere else in this file.
-      for (const [id, entry] of renderedItemEls) {
-        if (windowIds.has(id)) continue;
-        if (entry.el.parentNode === threadList) entry.el.remove();
-      }
-
-      if (touchedEls.length) polishEmoji(threadList);
-    }
-
-    threadList.addEventListener("scroll", scheduleVirtualWindowRender, { passive: true });
-
-
-
     function renderItem(t) {
       const el = document.createElement("div");
-      const isChecked = checkedThreadIds.has(t.id);
-      el.className = "thread-item" + (t.id === selectedId ? " selected" : "") + (isChecked ? " checked" : "");
-      el.style.setProperty("--thread-accent", t.accent || "#7c6cf0");
       const unread = Math.max(0, (t.replyCount || 0) - getSeenCount(t.id));
+      const checked = selectedIds.has(t.id);
+      el.className = "thread-item" + (t.id === selectedId ? " selected" : "") + (selectMode ? " select-mode" : "");
+      el.style.setProperty("--thread-accent", t.accent || "#7c6cf0");
       el.innerHTML = `
         ${selectMode
-          ? `<div class="check"><input type="checkbox" class="thread-item-checkbox" ${isChecked ? "checked" : ""} /></div>`
-          : `<div class="icon" style="background:${(t.accent || "#7c6cf0")}33;">${t.icon || "🔔"}</div>`
-        }
+          ? `<input type="checkbox" class="thread-item-check" ${checked ? "checked" : ""} />`
+          : `<div class="icon" style="background:${(t.accent || "#7c6cf0")}33;">${t.icon || "🔔"}</div>`}
         <div class="meta">
-          <div class="top-line">
-            <div class="t-title">${escapeHtml(t.title)}</div>
-            <div class="t-time">${timeAgo(t.lastActivity)}</div>
-          </div>
-          <div class="bottom-line">
-            <div class="t-sub">${escapeHtml(t.submitter)}${t.replyCount ? " · " + t.replyCount + " reply" : ""}</div>
-            ${unread > 0 ? `<span class="badge-new">${unread > 99 ? "99+" : unread}</span>` : ""}
-            ${t.solved ? '<span class="t-done">✓</span>' : ""}
-          </div>
+          <div class="t-title">${escapeHtml(t.title)}</div>
+          <div class="t-sub">${escapeHtml(t.submitter)} · ${timeAgo(t.lastActivity)}${t.replyCount ? " · " + t.replyCount + " reply" : ""}</div>
         </div>
-        ${!selectMode ? '<span class="thread-kebab">⋮</span>' : ""}
+        ${unread > 0 ? `<span class="unread-badge">${unread > 99 ? "99+" : unread}</span>` : ""}
+        ${t.solved ? '<span class="t-done">✓</span>' : ""}
+        ${selectMode ? "" : '<button type="button" class="item-menu-btn" title="More">⋮</button>'}
       `;
       if (selectMode) {
-        el.querySelector(".thread-item-checkbox").addEventListener("click", (e) => {
-          e.stopPropagation();
-          toggleThreadChecked(t.id);
+        el.addEventListener("click", (e) => {
+          if (e.target.closest(".thread-item-check")) return; // its own change handler covers this
+          toggleThreadSelected(t.id);
         });
-        el.addEventListener("click", () => toggleThreadChecked(t.id));
+        el.querySelector(".thread-item-check").addEventListener("change", () => toggleThreadSelected(t.id));
       } else {
-        el.querySelector(".thread-kebab").addEventListener("click", (e) => {
-          e.stopPropagation();
-          openThreadKebabMenu(t, e.currentTarget);
-        });
-        el.addEventListener("click", () => {
+        el.addEventListener("click", (e) => {
+          if (e.target.closest(".item-menu-btn")) return;
           if (t.id !== selectedId) { pendingAttachments = []; replyTarget = null; }
           openThread(t.id);
         });
+        el.querySelector(".item-menu-btn").addEventListener("click", (e) => {
+          e.stopPropagation();
+          openItemMenuId = openItemMenuId === t.id ? null : t.id;
+          renderLists();
+        });
+        if (openItemMenuId === t.id) el.appendChild(buildItemMenu(t, unread));
       }
       return el;
     }
 
-    // ---- Per-row ⋮ menu: Select / Mark as read / Solved(-Not solved) --
-    function closeThreadKebabMenu() {
-      document.querySelectorAll(".thread-kebab-menu").forEach((m) => m.remove());
-      openKebabId = null;
-    }
-    function openThreadKebabMenu(t, anchorEl) {
-      closeThreadKebabMenu();
-      openKebabId = t.id;
-      const isUnread = Math.max(0, (t.replyCount || 0) - getSeenCount(t.id)) > 0;
+    // The ⋮ dropdown for a single thread row — the last two rows are
+    // dynamic (which one shows depends on the ticket's current state),
+    // see the feature doc's ⋮ menu table.
+    function buildItemMenu(t, unread) {
       const menu = document.createElement("div");
-      menu.className = "thread-kebab-menu";
+      menu.className = "item-menu";
       menu.innerHTML = `
-        <div class="thread-kebab-item" data-act="select">☐ Select</div>
-        <div class="thread-kebab-divider"></div>
-        <div class="thread-kebab-item" data-act="read">${isUnread ? '<span style="color:#38bdf8;">✓</span> Mark as read' : '<span style="color:#9aa3c4;">○</span> Mark as unread'}</div>
-        <div class="thread-kebab-item" data-act="solve">${t.solved ? '<span style="color:#f87171;">✕</span> Not solved' : '<span style="color:#34d399;">✅</span> Solved'}</div>
+        <div class="item-menu-option" data-action="select"><span class="item-menu-icon">☐</span>Select</div>
+        ${unread > 0
+          ? '<div class="item-menu-option" data-action="markread"><span class="item-menu-icon ok">✓</span>Mark as read</div>'
+          : '<div class="item-menu-option" data-action="markunread"><span class="item-menu-icon">○</span>Mark as unread</div>'}
+        ${t.solved
+          ? '<div class="item-menu-option" data-action="unsolve"><span class="item-menu-icon danger">✕</span>Not solved</div>'
+          : '<div class="item-menu-option" data-action="solve"><span class="item-menu-icon ok">✅</span>Solved</div>'}
       `;
-      document.body.appendChild(menu);
-      const rect = anchorEl.getBoundingClientRect();
-      menu.style.top = `${rect.bottom + 4}px`;
-      menu.style.left = `${Math.max(8, rect.right - menu.offsetWidth || 170)}px`;
-      // Flip up if it would run off the bottom of the viewport.
-      const menuHeight = menu.scrollHeight || 130;
-      if (rect.bottom + menuHeight + 8 > window.innerHeight) {
-        menu.style.top = "";
-        menu.style.bottom = `${window.innerHeight - rect.top + 4}px`;
+      menu.addEventListener("click", (e) => {
+        e.stopPropagation();
+        const opt = e.target.closest("[data-action]");
+        if (!opt) return;
+        handleItemMenuAction(t, opt.dataset.action);
+      });
+      return menu;
+    }
+
+    function toggleThreadSelected(id) {
+      if (selectedIds.has(id)) selectedIds.delete(id); else selectedIds.add(id);
+      renderLists();
+    }
+
+    function handleItemMenuAction(t, action) {
+      openItemMenuId = null;
+      if (action === "select") {
+        selectMode = true;
+        selectedIds.add(t.id);
+      } else if (action === "markread") {
+        markSeen(t.id, t.replyCount || 0);
+      } else if (action === "markunread") {
+        markSeen(t.id, 0);
+      } else if (action === "solve" || action === "unsolve") {
+        setThreadSolvedById(t.id, action === "solve");
       }
-      menu.querySelector('[data-act="select"]').addEventListener("click", () => {
-        closeThreadKebabMenu();
-        enterSelectMode(t.id);
-      });
-      menu.querySelector('[data-act="read"]').addEventListener("click", () => {
-        closeThreadKebabMenu();
-        // Unread → seen count catches up to the current reply count.
-        // Read → force back to unread by zeroing the seen count, same
-        // "as if never opened" semantics as Gmail's Mark as unread.
-        markSeen(t.id, isUnread ? (t.replyCount || 0) : 0);
-        renderLists();
-      });
-      menu.querySelector('[data-act="solve"]').addEventListener("click", () => {
-        closeThreadKebabMenu();
-        toggleThreadSolvedById(t.id, !t.solved);
-      });
-    }
-    document.addEventListener("click", closeThreadKebabMenu);
-    document.addEventListener("scroll", (e) => {
-      if (e.target.closest && e.target.closest(".thread-kebab-menu")) return;
-      closeThreadKebabMenu();
-    }, true);
-
-    // Single-thread solve/unsolve without opening the detail view — same
-    // /api/threads/<id> action toggleSolved() below uses, just addressed
-    // by id instead of always acting on selectedThread.
-    async function toggleThreadSolvedById(id, makeSolved) {
-      const res = await authFetch(`/api/threads/${id}`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: makeSolved ? "solve" : "unsolve" }),
-      });
-      const data = await res.json();
-      if (!data.ok) return;
-      patchLocalThread(data.thread);
-      if (selectedId === id) { selectedThread = data.thread; updateThreadContent(selectedThread, true); }
+      renderLists();
     }
 
-    // ---- Tabs (Active / Solved / Recall) — replaces the old three
-    // stacked collapsible sections. Only one of the three is ever
-    // visible/rendered into #threadList at a time.
-    function currentItems() {
-      return currentTab === "active" ? activeThreads : currentTab === "solved" ? solvedThreads : [];
+    // Toggles solved/unsolved for an arbitrary thread id — used by the ⋮
+    // menu and by bulk actions below, neither of which necessarily has
+    // that thread open as selectedThread (toggleSolved() further down
+    // stays as the top-of-ticket status-chip's own version of this, which
+    // always operates on selectedThread).
+    async function setThreadSolvedById(id, solved) {
+      try {
+        const res = await authFetch(`/api/threads/${id}`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ action: solved ? "solve" : "unsolve" }),
+        });
+        const data = await res.json();
+        if (!data.ok) return;
+        patchLocalThread(data.thread);
+        if (selectedId === id) {
+          selectedThread = data.thread;
+          updateThreadContent(selectedThread, true);
+        }
+      } catch {
+        // Network hiccup — leave state as-is, agent can retry from the menu.
+      }
     }
 
-    function renderTabs() {
-      const tabs = [
-        { id: "active", label: "Active", count: activeThreads.length, dot: "💬" },
-        { id: "solved", label: "Solved", count: solvedThreads.length, dot: "✓" },
-      ];
-      // Recall only ever appears here when isAdmin is true — a non-admin's
-      // tab list simply never gets a third entry, same as #recallSection
-      // used to be display:none for them. No "locked" state to design
-      // for; it's just absent, and the server 401s the endpoint anyway.
-      if (isAdmin) tabs.push({ id: "recall", label: "Recall", count: recallEntries.length, dot: "↩️" });
-      threadsTabs.innerHTML = tabs.map((t) => `
-        <div class="threads-tab${currentTab === t.id ? " active" : ""}${t.id === "recall" ? " recall" : ""}" data-tab="${t.id}">
-          <span class="dot">${t.dot}</span>
-          ${t.label} <span class="tab-count">${t.count}</span>
-        </div>
-      `).join("");
-      threadsTabs.querySelectorAll("[data-tab]").forEach((el) => {
-        el.addEventListener("click", () => switchTab(el.dataset.tab));
-      });
+    // ---- Select batch mode bulk actions ---------------------------------
+    function renderBulkBar() {
+      const bar = document.getElementById("bulkActionBar");
+      if (!selectMode) { bar.style.display = "none"; return; }
+      bar.style.display = "flex";
+      const inSelection = [...activeThreads, ...solvedThreads].filter((t) => selectedIds.has(t.id));
+      const readBtn = document.getElementById("bulkReadBtn");
+      const solveBtn = document.getElementById("bulkSolveBtn");
+      const nothingSelected = inSelection.length === 0;
+      readBtn.disabled = nothingSelected;
+      solveBtn.disabled = nothingSelected;
+      if (nothingSelected) return; // leave whatever label was already showing — just greyed out, not clickable
+      const anyUnread = inSelection.some((t) => Math.max(0, (t.replyCount || 0) - getSeenCount(t.id)) > 0);
+      readBtn.textContent = anyUnread ? "✓ Mark as read" : "○ Mark as unread";
+      readBtn.classList.toggle("tone-positive", anyUnread);
+      readBtn.classList.toggle("tone-negative", !anyUnread);
+      readBtn.dataset.mode = anyUnread ? "read" : "unread";
+      const anyUnsolved = inSelection.some((t) => !t.solved);
+      solveBtn.textContent = anyUnsolved ? "✅ Solved" : "✕ Not solved";
+      solveBtn.classList.toggle("tone-positive", anyUnsolved);
+      solveBtn.classList.toggle("tone-negative", !anyUnsolved);
+      solveBtn.dataset.mode = anyUnsolved ? "solve" : "unsolve";
     }
 
-    function switchTab(tab) {
-      if (tab === currentTab) return;
-      if (selectMode) exitSelectMode(); // leaving mid bulk-select cancels it, same as hitting Cancel
-      currentTab = tab;
-      if (currentTab === "recall") { renderTabs(); renderHeader(); renderRecallList(); }
-      else renderLists(); // renderLists() calls renderTabs() + renderHeader() itself
+    // The single "Select all" checkbox (now shared by both tabs instead
+    // of one per section) reflects whether every thread in the CURRENTLY
+    // OPEN tab is selected — Recall never renders this row at all (no
+    // bulk actions there), so this is never called while currentTab is
+    // "recall" in practice, but guards anyway.
+    function syncTabSelectAll() {
+      const cb = document.getElementById("tabSelectAll");
+      const arr = currentTab === "active" ? activeThreads : (currentTab === "solved" ? solvedThreads : []);
+      cb.checked = arr.length > 0 && arr.every((t) => selectedIds.has(t.id));
     }
 
-    function renderHeader() {
+    // Drives the "All threads" card's subtitle, count badge, and the
+    // Select/Cancel button label+visibility — recomputed after every
+    // render (renderLists() for Active/Solved, renderRecallList() for
+    // Recall) so it always reflects whichever tab is currently open.
+    function updateAllThreadsCard() {
+      const labelMap = { active: "Active", solved: "Solved", recall: "Recall" };
+      const sub = document.getElementById("allThreadsSub");
+      const countEl = document.getElementById("allThreadsCount");
+      const toggleBtn = document.getElementById("selectToggleBtn");
+      toggleBtn.style.display = currentTab === "recall" ? "none" : "";
+      toggleBtn.textContent = selectMode ? "Cancel" : "Select";
       if (currentTab === "recall") {
-        threadsHeaderIcon.textContent = "↩️";
-        threadsHeaderTitle.textContent = "Recall Chat History";
-        threadsHeaderSubtitle.textContent = "Deleted and recalled messages";
-        threadsHeaderCount.textContent = recallEntries.length;
-        threadsSelectToggleBtn.style.display = "none"; // recall entries aren't bulk-actionable
-        threadsSearchBar.style.display = "none";
-        threadsBackLink.classList.add("open");
+        sub.textContent = `Recall log · ${recallEntries.length} ${recallEntries.length === 1 ? "entry" : "entries"}`;
+        countEl.textContent = recallEntries.length;
         return;
       }
-      threadsHeaderIcon.textContent = "💬";
-      threadsHeaderTitle.textContent = "All Threads";
-      threadsSelectToggleBtn.style.display = "";
-      threadsSearchBar.style.display = "";
-      threadsBackLink.classList.remove("open");
-      const items = currentItems();
-      threadsHeaderCount.textContent = items.length;
-      if (currentTab === "active") {
-        const unreadCount = items.filter((t) => Math.max(0, (t.replyCount || 0) - getSeenCount(t.id)) > 0).length;
-        threadsHeaderSubtitle.innerHTML = `Active threads · <span class="new-count">${unreadCount} new repl${unreadCount === 1 ? "y" : "ies"}</span>`;
-      } else {
-        threadsHeaderSubtitle.textContent = "Solved threads";
-      }
+      const arr = currentTab === "active" ? activeThreads : solvedThreads;
+      const unread = arr.filter((t) => Math.max(0, (t.replyCount || 0) - getSeenCount(t.id)) > 0).length;
+      sub.textContent = `${labelMap[currentTab]} threads · ${unread} new ${unread === 1 ? "reply" : "replies"}`;
+      countEl.textContent = selectMode ? selectedIds.size : arr.length;
     }
 
-    threadsBackLink.addEventListener("click", () => switchTab("active"));
-    threadsSelectToggleBtn.addEventListener("click", () => {
-      selectMode ? exitSelectMode() : enterSelectMode(null);
-    });
-
-    // ---- Select mode (bulk actions) ------------------------------------
-    function enterSelectMode(preselectId) {
-      selectMode = true;
-      checkedThreadIds.clear();
-      if (preselectId) checkedThreadIds.add(preselectId);
-      threadsSelectToggleBtn.textContent = "Cancel";
-      threadsSelectAllRow.classList.add("open");
-      renderLists();
-      updateSelectBar();
-    }
-    function exitSelectMode() {
+    function runBulkReadToggle() {
+      const makeRead = document.getElementById("bulkReadBtn").dataset.mode === "read";
+      [...activeThreads, ...solvedThreads].forEach((t) => {
+        if (selectedIds.has(t.id)) markSeen(t.id, makeRead ? (t.replyCount || 0) : 0);
+      });
       selectMode = false;
-      checkedThreadIds.clear();
-      threadsSelectToggleBtn.textContent = "Select";
-      threadsSelectAllRow.classList.remove("open");
-      threadsSelectAll.checked = false;
+      selectedIds.clear();
       renderLists();
-      updateSelectBar();
     }
-    function toggleThreadChecked(id) {
-      if (checkedThreadIds.has(id)) checkedThreadIds.delete(id);
-      else checkedThreadIds.add(id);
+
+    async function runBulkSolveToggle() {
+      const readBtn = document.getElementById("bulkReadBtn");
+      const solveBtn = document.getElementById("bulkSolveBtn");
+      const solving = solveBtn.dataset.mode === "solve";
+      const ids = Array.from(selectedIds);
+      readBtn.disabled = true;
+      solveBtn.disabled = true;
+      await Promise.all(ids.map((id) => setThreadSolvedById(id, solving)));
+      readBtn.disabled = false;
+      solveBtn.disabled = false;
+      selectMode = false;
+      selectedIds.clear();
       renderLists();
-      updateSelectBar();
+      loadList(document.getElementById("threadSearch").value);
     }
-    function updateSelectBar() {
-      const bar = document.getElementById("threadsSelectBar");
-      bar.classList.toggle("open", selectMode);
-      document.getElementById("selCount").textContent = `${checkedThreadIds.size}`;
-      const items = currentItems();
-      threadsSelectAll.checked = selectMode && items.length > 0 && items.every((t) => checkedThreadIds.has(t.id));
-      const checkedThreads = items.filter((t) => checkedThreadIds.has(t.id));
-      // Mark as read / Mark as unread — "Mark as read" if any checked
-      // thread still has unread replies, otherwise (every checked thread
-      // is already fully read) "Mark as unread" to bulk-reset them
-      // instead. Mirrors the single-row kebab menu's own toggle.
-      const anyUnread = checkedThreads.some((t) => Math.max(0, (t.replyCount || 0) - getSeenCount(t.id)) > 0);
-      const readBtn = document.getElementById("selMarkReadBtn");
-      readBtn.innerHTML = anyUnread || !checkedThreads.length
-        ? '<span style="color:#38bdf8;">✓</span> Mark as read'
-        : '<span style="color:#9aa3c4;">○</span> Mark as unread';
-      readBtn.dataset.makeRead = anyUnread ? "1" : "0";
-      readBtn.disabled = !checkedThreads.length;
-      // Solved button label — "Solved" if any checked thread still needs
-      // solving, otherwise (every checked thread is already solved)
-      // "Not solved" to bulk-reopen them instead. Mirrors the single-row
-      // kebab menu's own Solved/Not-solved toggle.
-      const anyUnsolved = checkedThreads.some((t) => !t.solved);
-      const solveBtn = document.getElementById("selSolveBtn");
-      solveBtn.innerHTML = anyUnsolved || !checkedThreads.length
-        ? '<span style="color:#34d399;">✅</span> Solved'
-        : '<span style="color:#f87171;">✕</span> Not solved';
-      solveBtn.dataset.makeSolved = anyUnsolved ? "1" : "0";
-      solveBtn.disabled = !checkedThreads.length;
-    }
-    document.getElementById("selCancelBtn").addEventListener("click", exitSelectMode);
-    document.getElementById("selMarkReadBtn").addEventListener("click", () => {
-      const makeRead = document.getElementById("selMarkReadBtn").dataset.makeRead === "1";
-      const checkedThreads = currentItems().filter((t) => checkedThreadIds.has(t.id));
-      checkedThreads.forEach((t) => markSeen(t.id, makeRead ? (t.replyCount || 0) : 0));
-      exitSelectMode();
-    });
-    document.getElementById("selSolveBtn").addEventListener("click", async () => {
-      const makeSolved = document.getElementById("selSolveBtn").dataset.makeSolved === "1";
-      const ids = [...checkedThreadIds];
-      await Promise.all(ids.map((id) => toggleThreadSolvedById(id, makeSolved)));
-      exitSelectMode();
-    });
-    threadsSelectAll.addEventListener("click", (e) => {
-      e.stopPropagation();
-      const items = currentItems();
-      const allChecked = items.length > 0 && items.every((t) => checkedThreadIds.has(t.id));
-      items.forEach((t) => { if (allChecked) checkedThreadIds.delete(t.id); else checkedThreadIds.add(t.id); });
-      renderLists();
-      updateSelectBar();
-    });
 
     function polishEmoji(root) {
       if (window.twemoji) window.twemoji.parse(root || document.body, { folder: "svg", ext: ".svg" });
     }
 
-    // Reconciles the single #threadList container to whichever of
-    // Active/Solved is the current tab (Recall has its own render path,
-    // renderRecallList(), and never calls this). See
-    // PATTERNS-bulk-list-operations.md for why "checked" stays out of
-    // itemRenderKey() above — that's what keeps Select All on a big list
-    // from freezing the tab, independent of this function. Actual row
-    // building now happens through renderVirtualList() (see above) —
-    // only the visible window ever becomes real DOM, regardless of how
-    // many thousand threads are in `items`.
-    function renderLists() {
-      renderTabs();   // keeps the Active/Solved pill counts current on every data refresh, not just on tab switches
-      renderHeader();
-      const items = currentItems();
-
-      // Empty state is placeholder DOM, not a data item — handled outside
-      // renderedItemEls (see sidebar-diffed-rendering.md §3.4).
-      const emptyEl = threadList.querySelector(".threads-empty");
-      if (!items.length) {
-        if (!emptyEl) {
-          threadList.innerHTML = currentTab === "active"
-            ? '<div class="threads-empty">No active threads.<br/>Submit a form to start one.</div>'
-            : '<div class="threads-empty">No solved threads yet.</div>';
-          sizerEl = null; // the innerHTML assignment above just destroyed the virtual scaffold, if one existed — forces a clean rebuild next time this tab has items again
+    // Reconciles the sidebar to match activeThreads/solvedThreads without
+    // rebuilding it from scratch — reuses each thread's existing DOM node
+    // (same identity, same listeners) whenever its itemRenderKey() hasn't
+    // changed, only relocating it if it moved between/within a section and
+    // only rebuilding its innerHTML when something it displays actually
+    // changed. This is what keeps a 6-second poll cheap even with a large
+    // Solved history: on a typical poll nothing in that history changed,
+    // so nothing there gets touched at all.
+    function reconcileSection(container, threads, touchedEls) {
+      let prevEl = null;
+      threads.forEach((t) => {
+        const key = itemRenderKey(t);
+        let entry = renderedItemEls.get(t.id);
+        if (!entry || entry.key !== key) {
+          if (entry) entry.el.remove(); // detach stale node before replacing the Map pointer, or it leaks as an orphan
+          entry = { el: renderItem(t), key };
+          renderedItemEls.set(t.id, entry);
+          touchedEls.push(entry.el);
         }
+        const wantPos = prevEl ? prevEl.nextSibling : container.firstChild;
+        if (entry.el.parentNode !== container || entry.el !== wantPos) {
+          container.insertBefore(entry.el, wantPos);
+        }
+        prevEl = entry.el;
+      });
+    }
+
+    function renderLists() {
+      activeCount.textContent = activeThreads.length;
+      solvedCount.textContent = solvedThreads.length;
+
+      const touchedEls = []; // nodes newly created or rebuilt this pass — only these need twemoji re-parsing
+
+      let activeEmpty = activeList.querySelector(".threads-empty");
+      if (!activeThreads.length) {
+        if (!activeEmpty) activeList.innerHTML = '<div class="threads-empty">No active threads.<br/>Submit a form to start one.</div>';
       } else {
-        if (emptyEl) emptyEl.remove();
-        renderVirtualList(items);
+        if (activeEmpty) activeEmpty.remove();
+        reconcileSection(activeList, activeThreads, touchedEls);
+      }
+      reconcileSection(solvedList, solvedThreads, touchedEls);
+
+      // Drop tracked nodes for threads that no longer exist in either list
+      // (deleted, or just filtered out by the current search) — everything
+      // still present was already repositioned/rebuilt above.
+      const currentIds = new Set([...activeThreads, ...solvedThreads].map((t) => t.id));
+      for (const [id, entry] of renderedItemEls) {
+        if (!currentIds.has(id)) {
+          entry.el.remove();
+          renderedItemEls.delete(id);
+        }
       }
 
-      // Fully forget threads that don't exist ANYWHERE anymore (deleted,
-      // or filtered out by search) — keeps renderedItemEls from growing
-      // forever over a long session. Threads that still exist but are
-      // just scrolled out of view, or on the other tab right now, are
-      // left alone here — see renderVirtualWindow(), which only detaches
-      // those (never deletes), which is what makes scrolling back or
-      // switching tabs back a cache hit instead of a rebuild.
-      const allKnownIds = new Set([...activeThreads, ...solvedThreads].map((t) => t.id));
-      for (const [id, entry] of renderedItemEls) {
-        if (allKnownIds.has(id)) continue;
-        entry.el.remove();
-        renderedItemEls.delete(id);
-      }
+      touchedEls.forEach((el) => polishEmoji(el));
+      renderBulkBar();
+      syncTabSelectAll();
+      updateAllThreadsCard();
     }
 
     async function loadList(q) {
@@ -926,11 +806,15 @@
         updateThreadContent(selectedThread);
         markSeen(selectedId, selectedThread.messages.length);
         renderLists();
+        loadMentionCandidatesForThread(selectedThread);
       } catch {
         // Network hiccup — leave the panel as-is, try again next poll.
       }
     }
 
+    // The header bar only (icon/title/status/action buttons) — this is
+    // the part that stays visually frozen at the top of the panel,
+    // never scrolls, regardless of ticket detail or conversation length.
     function buildHeaderHTML(t) {
       return `
         <div class="thread-detail-header">
@@ -940,24 +824,22 @@
           </div>
           <div class="thread-detail-actions">
             <button class="status-chip ${t.solved ? "solved" : "unsolved"}" id="solveBtn">${t.solved ? "✅ Solved" : "❌ Not Solved"}</button>
-            ${!t.rootRecalled && (!t.fieldMap || !t.brandId) ? '<button class="icon-btn icon-btn-labeled" id="editRootBtn" title="Edit the original Telegram message (plain text — this ticket predates field-level editing)">✏️ <span>Edit</span></button>' : ""}
-            ${!t.rootRecalled && t.fieldMap && t.brandId ? '<button class="icon-btn icon-btn-labeled" id="editDetailsBtn" title="Edit fields — syncs the Telegram message + the Sheet row (if any)">✏️ <span>Edit</span></button>' : ""}
-            ${t.fieldMap && t.brandId ? '<button class="icon-btn icon-btn-labeled" id="forwardBtn" title="Generate a new ticket in another Topic, pre-filled from this one">↗️ <span>Forward</span></button>' : ""}
-            ${!t.rootRecalled ? '<button class="icon-btn icon-btn-labeled" id="recallRootBtn" title="Recall (delete) the original Telegram message">↩️ <span>Recall</span></button>' : ""}
-            <button class="icon-btn icon-btn-labeled" id="deleteBtn" title="Delete this tracking record (Telegram + Sheet are untouched)">🗑 <span>Delete</span></button>
-            <button class="icon-btn icon-btn-labeled" id="refreshBtn" title="Refresh this thread"><span class="icon-btn-glyph">🔄</span> <span>Refresh</span></button>
+            ${!t.rootRecalled && (!t.fieldMap || !t.brandId) ? '<button class="icon-btn labeled" id="editRootBtn" title="Edit the original Telegram message (plain text — this ticket predates field-level editing)">✏️ Edit</button>' : ""}
+            ${!t.rootRecalled && t.fieldMap && t.brandId ? '<button class="icon-btn labeled" id="editDetailsBtn" title="Edit fields — syncs the Telegram message + the Sheet row (if any)">📊 Edit</button>' : ""}
+            ${t.fieldMap && t.brandId ? '<button class="icon-btn labeled" id="forwardBtn" title="Generate a new ticket in another Topic, pre-filled from this one">↗️ Forward</button>' : ""}
+            ${!t.rootRecalled ? '<button class="icon-btn labeled" id="recallRootBtn" title="Recall (delete) the original Telegram message">↩️ Recall</button>' : ""}
+            <button class="icon-btn labeled" id="deleteBtn" title="Delete this tracking record (Telegram + Sheet are untouched)">🗑 Delete</button>
+            <button class="icon-btn labeled" id="refreshBtn" title="Refresh this thread">🔄 Refresh</button>
           </div>
         </div>
         <hr class="thread-divider" />
       `;
     }
 
-    // Everything that USED to be fixed at the top along with the header
-    // (rootRecalled notice, the summary/attachments card) now scrolls
-    // together with the conversation instead — only the header itself
-    // (icon/title/Solved/✏️↗️↩️🗑🔄) stays pinned. See renderDetail() and
-    // updateThreadContent(), which prepend this to the scroll area's
-    // innerHTML rather than the fixed one.
+    // The ticket detail card (recalled notice + summary/rootText +
+    // attachments) — this now scrolls together with the conversation
+    // instead of staying pinned, since only the header bar above should
+    // stay frozen.
     function buildSummaryHTML(t) {
       return `
         ${t.rootRecalled ? `
@@ -975,11 +857,10 @@
           // undefined for older ones, so this cleanly renders nothing
           // rather than a broken button.
           const fileIds = t.attachmentFileIds || [];
-          const fileNames = t.attachmentNames || [];
           const attachmentButtons = fileIds.length ? `
             <div class="thread-summary-attachments">
               ${fileIds.map((fid, i) => `
-                <div class="inline-attach-slot" data-attachment-file="${escapeAttr(fid)}" data-attachment-name="${escapeAttr(fileNames[i] || `ticket-attachment-${i + 1}`)}">
+                <div class="inline-attach-slot" data-attachment-file="${escapeAttr(fid)}" data-attachment-name="ticket-attachment-${i + 1}">
                   <div class="inline-attach-loading">Loading attachment…</div>
                 </div>
               `).join("")}
@@ -1031,7 +912,41 @@
       return String(str).replace(/<[^>]*>/g, "");
     }
 
-    function buildConversationHTML(t) {
+    // ---- Conversation diffed rendering (2026-08) -------------------------
+    // Same reuse-DOM-nodes-instead-of-rebuilding pattern as the sidebar's
+    // reconcileSection()/renderedItemEls above, applied to the open
+    // thread's message list. Before this, updateThreadContent() replaced
+    // #threadScrollArea's ENTIRE innerHTML on every single poll (every 6s
+    // while a thread is open) even when nothing had actually changed —
+    // browsers reset a scrollable element's scrollTop to 0 the instant its
+    // own innerHTML is reassigned, so an agent scrolled up reading older
+    // messages got yanked back to the top of the conversation every few
+    // seconds ("page jumping"). The fix has two parts: (1) the scroll
+    // container's OWN innerHTML is never touched again after the initial
+    // open — only its persistent children (#threadSummaryBlock,
+    // #conversationTitle, #conversationList) get updated, and reassigning
+    // a CHILD's innerHTML does not reset the ancestor's scrollTop; (2)
+    // within #conversationList, each message keeps its own real DOM node
+    // across polls (reconcileConversation() below) instead of the whole
+    // list being torn down and rebuilt, so an unrelated new message
+    // arriving doesn't even touch the DOM of messages already on screen.
+    let renderedMsgEls = new Map(); // key -> { el, sig } — valid only for whichever thread is CURRENTLY open; cleared in renderDetail() every time a different thread is opened, since these nodes belong to that thread's own #conversationList container.
+
+    // messageId is the natural stable key (present on every message this
+    // dashboard itself sent, and on genuine incoming Telegram replies —
+    // see appendMessage() server-side); the ts+from fallback only ever
+    // matters for older, pre-messageId-tracking rows that might still be
+    // sitting in an old thread's history.
+    function msgKey(m) {
+      return m.messageId != null ? `id:${m.messageId}` : `i:${m.ts || ""}:${m.from || ""}`;
+    }
+
+    // Builds the {rootMessageId/messageId -> {from, text}} lookup
+    // renderMsg() needs to show a quoted preview above a reply-to-message
+    // — shared logic pulled out of the old buildConversationHTML() so
+    // both the full render and the diffed update use the exact same
+    // lookup, never two slightly different copies drifting apart.
+    function buildMsgById(t) {
       const msgById = {};
       if (t.rootMessageId) {
         msgById[t.rootMessageId] = { from: "Original ticket", text: stripHtmlTags(t.rootText || t.title || "") };
@@ -1039,12 +954,83 @@
       t.messages.forEach((m) => {
         if (m.messageId) msgById[m.messageId] = { from: m.from, text: m.text };
       });
-      return `
-        <div class="conversation-title">Conversation (${t.messages.length})</div>
-        <div class="conversation">
-          ${t.messages.length ? t.messages.map((m) => renderMsg(m, msgById)).join("") : '<div class="threads-empty">No replies yet — they\'ll show up here as soon as someone replies in Telegram.</div>'}
-        </div>
-      `;
+      return msgById;
+    }
+
+    function reconcileConversation(container, messages, msgById) {
+      let prevEl = null;
+      const seen = new Set();
+      messages.forEach((m) => {
+        const key = msgKey(m);
+        seen.add(key);
+        const sig = JSON.stringify(m); // any field renderMsg() reads is covered — simplest correct signature for a small per-message object
+        let entry = renderedMsgEls.get(key);
+        if (!entry || entry.sig !== sig) {
+          if (entry) entry.el.remove(); // detach the stale node before replacing the Map pointer, or it leaks as an orphan
+          const wrapper = document.createElement("div");
+          wrapper.innerHTML = renderMsg(m, msgById).trim();
+          const el = wrapper.firstElementChild;
+          wireMessageRowButtons(el); // exactly once, right here — see that function's own comment for why
+          entry = { el, sig };
+          renderedMsgEls.set(key, entry);
+        }
+        const wantPos = prevEl ? prevEl.nextSibling : container.firstChild;
+        if (entry.el.parentNode !== container || entry.el !== wantPos) {
+          container.insertBefore(entry.el, wantPos);
+        }
+        prevEl = entry.el;
+      });
+      // Drop nodes for messages that no longer exist (a recall/delete) —
+      // everything still present was already repositioned/reused above.
+      for (const [key, entry] of renderedMsgEls) {
+        if (!seen.has(key)) {
+          entry.el.remove();
+          renderedMsgEls.delete(key);
+        }
+      }
+    }
+
+    // Full (re)build of the conversation list — used only when opening/
+    // switching threads (renderDetail()), where starting completely fresh
+    // is correct and simpler; polls afterward go through
+    // reconcileConversation() via updateThreadContent() instead.
+    // Ticket-level summary content essentially never changes after
+    // creation except via a few specific actions (rootEdited, a forward
+    // link added, a recall) — this signature deliberately excludes
+    // anything about the ticket's OWN attachment slots' load state
+    // (buildSummaryHTML() always emits the same "Loading attachment…"
+    // placeholder markup regardless of whether loadInlineAttachments()
+    // has since filled it in with a real <img>/<video>). Comparing raw
+    // rebuilt HTML against the live DOM's innerHTML would therefore
+    // "detect a change" on every single poll once an attachment finishes
+    // loading — the DOM has an <img>, the freshly-built string still has
+    // the placeholder — endlessly rebuilding the block, discarding the
+    // loaded image, and re-showing "Loading attachment…" forever. This
+    // signature only tracks the fields that actually matter.
+    function summarySignature(t) {
+      return JSON.stringify({
+        rootRecalled: t.rootRecalled, rootEdited: t.rootEdited, rootText: t.rootText,
+        attachmentFileIds: t.attachmentFileIds, summary: t.summary,
+        forwardedFrom: t.forwardedFrom, forwardedTo: t.forwardedTo,
+      });
+    }
+    let lastSummarySig = null; // reset in renderDetail() whenever a different thread opens
+
+    function renderConversationList(t) {
+      const listEl = document.getElementById("conversationList");
+      if (!listEl) return;
+      if (!t.messages.length) {
+        renderedMsgEls.clear();
+        listEl.innerHTML = '<div class="threads-empty">No replies yet — they\'ll show up here as soon as someone replies in Telegram.</div>';
+        return;
+      }
+      // Covers the empty→non-empty transition (first reply landing while
+      // the thread is already open) — the placeholder above isn't a
+      // tracked message node, so reconcileConversation() would otherwise
+      // just insert the new message next to it instead of replacing it.
+      const placeholder = listEl.querySelector(".threads-empty");
+      if (placeholder) placeholder.remove();
+      reconcileConversation(listEl, t.messages, buildMsgById(t));
     }
 
     function wireTopButtons() {
@@ -1072,18 +1058,36 @@
       });
     }
 
-    function wireConversationButtons() {
-      document.querySelectorAll("[data-edit-reply]").forEach((btn) => {
+    // Scoped to #threadSummaryBlock only — that block's own innerHTML IS
+    // fully replaced whenever it changes (see updateThreadContent()), so
+    // re-wiring its cards every time is safe/correct (always fresh
+    // nodes). This is now separate from message-row buttons below, which
+    // persist across polls and must NOT be re-wired on every one (see
+    // reconcileConversation()'s new-node branch, where they're wired
+    // exactly once, at creation).
+    function wireGotoThreadCards(root) {
+      root.querySelectorAll("[data-goto-thread]").forEach((card) => {
+        card.addEventListener("click", () => openThread(card.dataset.gotoThread));
+      });
+    }
+
+    // Wires a single freshly-created message row's own action buttons —
+    // called once, at creation time, from reconcileConversation() below.
+    // NEVER called again for a node that's being reused across polls, or
+    // every poll would stack another duplicate listener on top of the
+    // last one (a real regression the old "rebuild everything, rewire
+    // everything" approach never had to worry about, since every node
+    // really was fresh every time — now that nodes persist, wiring has
+    // to happen exactly once per node instead).
+    function wireMessageRowButtons(el) {
+      el.querySelectorAll("[data-edit-reply]").forEach((btn) => {
         btn.addEventListener("click", () => editReply(btn.dataset.editReply, btn.dataset.currentText));
       });
-      document.querySelectorAll("[data-recall-reply]").forEach((btn) => {
+      el.querySelectorAll("[data-recall-reply]").forEach((btn) => {
         btn.addEventListener("click", () => recallReply(btn.dataset.recallReply));
       });
-      document.querySelectorAll("[data-reply-target]").forEach((btn) => {
+      el.querySelectorAll("[data-reply-target]").forEach((btn) => {
         btn.addEventListener("click", () => setReplyTarget(btn.dataset.replyTarget, btn.dataset.replyFrom, btn.dataset.replyText));
-      });
-      document.querySelectorAll("[data-goto-thread]").forEach((card) => {
-        card.addEventListener("click", () => openThread(card.dataset.gotoThread));
       });
     }
 
@@ -1102,11 +1106,15 @@
     function renderDetail() {
       const t = selectedThread;
       if (!t) return;
-      lastRenderedThreadFingerprint = threadContentFingerprint(t); // this IS the on-screen state now — keeps the very next poll's comparison honest
       main.innerHTML = `
         <div class="thread-top-fixed" id="threadTopFixed">${buildHeaderHTML(t)}</div>
-        <div class="thread-scroll-area" id="threadScrollArea">${buildSummaryHTML(t)}${buildConversationHTML(t)}</div>
-        <div class="thread-reply-fixed">          <div id="replyTargetBanner"></div>
+        <div class="thread-scroll-area" id="threadScrollArea">
+          <div id="threadSummaryBlock">${buildSummaryHTML(t)}</div>
+          <div class="conversation-title" id="conversationTitle">Conversation (${t.messages.length})</div>
+          <div class="conversation" id="conversationList"></div>
+        </div>
+        <div class="thread-reply-fixed">
+          <div id="replyTargetBanner"></div>
           <div class="reply-attach-preview" id="replyAttachPreview"></div>
           <div class="reply-box">
             <div class="reply-input-wrap">
@@ -1119,18 +1127,19 @@
           </div>
         </div>
       `;
+      // Opening a fresh thread invalidates every message DOM node from
+      // whatever was open before — see reconcileConversation()'s own
+      // comment for why this map can't just carry over between threads.
+      renderedMsgEls.clear();
+      lastSummarySig = summarySignature(t);
+      renderConversationList(t);
+      wireGotoThreadCards(document.getElementById("threadSummaryBlock"));
       wireTopButtons();
-      wireConversationButtons();
       document.getElementById("replySend").addEventListener("click", sendReply);
+      document.getElementById("replyInput").addEventListener("input", handleMentionInput);
       document.getElementById("replyInput").addEventListener("keydown", (e) => {
-        if (handleMentionKeydown(e)) return;
+        if (handleMentionKeydown(e)) return; // dropdown consumed this key (nav/select/close)
         if (e.key === "Enter") sendReply();
-      });
-      document.getElementById("replyInput").addEventListener("input", updateMentionDropdown);
-      document.getElementById("replyInput").addEventListener("blur", () => {
-        // Delay so a click on a mention option (which also blurs the
-        // input) still registers before the dropdown disappears.
-        setTimeout(closeMentionDropdown, 150);
       });
       document.getElementById("attachBtn").addEventListener("click", () => document.getElementById("replyFileInput").click());
       document.getElementById("replyFileInput").addEventListener("change", (e) => {
@@ -1146,51 +1155,161 @@
       loadMentionCandidatesForThread(t);
     }
 
+    // ---- @ Tag Username --------------------------------------------------
+    // Pulls the "people who've replied here before" list for this ticket's
+    // brand+module (see functions/api/mention-candidates.js), cached in
+    // memory per brand+module so re-opening the same thread or @-ing more
+    // than once doesn't re-fetch. Also merges in THIS thread's own
+    // conversation participants on top — covers the gap between someone
+    // just replying in Telegram and the KV registry write becoming visible
+    // (KV list/get is eventually consistent), see tg-reply-threads-
+    // features doc, Step 4.
+    async function loadMentionCandidatesForThread(t) {
+      currentMentionCandidates = [];
+      if (!t.brandId || !t.module) return;
+      const cacheKey = `${t.brandId}::${t.module}`;
+      let fromServer = mentionCandidatesCache[cacheKey];
+      if (!fromServer) {
+        try {
+          const res = await authFetch(`/api/mention-candidates?brandId=${encodeURIComponent(t.brandId)}&module=${encodeURIComponent(t.module)}`, { cache: "no-store" });
+          const data = await res.json();
+          fromServer = data.ok ? (data.candidates || []) : [];
+        } catch {
+          fromServer = [];
+        }
+        mentionCandidatesCache[cacheKey] = fromServer;
+      }
+      const merged = new Map();
+      fromServer.forEach((c) => merged.set(c.handle, { handle: c.handle, from: c.from }));
+      (t.messages || []).forEach((m) => {
+        if (!m.self && m.handle) merged.set(m.handle, { handle: m.handle, from: m.from });
+      });
+      // Only apply if we're still looking at the same thread — a slow
+      // fetch shouldn't clobber a newer thread's candidates if the agent
+      // already switched away by the time this resolves.
+      if (selectedThread && selectedThread.id === t.id) {
+        currentMentionCandidates = Array.from(merged.values());
+      }
+    }
+
+    function closeMentionDropdown() {
+      const dd = document.getElementById("mentionDropdown");
+      if (dd) { dd.style.display = "none"; dd.innerHTML = ""; }
+      mentionActiveIndex = -1;
+    }
+
+    // Fires on every keystroke in the reply box — looks for an @fragment
+    // right before the cursor (only when it's at the end of the text, or
+    // more precisely at the end of what's typed so far — same simple
+    // "trailing @word" match the feature doc specifies) and filters
+    // currentMentionCandidates by that fragment as a prefix, case-insensitive.
+    function handleMentionInput(e) {
+      const input = e.target;
+      const match = input.value.match(/(?:^|\s)@(\w*)$/);
+      if (!match || !currentMentionCandidates.length) { closeMentionDropdown(); return; }
+      const frag = match[1].toLowerCase();
+      const matches = currentMentionCandidates.filter((c) => c.handle.slice(1).toLowerCase().startsWith(frag));
+      if (!matches.length) { closeMentionDropdown(); return; }
+      renderMentionDropdown(matches);
+    }
+
+    function renderMentionDropdown(matches) {
+      const dd = document.getElementById("mentionDropdown");
+      if (!dd) return;
+      mentionActiveIndex = 0;
+      dd.innerHTML = matches.map((c, i) => `
+        <div class="mention-option${i === 0 ? " active" : ""}" data-handle="${escapeAttr(c.handle)}" data-idx="${i}">
+          <span class="mention-handle">${escapeHtml(c.handle)}</span>
+          <span class="mention-from">${escapeHtml(c.from || "")}</span>
+        </div>
+      `).join("");
+      dd.style.display = "block";
+      dd.querySelectorAll(".mention-option").forEach((opt) => {
+        opt.addEventListener("mousedown", (e) => {
+          e.preventDefault(); // keep focus in the input instead of the dropdown
+          selectMentionCandidate(opt.dataset.handle);
+        });
+      });
+    }
+
+    // Replaces the trailing @fragment the agent just typed with the full
+    // "@username " (trailing space so they can keep typing the message).
+    function selectMentionCandidate(handle) {
+      const input = document.getElementById("replyInput");
+      if (!input) return;
+      input.value = input.value.replace(/(?:^|\s)@(\w*)$/, (m) => (m[0] === " " ? " " : "") + handle + " ");
+      closeMentionDropdown();
+      input.focus();
+    }
+
+    // Returns true if it handled the keypress (dropdown was open and the
+    // key was one of its own — nav/select/close), so the caller's own
+    // Enter-to-send handling gets skipped for that keystroke.
+    function handleMentionKeydown(e) {
+      const dd = document.getElementById("mentionDropdown");
+      if (!dd || dd.style.display === "none") return false;
+      const options = Array.from(dd.querySelectorAll(".mention-option"));
+      if (!options.length) return false;
+      if (e.key === "ArrowDown") {
+        e.preventDefault();
+        mentionActiveIndex = (mentionActiveIndex + 1) % options.length;
+        options.forEach((o, i) => o.classList.toggle("active", i === mentionActiveIndex));
+        return true;
+      }
+      if (e.key === "ArrowUp") {
+        e.preventDefault();
+        mentionActiveIndex = (mentionActiveIndex - 1 + options.length) % options.length;
+        options.forEach((o, i) => o.classList.toggle("active", i === mentionActiveIndex));
+        return true;
+      }
+      if (e.key === "Enter" || e.key === "Tab") {
+        e.preventDefault();
+        const chosen = options[mentionActiveIndex] || options[0];
+        selectMentionCandidate(chosen.dataset.handle);
+        return true;
+      }
+      if (e.key === "Escape") {
+        e.preventDefault();
+        closeMentionDropdown();
+        return true;
+      }
+      return false;
+    }
+
     // Light refresh — used by polling and after in-place actions (solve,
     // send, edit, recall). Only touches the top info block and the
     // conversation; the reply box (and whatever the agent is mid-typing)
     // is never rebuilt, so focus/cursor/draft text all survive.
     //
-    // BUT: until this fingerprint check was added, it still did a full
-    // `innerHTML = ...` rebuild of the header + every message on EVERY
-    // poll — even the (overwhelming majority of) polls where the server
-    // returned back the exact same thread. That's the same "tear down
-    // and recreate everything" anti-pattern PATTERNS-bulk-list-
-    // operations.md covers for the sidebar list, just here it's the
-    // conversation pane: rebuilding nodes that didn't actually change
-    // makes twemoji re-parse (swaps emoji for fresh <img> tags) and
-    // inline attachments re-fetch on a stable 6-second heartbeat, which
-    // is what reads as the page "moving" every few seconds even while
-    // someone's mid-typing a reply — the reply box itself was never
-    // touched, but everything visually around it kept flickering for no
-    // reason. Comparing a cheap fingerprint of the incoming data against
-    // what's already on screen, and bailing out before touching the DOM
-    // at all when nothing changed, is the fix — same principle as
-    // itemRenderKey() upstream, just one level deeper (per-thread
-    // instead of per-row).
-    let lastRenderedThreadFingerprint = null;
-    function threadContentFingerprint(t) {
-      // Deliberately the whole object, not a hand-picked field list —
-      // cheap (a single ticket's JSON is tiny next to a DOM rebuild +
-      // emoji re-parse) and can't silently miss a field that later turns
-      // out to affect rendering, the way a curated list of "the fields
-      // that matter" eventually would.
-      return t ? JSON.stringify(t) : "";
-    }
+    // 2026-08: no longer reassigns #threadScrollArea's own innerHTML at
+    // all (that's what caused the scrollTop-reset "page jumping" on every
+    // poll — see reconcileConversation()'s comment above for the full
+    // explanation) — only its persistent children get touched, and the
+    // conversation list is now diffed message-by-message instead of
+    // rebuilt wholesale.
     function updateThreadContent(t, forceScroll) {
-      const fingerprint = threadContentFingerprint(t);
-      if (!forceScroll && fingerprint === lastRenderedThreadFingerprint) return; // nothing actually changed — don't touch the DOM at all
-      lastRenderedThreadFingerprint = fingerprint;
       const topFixed = document.getElementById("threadTopFixed");
       const scrollArea = document.getElementById("threadScrollArea");
-      if (!topFixed || !scrollArea) { renderDetail(); return; }
+      const summaryBlock = document.getElementById("threadSummaryBlock");
+      const titleEl = document.getElementById("conversationTitle");
+      if (!topFixed || !scrollArea || !summaryBlock || !titleEl) { renderDetail(); return; }
       const wasNearBottom = isNearBottom(scrollArea);
-      topFixed.innerHTML = buildHeaderHTML(t);
-      wireTopButtons();
-      scrollArea.innerHTML = buildSummaryHTML(t) + buildConversationHTML(t);
-      wireConversationButtons();
+      const newHeaderHTML = buildHeaderHTML(t);
+      if (topFixed.innerHTML !== newHeaderHTML) {
+        topFixed.innerHTML = newHeaderHTML;
+        wireTopButtons();
+      }
+      const newSig = summarySignature(t);
+      if (newSig !== lastSummarySig) {
+        summaryBlock.innerHTML = buildSummaryHTML(t);
+        wireGotoThreadCards(summaryBlock); // only when actually rebuilt — same one-wire-per-fresh-node rule as message rows
+        lastSummarySig = newSig;
+      }
+      titleEl.textContent = `Conversation (${t.messages.length})`;
+      renderConversationList(t);
       if (forceScroll || wasNearBottom) scrollConversation(true);
-      polishEmoji();
+      polishEmoji(topFixed);
+      polishEmoji(scrollArea);
       loadInlineAttachments();
     }
 
@@ -1205,8 +1324,7 @@
       // A multi-attachment reply went out as a Telegram album (one
       // message_id per photo) — Telegram doesn't support text-editing an
       // album item, so the ✏️ button is hidden for those; ↩️ Recall still
-      // works and deletes every message in the group (see recallReply
-      // backend logic).
+      // works and deletes every message in the group.
       const isAlbum = m.messageIds && m.messageIds.length > 1;
       const selfControls = m.self && m.messageId ? `
         <span class="msg-actions">
@@ -1271,8 +1389,7 @@
       });
       const data = await res.json();
       if (!data.ok) {
-        if (window.showToast) window.showToast(data.error || "Delete failed.", "err");
-        else alert(data.error || "Delete failed.");
+        alert(data.error || "Delete failed.");
         return;
       }
       selectedId = null;
@@ -1280,137 +1397,6 @@
       main.innerHTML = `<div class="threads-placeholder">Pick a thread on the left, or submit a form to start one.</div>`;
       removeLocalThread(deletedId);
       loadList();
-      if (window.showToast) window.showToast("Delete success.", "ok");
-    }
-
-    // ---- @mention autocomplete ------------------------------------------
-    // Telegram's Bot API has no way to list a group's members, so this
-    // can't offer "search anyone in the group" — only people who have
-    // actually sent a message the bot has seen get a `handle` recorded
-    // (see telegram-webhook.js's `handle: msg.from?.username`). Scoped to
-    // THIS thread's own conversation, since that's who you're realistically
-    // about to @-tag.
-    let mentionActiveIndex = 0;
-    let mentionCandidatesCache = {}; // "<brandId>:<module>" -> array, avoids refetching on every keystroke
-    let currentMentionCandidates = [];
-
-    // In-thread messages are merged in on top of the registry response so
-    // a person who JUST replied for the first time (before the registry
-    // write above has caught up — KV is only eventually consistent) still
-    // shows up immediately, without waiting on a network round-trip.
-    function deriveInThreadCandidates(t) {
-      const byHandle = new Map();
-      (t?.messages || []).forEach((m) => {
-        if (m.handle) byHandle.set(m.handle, m.from);
-      });
-      return [...byHandle.entries()].map(([handle, from]) => ({ handle, from }));
-    }
-
-    async function loadMentionCandidatesForThread(t) {
-      const cacheKey = `${t.brandId || "none"}:${t.module || "none"}`;
-      const inThread = deriveInThreadCandidates(t);
-      if (mentionCandidatesCache[cacheKey]) {
-        currentMentionCandidates = mergeMentionCandidates(mentionCandidatesCache[cacheKey], inThread);
-        return;
-      }
-      currentMentionCandidates = inThread; // show something immediately while the fetch is in flight
-      try {
-        const res = await authFetch(`/api/mention-candidates?brandId=${encodeURIComponent(t.brandId || "")}&module=${encodeURIComponent(t.module || "")}`);
-        const data = await res.json();
-        if (data.ok) {
-          mentionCandidatesCache[cacheKey] = data.items;
-          // Only still relevant if the agent hasn't switched to a different
-          // thread while this fetch was in flight.
-          if (selectedThread === t) currentMentionCandidates = mergeMentionCandidates(data.items, inThread);
-        }
-      } catch {
-        // Non-fatal — the in-thread fallback above still works.
-      }
-    }
-
-    function mergeMentionCandidates(registryItems, inThreadItems) {
-      const byHandle = new Map(registryItems.map((c) => [c.handle, c]));
-      inThreadItems.forEach((c) => { if (!byHandle.has(c.handle)) byHandle.set(c.handle, c); });
-      return [...byHandle.values()];
-    }
-
-    // Only triggers on an "@fragment" run at the very end of the input
-    // (simple, no cursor-position tracking needed for a single-line box).
-    function currentMentionQuery() {
-      const input = document.getElementById("replyInput");
-      if (!input) return null;
-      const m = input.value.match(/(?:^|\s)@(\w*)$/);
-      return m ? m[1] : null;
-    }
-
-    function updateMentionDropdown() {
-      const query = currentMentionQuery();
-      const dd = document.getElementById("mentionDropdown");
-      if (query === null) { closeMentionDropdown(); return; }
-      const candidates = currentMentionCandidates.filter((c) =>
-        c.handle.slice(1).toLowerCase().startsWith(query.toLowerCase())
-      );
-      if (!candidates.length) { closeMentionDropdown(); return; }
-      mentionActiveIndex = 0;
-      dd.innerHTML = candidates.map((c, i) => `
-        <div class="mention-option${i === 0 ? " active" : ""}" data-handle="${escapeAttr(c.handle)}">
-          <span class="mo-handle">${escapeHtml(c.handle)}</span>
-          <span class="mo-from">${escapeHtml(c.from)}</span>
-        </div>
-      `).join("");
-      dd.style.display = "block";
-      dd.querySelectorAll(".mention-option").forEach((opt) => {
-        opt.addEventListener("mousedown", (e) => {
-          e.preventDefault(); // keep focus in the input instead of the dropdown
-          insertMention(opt.dataset.handle);
-        });
-      });
-    }
-
-    function closeMentionDropdown() {
-      const dd = document.getElementById("mentionDropdown");
-      if (dd) { dd.style.display = "none"; dd.innerHTML = ""; }
-    }
-
-    function insertMention(handle) {
-      const input = document.getElementById("replyInput");
-      input.value = input.value.replace(/(?:^|\s)@(\w*)$/, (match) => {
-        return (match.startsWith(" ") ? " " : "") + handle + " ";
-      });
-      closeMentionDropdown();
-      input.focus();
-    }
-
-    // Called from the replyInput keydown handler before the Enter-to-send
-    // shortcut — returns true if it handled the key itself (dropdown open)
-    // so the caller skips its own handling.
-    function handleMentionKeydown(e) {
-      const dd = document.getElementById("mentionDropdown");
-      if (!dd || dd.style.display === "none") return false;
-      const options = [...dd.querySelectorAll(".mention-option")];
-      if (!options.length) return false;
-      if (e.key === "ArrowDown") {
-        e.preventDefault();
-        mentionActiveIndex = (mentionActiveIndex + 1) % options.length;
-        options.forEach((o, i) => o.classList.toggle("active", i === mentionActiveIndex));
-        return true;
-      }
-      if (e.key === "ArrowUp") {
-        e.preventDefault();
-        mentionActiveIndex = (mentionActiveIndex - 1 + options.length) % options.length;
-        options.forEach((o, i) => o.classList.toggle("active", i === mentionActiveIndex));
-        return true;
-      }
-      if (e.key === "Enter" || e.key === "Tab") {
-        e.preventDefault();
-        insertMention(options[mentionActiveIndex].dataset.handle);
-        return true;
-      }
-      if (e.key === "Escape") {
-        closeMentionDropdown();
-        return true;
-      }
-      return false;
     }
 
     async function sendReply() {
@@ -1437,18 +1423,15 @@
         });
         const data = await res.json();
         if (!data.ok) {
-          // Deliberately stays a plain alert(), not the unified toast:
-          // this is high-frequency chat-style sending (see toast design
-          // doc §7 exception 1) — a click-to-dismiss toast would be a
-          // constant tax on every retry in a busy thread.
           alert("❌ Send failed: " + (data.error || "unknown error") + "\n\nYour message wasn't sent — try again.");
-          return; // keep input + attachments so the agent can retry without retyping
+          return; // keep input + attachment so the agent can retry without retyping
         }
         selectedThread = data.thread;
         input.value = "";
         pendingAttachments = [];
         replyTarget = null;
         renderReplyTargetBanner();
+        renderAttachPreview();
         document.getElementById("replyFileInput").value = "";
         updateThreadContent(selectedThread, true);
         patchLocalThread(selectedThread);
@@ -1464,18 +1447,11 @@
     async function editRoot() {
       const newText = prompt("Edit the original Telegram message text:\n(This edits the exact message, including any formatting tags.)", selectedThread.rootText || "");
       if (newText === null) return; // cancelled
-      // Input validation, not an action result — stays a plain alert()
-      // rather than the unified toast (see toast design doc §7 exception 1).
       if (!newText.trim()) return alert("Text can't be empty.");
       const res = await postAction({ action: "editRoot", text: newText });
-      if (!res.ok) {
-        if (window.showToast) window.showToast(res.error || "Edit failed.", "err");
-        else alert(res.error || "Edit failed.");
-        return;
-      }
+      if (!res.ok) return alert(res.error || "Edit failed.");
       selectedThread = res.thread;
       updateThreadContent(selectedThread);
-      if (window.showToast) window.showToast("Edit success.", "ok");
     }
 
     // "🔄 Sync to Sheet" flow — a real per-field form (built straight off
@@ -1486,7 +1462,7 @@
     // trackable Sheet row — see submit.js's `sheetRef`) that Sheet row,
     // using the exact same builder functions the original submission
     // used. Only offered at all when the thread has t.fieldMap/t.brandId
-    // saved — see the showIf on the ✏️ (editDetailsBtn) button in buildHeaderHTML.
+    // saved — see the showIf on the 📊 button in buildHeaderHTML.
     function openEditDetailsModal() {
       const t = selectedThread;
       const module = (window.MODULES || []).find((m) => m.id === t.module);
@@ -1589,16 +1565,8 @@
 
         const res = await postAction({ action: "editDetails", fields, fieldMap: newFieldMap });
         if (!res.ok) {
-          // Result routes through the unified toast only, same as
-          // everywhere else — this used to also write the identical
-          // error text into statusEl at the same moment, which is the
-          // "two things say the same thing at once" duplicate the toast
-          // unification pass targeted (see feedback-toast-system-design.md
-          // §1, §4). statusEl stays reserved for the missingRequired
-          // check above, which fires before any request and has no toast.
-          statusEl.textContent = "";
-          statusEl.className = "edit-details-status";
-          if (window.showToast) window.showToast(res.error || "Save failed.", "err");
+          statusEl.textContent = res.error || "Save failed.";
+          statusEl.className = "edit-details-status err";
           saveBtn.disabled = false;
           saveBtn.textContent = "Save & Sync";
           return;
@@ -1607,7 +1575,6 @@
         updateThreadContent(selectedThread);
         patchLocalThread(selectedThread);
         loadList();
-        if (window.showToast) window.showToast("Save success.", "ok");
         if (res.sheetHasRef && !res.sheetSynced) {
           alert("Telegram message updated, but the Sheet row couldn't be updated:\n" + (res.sheetError || "unknown error") + "\n\nYou may need to fix that row manually.");
         }
@@ -1615,37 +1582,42 @@
       });
     }
 
-    // "Generate to another Topic" — creates a brand-new ticket in a
-    // DIFFERENT module, pre-filled from the currently open one. Behaves
-    // exactly like a normal submission from that point on (new Telegram
-    // message, new Sheet row if applicable, new trackable thread) — see
-    // functions/api/forward.js for the actual send/write logic. Two
-    // phases in one modal: pick a target Topic first (nothing else is
-    // usable until then), which then renders that Topic's own fields,
-    // pre-filled wherever a same-named field exists on the source ticket.
+    // "Generate to another Topic" (forwarding) — see functions/api/
+    // forward.js for the full write-up. Two-stage modal: pick a target
+    // Topic first, THEN its full field form appears, pre-filled
+    // wherever a field key happens to match something on the source
+    // ticket (UID/Number/Email/Remark, etc.) — everything ELSE (most
+    // often Issue Type) starts blank. Every field is editable, INCLUDING
+    // pre-filled ones (see point 1 of the design discussion — carried
+    // values might not be exactly right for the new Topic). Brand is the
+    // one exception: shown read-only, always inherited from the source
+    // ticket, never re-typed here.
     function openForwardModal() {
       const source = selectedThread;
-      const sourceFieldMap = source.fieldMap || {};
-      const brand = (window.BRANDS || []).find((b) => b.id === source.brandId);
       const otherModules = (window.MODULES || []).filter((m) => m.id !== source.module);
-      const moduleOptions = otherModules.map((m) => `<option value="${escapeAttr(m.id)}">${m.icon || ""} ${escapeHtml(m.name)}</option>`).join("");
-      const myUsername = (window.AgentAuth && window.AgentAuth.getAuth() && window.AgentAuth.getAuth().username) || "";
 
       const overlay = document.createElement("div");
       overlay.className = "edit-details-overlay";
-      overlay.id = "forwardOverlay";
       overlay.innerHTML = `
         <div class="edit-details-modal">
-          <button type="button" class="modal-close-btn" id="forwardClose" title="Close" aria-label="Close">✕</button>
+          <button type="button" class="modal-close-btn" id="fwdClose" title="Close" aria-label="Close">✕</button>
           <div class="edit-details-title">↗️ Generate to another Topic</div>
-          <div class="edit-details-sub">Creates a brand-new ticket in a different Topic — new Telegram message, new Sheet row (if that Topic logs to one), fully trackable on its own.</div>
-          <div class="edit-details-fields">
-            <div class="field"><label>Topic</label><select id="fwdModule"><option value="">— Select a Topic —</option>${moduleOptions}</select></div>
-            <div class="field"><label>Brand / Platform</label><input type="text" value="${escapeAttr(brand ? brand.name : source.brand)}" disabled /></div>
-            <div class="field"><label>Reporter / PIC</label><input type="text" id="fwdReporter" value="${escapeAttr(myUsername)}" /></div>
-            <div id="fwdFieldsContainer"></div>
-            <div class="field" id="fwdAttachField" style="display:none;">
-              <label>Supporting Screenshots (optional — sent alongside anything already attached to the original ticket)</label>
+          <div class="edit-details-sub">Creates a brand-new ticket in the Topic you pick — new Telegram message, new Sheet row (if that Topic logs to one) — pre-filled from this ticket, same as submitting it fresh.</div>
+          <div class="field">
+            <label>Send to Topic</label>
+            <select id="fwdModule">
+              <option value="">— Select a Topic —</option>
+              ${otherModules.map((m) => `<option value="${escapeAttr(m.id)}">${m.icon || ""} ${escapeHtml(m.name)}</option>`).join("")}
+            </select>
+          </div>
+          <div id="fwdFieldsWrap" style="display:none;">
+            <div class="field"><label>Brand</label><input type="text" value="${escapeAttr(source.brand)}" disabled /></div>
+            <div class="field"><label>Reporter / PIC <span class="required">*</span></label><input type="text" id="fwdReporter" value="${escapeAttr(getAuth()?.username || "")}" /></div>
+            <div class="edit-details-fields" id="fwdFields"></div>
+            <p class="agent-profile-section-label" style="margin-top:4px;">Attachments carried over</p>
+            <div class="thread-summary-attachments" id="fwdCarriedAttachments"></div>
+            <div class="field" style="margin-top:10px;">
+              <label>Add another attachment (optional — e.g. this Topic's group needs a photo the original one didn't)</label>
               <div class="dropzone" id="fwdDropzone" tabindex="0">
                 <div class="dz-icon">📎</div>
                 <p class="dz-main">Click or drag files here</p>
@@ -1656,97 +1628,56 @@
               <input type="file" id="fwdNewFile" multiple hidden />
             </div>
           </div>
-          <div class="edit-details-status" id="forwardStatus"></div>
+          <div class="edit-details-status" id="fwdStatus"></div>
           <div class="edit-details-actions">
-            <button type="button" class="icon-btn" id="forwardCancel" style="width:auto; height:auto; padding:14px 22px; font-size:14px; font-weight:800; display:flex; align-items:center; justify-content:center;">Cancel</button>
-            <button type="button" class="btn-submit" id="forwardSubmit" style="width:auto; padding:14px 22px;">Generate &amp; Send</button>
+            <button type="button" id="fwdCancel" style="width:auto; padding:14px 22px; font-size:14px; font-weight:800; border-radius:12px; border:1px solid var(--required); background:transparent; color:var(--required); cursor:pointer;">Cancel</button>
+            <button type="button" class="btn-submit" id="fwdSubmit" style="width:auto; padding:14px 22px;" disabled>Generate &amp; Send</button>
           </div>
-        </div>`;
+        </div>
+      `;
       document.body.appendChild(overlay);
 
-      const fieldsContainer = overlay.querySelector("#fwdFieldsContainer");
-      let targetModule = null;
+      function close() { window.removeEventListener("paste", onWindowPaste); overlay.remove(); }
+      overlay.querySelector("#fwdClose").addEventListener("click", close);
+      overlay.querySelector("#fwdCancel").addEventListener("click", close);
+      overlay.addEventListener("click", (e) => { if (e.target === overlay) close(); });
+
+      const fieldsWrap = overlay.querySelector("#fwdFieldsWrap");
+      const fieldsContainer = overlay.querySelector("#fwdFields");
+      const submitBtn = overlay.querySelector("#fwdSubmit");
+      const statusEl = overlay.querySelector("#fwdStatus");
+      const newFileListEl = overlay.querySelector("#fwdFileList");
       let fieldEls = {};
-      let newFiles = []; // File objects — same shape app.js's own dropzone builds
+      let targetModule = null;
+      const newFiles = []; // File objects, converted to base64 only at submit time
 
-      function renderFileList() {
-        const fileListEl = overlay.querySelector("#fwdFileList");
-        fileListEl.innerHTML = newFiles
-          .map((f, i) => `<div class="file-chip"><span class="name">${escapeHtml(f.name)}</span><button type="button" data-i="${i}">&times;</button></div>`)
-          .join("");
-        fileListEl.querySelectorAll("button").forEach((btn) => {
-          btn.addEventListener("click", () => { newFiles.splice(Number(btn.dataset.i), 1); renderFileList(); });
-        });
-      }
-      function addFiles(list) {
-        const statusEl = overlay.querySelector("#forwardStatus");
-        const rejected = [];
-        for (const f of list) {
-          if (newFiles.length >= 3) break;
-          if (f.size > 20 * 1024 * 1024) { rejected.push(f.name); continue; }
-          newFiles.push(f);
-        }
-        renderFileList();
-        if (rejected.length) {
-          statusEl.textContent = `Skipped (over 20MB): ${rejected.join(", ")}`;
-          statusEl.className = "edit-details-status err";
-        }
-      }
-      const dropzone = overlay.querySelector("#fwdDropzone");
-      const fileInput = overlay.querySelector("#fwdNewFile");
-      dropzone.addEventListener("click", () => fileInput.click());
-      dropzone.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") fileInput.click(); });
-      fileInput.addEventListener("change", () => addFiles(fileInput.files));
-      ["dragenter", "dragover"].forEach((evt) => dropzone.addEventListener(evt, (e) => { e.preventDefault(); dropzone.classList.add("drag-over"); }));
-      ["dragleave", "drop"].forEach((evt) => dropzone.addEventListener(evt, (e) => { e.preventDefault(); dropzone.classList.remove("drag-over"); }));
-      dropzone.addEventListener("drop", (e) => addFiles(e.dataTransfer.files));
-      // Scoped to while THIS modal is open, unlike app.js's own paste
-      // listener (which lives on the submission form page for its whole
-      // lifetime) — threads.html stays open indefinitely as agents work
-      // through tickets, so a paste listener added here has to be
-      // explicitly removed on close (see close() below), or every future
-      // paste anywhere on the page — including into the reply box —
-      // would also get treated as "add an attachment to a forward that
-      // isn't even open anymore".
-      function pasteHandler(e) {
-        const items = Array.from(e.clipboardData.items).filter((i) => i.kind === "file");
-        if (!items.length) return;
-        addFiles(items.map((i) => i.getAsFile()).filter(Boolean));
-      }
-      window.addEventListener("paste", pasteHandler);
-
-      function conditionMet(showIf) {
-        const conditions = Array.isArray(showIf) ? showIf : [showIf];
-        return conditions.every((c) => {
-          if (c.field === "brand") return c.oneOf.includes(source.brandId);
-          const driver = fieldEls[c.field];
-          return driver && c.oneOf.includes(driver.control.value);
-        });
-      }
-      function refreshVisibility() {
-        targetModule.fields.forEach((f) => {
-          if (!f.showIf) return;
-          fieldEls[f.key].wrap.style.display = conditionMet(f.showIf) ? "" : "none";
-        });
-      }
+      // Show the source ticket's own attachments as the "carried over"
+      // preview — reuses the EXACT SAME inline-attach-slot markup +
+      // loadInlineAttachments() the ticket detail view itself uses
+      // (defined below), not a re-implementation.
+      const carriedFileIds = source.attachmentFileIds || [];
+      const carriedWrap = overlay.querySelector("#fwdCarriedAttachments");
+      carriedWrap.innerHTML = carriedFileIds.length
+        ? carriedFileIds.map((fid, i) => `<div class="inline-attach-slot" data-attachment-file="${escapeAttr(fid)}" data-attachment-name="carried-${i + 1}"><div class="inline-attach-loading">Loading…</div></div>`).join("")
+        : `<p style="font-size:12.5px; color:var(--ink-soft); margin:4px 0 0;">This ticket has no attachments to carry over.</p>`;
+      loadInlineAttachments();
 
       overlay.querySelector("#fwdModule").addEventListener("change", (e) => {
-        const moduleId = e.target.value;
-        targetModule = otherModules.find((m) => m.id === moduleId) || null;
-        fieldsContainer.innerHTML = "";
+        targetModule = otherModules.find((m) => m.id === e.target.value) || null;
         fieldEls = {};
-        overlay.querySelector("#fwdAttachField").style.display = targetModule ? "" : "none";
-        if (!targetModule) return;
+        fieldsContainer.innerHTML = "";
+        if (!targetModule) {
+          fieldsWrap.style.display = "none";
+          submitBtn.disabled = true;
+          return;
+        }
+        fieldsWrap.style.display = "";
+        submitBtn.disabled = false;
 
+        const sourceFieldMap = source.fieldMap || {};
         targetModule.fields.forEach((f) => {
           const wrap = document.createElement("div");
           wrap.className = "field";
-          // Pre-fill wherever the SOURCE ticket happens to have a
-          // same-named field (UID/Number/Email etc.) — left blank
-          // otherwise (most commonly Issue Type, which almost never has
-          // an equivalent on the source side). Always editable either
-          // way — this is a starting point, not a guarantee it's right
-          // for the new Topic.
           const value = sourceFieldMap[f.key] != null ? sourceFieldMap[f.key] : "";
           let controlHtml;
           if (f.type === "textarea") {
@@ -1766,6 +1697,24 @@
           fieldsContainer.appendChild(wrap);
           fieldEls[f.key] = { wrap, control: wrap.querySelector("input,select,textarea") };
         });
+
+        // Same AND-of-conditions showIf logic openEditDetailsModal above
+        // uses — re-implemented locally here too, same reasoning (no
+        // brand-select/attachment/reporter concepts to entangle with).
+        function conditionMet(showIf) {
+          const conditions = Array.isArray(showIf) ? showIf : [showIf];
+          return conditions.every((c) => {
+            if (c.field === "brand") return c.oneOf.includes(source.brandId);
+            const driver = fieldEls[c.field];
+            return driver && c.oneOf.includes(driver.control.value);
+          });
+        }
+        function refreshVisibility() {
+          targetModule.fields.forEach((f) => {
+            if (!f.showIf) return;
+            fieldEls[f.key].wrap.style.display = conditionMet(f.showIf) ? "" : "none";
+          });
+        }
         targetModule.fields.forEach((f) => {
           if (fieldEls[f.key].control.tagName === "SELECT") {
             fieldEls[f.key].control.addEventListener("change", refreshVisibility);
@@ -1774,21 +1723,85 @@
         refreshVisibility();
       });
 
-      function close() {
-        window.removeEventListener("paste", pasteHandler);
-        overlay.remove();
-      }
-      overlay.querySelector("#forwardClose").addEventListener("click", close);
-      overlay.querySelector("#forwardCancel").addEventListener("click", close);
-      overlay.addEventListener("click", (e) => { if (e.target === overlay) close(); });
+      // Same dropzone behavior (click / drag&drop / paste, with a
+      // removable chip list) the submission form itself uses — see
+      // public/assets/app.js's own copy of this same logic. Re-
+      // implemented locally rather than shared since this one has to be
+      // scoped to just this modal (the paste listener in particular
+      // must NOT fire while some other part of the page has focus, and
+      // must be torn down again on close()).
+      const fwdDropzone = overlay.querySelector("#fwdDropzone");
+      const fwdFileInput = overlay.querySelector("#fwdNewFile");
+      const FWD_MAX_FILES = 3;
+      const FWD_MAX_SIZE_MB = 20;
 
-      overlay.querySelector("#forwardSubmit").addEventListener("click", async () => {
-        const statusEl = overlay.querySelector("#forwardStatus");
-        if (!targetModule) {
-          statusEl.textContent = "Pick a Topic first.";
-          statusEl.className = "edit-details-status err";
-          return;
+      function renderNewFileList() {
+        newFileListEl.innerHTML = newFiles
+          .map((f, i) => `<div class="file-chip"><span class="name">${escapeHtml(f.name)}</span><button type="button" data-i="${i}">&times;</button></div>`)
+          .join("");
+        newFileListEl.querySelectorAll("button").forEach((btn) => {
+          btn.addEventListener("click", () => {
+            newFiles.splice(Number(btn.dataset.i), 1);
+            renderNewFileList();
+          });
+        });
+      }
+
+      function addNewFiles(list) {
+        const rejected = [];
+        for (const f of list) {
+          if (newFiles.length >= FWD_MAX_FILES) break;
+          if (f.size > FWD_MAX_SIZE_MB * 1024 * 1024) {
+            rejected.push(f.name);
+            continue;
+          }
+          newFiles.push(f);
         }
+        renderNewFileList();
+        if (rejected.length) {
+          statusEl.textContent = `Skipped (over ${FWD_MAX_SIZE_MB}MB): ${rejected.join(", ")}`;
+          statusEl.className = "edit-details-status err";
+        }
+      }
+
+      fwdDropzone.addEventListener("click", () => fwdFileInput.click());
+      fwdDropzone.addEventListener("keydown", (e) => {
+        if (e.key === "Enter" || e.key === " ") fwdFileInput.click();
+      });
+      fwdFileInput.addEventListener("change", () => {
+        addNewFiles(fwdFileInput.files);
+        fwdFileInput.value = ""; // lets the same file (or more) be picked again
+      });
+      ["dragenter", "dragover"].forEach((evt) =>
+        fwdDropzone.addEventListener(evt, (e) => { e.preventDefault(); fwdDropzone.classList.add("drag-over"); })
+      );
+      ["dragleave", "drop"].forEach((evt) =>
+        fwdDropzone.addEventListener(evt, (e) => { e.preventDefault(); fwdDropzone.classList.remove("drag-over"); })
+      );
+      fwdDropzone.addEventListener("drop", (e) => addNewFiles(e.dataTransfer.files));
+
+      // Scoped to while THIS modal is open only — added here, removed
+      // again in close() below — so pasting elsewhere on the page (e.g.
+      // the reply box) is never intercepted by a modal that isn't even
+      // visible anymore.
+      function onWindowPaste(e) {
+        const items = Array.from(e.clipboardData.items).filter((i) => i.kind === "file");
+        if (!items.length) return;
+        addNewFiles(items.map((i) => i.getAsFile()).filter(Boolean));
+      }
+      window.addEventListener("paste", onWindowPaste);
+
+      function fileToDataUrl(file) {
+        return new Promise((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(reader.result);
+          reader.onerror = reject;
+          reader.readAsDataURL(file);
+        });
+      }
+
+      submitBtn.addEventListener("click", async () => {
+        if (!targetModule) return;
         const reporter = overlay.querySelector("#fwdReporter").value.trim();
         if (!reporter) {
           statusEl.textContent = "Reporter / PIC is required.";
@@ -1808,102 +1821,94 @@
         }
         const fieldMap = Object.fromEntries(fields.map((f) => [f.key, f.value]));
 
-        const submitBtn = overlay.querySelector("#forwardSubmit");
         submitBtn.disabled = true;
         submitBtn.textContent = "Sending…";
         statusEl.textContent = "";
         statusEl.className = "edit-details-status";
 
-        let newAttachments = [];
+        let newAttachments;
         try {
-          newAttachments = await Promise.all(newFiles.map(async (f) => ({ name: f.name, type: f.type, dataUrl: await fileToDataUrl(f) })));
+          newAttachments = await Promise.all(newFiles.map(async (file) => ({
+            name: file.name, type: file.type, dataUrl: await fileToDataUrl(file),
+          })));
         } catch {
-          statusEl.textContent = "Couldn't read one of the attached files — try removing and re-adding it.";
+          statusEl.textContent = "Couldn't read one of the new attachments.";
           statusEl.className = "edit-details-status err";
           submitBtn.disabled = false;
           submitBtn.textContent = "Generate & Send";
           return;
         }
 
-        const res = await authFetch("/api/forward", {
-          method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ sourceThreadId: source.id, targetModule: targetModule.id, fields, fieldMap, reporter, newAttachments }),
-        }).then((r) => r.json());
-
-        if (!res.ok) {
-          // Routed through the unified toast, not just the inline
-          // statusEl — this action (Forward) was the one save/action
-          // flow on this page still missing the shared toast entirely.
-          // See feedback-toast-system-design.md §6 (Forward is one of
-          // the standard action types) and §4 (funnel ok/err through
-          // one place rather than leaving it inline-only).
-          statusEl.textContent = "";
-          statusEl.className = "edit-details-status";
-          if (window.showToast) window.showToast(res.error || "Forward failed.", "err");
+        let res;
+        try {
+          const r = await authFetch("/api/forward", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ sourceThreadId: source.id, targetModule: targetModule.id, fields, fieldMap, reporter, newAttachments }),
+          });
+          res = await r.json();
+        } catch {
+          statusEl.textContent = "Network error — check your connection and try again.";
+          statusEl.className = "edit-details-status err";
           submitBtn.disabled = false;
           submitBtn.textContent = "Generate & Send";
           return;
         }
 
-        // Patch the SOURCE thread locally too — it just gained a
-        // "Forwarded to" backlink server-side (addForwardedToLink()),
-        // and if this modal's still-open source thread isn't refreshed,
-        // that new reference card wouldn't show up until a later poll.
-        selectedThread.forwardedTo = [...(selectedThread.forwardedTo || []), {
-          threadId: res.thread.id, module: targetModule.id, moduleName: targetModule.name, title: res.thread.title, at: new Date().toISOString(),
-        }];
+        if (!res.ok) {
+          statusEl.textContent = res.error || "Forward failed.";
+          statusEl.className = "edit-details-status err";
+          submitBtn.disabled = false;
+          submitBtn.textContent = "Generate & Send";
+          return;
+        }
+        if (res.sheetAttempted && !res.sheetLogged) {
+          alert("Ticket was generated and sent to Telegram, but the Sheet row couldn't be written:\n" + (res.sheetError || "unknown error"));
+        }
+
+        // Reflect the new "↗️ Forwarded to..." reference on the ORIGINAL
+        // ticket immediately (matches what addForwardedToLink() just
+        // saved server-side) — patched locally rather than re-fetched,
+        // same pattern editRoot()/recallRoot() already use elsewhere on
+        // this page.
+        selectedThread = {
+          ...source,
+          forwardedTo: [...(source.forwardedTo || []), { threadId: res.thread.id, module: targetModule.id, moduleName: targetModule.name, title: res.thread.title, at: new Date().toISOString() }],
+        };
         updateThreadContent(selectedThread);
         patchLocalThread(selectedThread);
         loadList();
         close();
-        openThread(res.thread.id); // jump straight to the new ticket
-        if (window.showToast) window.showToast("Forward success.", "ok");
+        openThread(res.thread.id); // jump straight to the newly generated ticket
       });
     }
 
     async function recallRoot() {
       if (!confirm("Recall the original ticket message from Telegram? This removes it from the group. Your tracking record, the Sheet row, and this conversation stay.")) return;
       const res = await postAction({ action: "recallRoot" });
-      if (!res.ok) {
-        if (window.showToast) window.showToast(res.error || "Recall failed.", "err");
-        else alert(res.error || "Recall failed.");
-        return;
-      }
+      if (!res.ok) return alert(res.error || "Recall failed.");
       selectedThread = res.thread;
       updateThreadContent(selectedThread);
       patchLocalThread(selectedThread);
       loadList();
-      if (window.showToast) window.showToast("Recall success.", "ok");
     }
 
     async function editReply(messageId, currentText) {
       const newText = prompt("Edit this reply:", currentText || "");
       if (newText === null) return;
-      // Input validation, not an action result — stays a plain alert()
-      // rather than the unified toast (see toast design doc §7 exception 1).
       if (!newText.trim()) return alert("Text can't be empty.");
       const res = await postAction({ action: "editReply", messageId: Number(messageId), text: newText });
-      if (!res.ok) {
-        if (window.showToast) window.showToast(res.error || "Edit failed.", "err");
-        else alert(res.error || "Edit failed.");
-        return;
-      }
+      if (!res.ok) return alert(res.error || "Edit failed.");
       selectedThread = res.thread;
       updateThreadContent(selectedThread);
-      if (window.showToast) window.showToast("Edit success.", "ok");
     }
 
     async function recallReply(messageId) {
       if (!confirm("Recall this reply from Telegram?")) return;
       const res = await postAction({ action: "recallReply", messageId: Number(messageId) });
-      if (!res.ok) {
-        if (window.showToast) window.showToast(res.error || "Recall failed.", "err");
-        else alert(res.error || "Recall failed.");
-        return;
-      }
+      if (!res.ok) return alert(res.error || "Recall failed.");
       selectedThread = res.thread;
       updateThreadContent(selectedThread);
-      if (window.showToast) window.showToast("Recall success.", "ok");
     }
 
     async function postAction(payload) {
@@ -1928,6 +1933,60 @@
     }
 
     // ---- Attachment lightbox ----
+    //
+    // Reverse of the server's guessContentType() in
+    // functions/api/attachment/[fileId].js — given a MIME type, returns
+    // the file extension a downloaded file should have. Needed because
+    // "ticket-attachment-N" (the placeholder name used when we never
+    // captured the agent's original filename — see the comment above)
+    // has NO extension at all; downloading a file with no extension
+    // means the OS has no idea which app to open it with, which is
+    // exactly why a downloaded PDF can look "broken" even though the
+    // actual bytes came through Telegram completely intact.
+    function guessExtensionFromMime(mimeType) {
+      const map = {
+        "image/jpeg": "jpg", "image/png": "png", "image/gif": "gif", "image/webp": "webp",
+        "image/bmp": "bmp", "image/heic": "heic", "image/heif": "heif",
+        "video/mp4": "mp4", "video/quicktime": "mov", "video/webm": "webm", "video/3gpp": "3gp",
+        "application/pdf": "pdf",
+      };
+      return map[(mimeType || "").split(";")[0].trim().toLowerCase()] || null;
+    }
+
+    // Last-resort universal fallback: for OLDER tickets (submitted before
+    // today's fix, or ones where Telegram genuinely never retained a
+    // resolvable filename/extension on its own side), neither the
+    // filename NOR the server's declared Content-Type can be trusted —
+    // there's simply no metadata left to guess from. Rather than give
+    // up, read the file's own first few bytes and check them against
+    // known "magic number" signatures every one of these formats starts
+    // with. This works regardless of what any filename or header claims,
+    // because it's reading the actual file content, not a label someone
+    // else attached to it.
+    async function sniffTypeFromBlob(blob) {
+      const head = new Uint8Array(await blob.slice(0, 12).arrayBuffer());
+      const hex = Array.from(head).map((b) => b.toString(16).padStart(2, "0")).join("");
+      if (hex.startsWith("25504446")) return "application/pdf"; // %PDF
+      if (hex.startsWith("ffd8ff")) return "image/jpeg";
+      if (hex.startsWith("89504e47")) return "image/png";
+      if (hex.startsWith("474946383761") || hex.startsWith("474946383961")) return "image/gif"; // GIF87a / GIF89a
+      if (hex.startsWith("52494646") && hex.slice(16, 24) === "57454250") return "image/webp"; // RIFF....WEBP
+      if (hex.startsWith("504b0304")) return "application/zip"; // also covers docx/xlsx/pptx (all zip-based)
+      return null;
+    }
+
+    function withExtension(name, mimeType) {
+      if (/\.[a-zA-Z0-9]{2,5}$/.test(name)) return name; // already has something extension-shaped
+      const ext = guessExtensionFromMime(mimeType);
+      return ext ? `${name}.${ext}` : name;
+    }
+
+    // Fetches the real bytes live from /api/attachment/<fileId> only at
+    // the moment someone clicks — nothing is pre-fetched or cached
+    // beyond the browser's own in-memory object URL for as long as the
+    // lightbox stays open (revoked on close, see closeAttachLightbox()).
+    // Non-image files (PDF, etc.) just trigger a normal browser download
+    // instead of trying to preview inline.
     const attachLightbox = document.getElementById("attachLightbox");
     const attachLightboxBody = document.getElementById("attachLightboxBody");
 
@@ -1956,7 +2015,15 @@
             throw new Error(msg || "Couldn't load this attachment.");
           }
           const blob = await res.blob();
-          return { url: URL.createObjectURL(blob), type: blob.type || "" };
+          let type = blob.type || "";
+          // Server had nothing better to declare than the generic
+          // catch-all (see the comment on sniffTypeFromBlob above) — try
+          // reading the actual bytes before giving up on knowing the type.
+          if (!type || type === "application/octet-stream") {
+            const sniffed = await sniffTypeFromBlob(blob).catch(() => null);
+            if (sniffed) type = sniffed;
+          }
+          return { url: URL.createObjectURL(blob), type };
         })());
       }
       return attachmentCache.get(fileId);
@@ -1974,12 +2041,35 @@
         slot.setAttribute("data-filled", "1"); // mark now so a poll landing mid-fetch doesn't double-trigger
         getAttachmentUrl(fileId, name).then(({ url, type }) => {
           if (!document.body.contains(slot)) return; // a newer poll already replaced this DOM before we resolved
-          if (type.startsWith("image/")) {
-            slot.innerHTML = `<img src="${url}" alt="${escapeAttr(name)}" class="inline-attach-media" />`;
-          } else if (type.startsWith("video/")) {
+          if (type.startsWith("video/")) {
             slot.innerHTML = `<video src="${url}" controls class="inline-attach-media"></video>`;
+          } else if (type.startsWith("image/")) {
+            slot.innerHTML = `<img src="${url}" alt="${escapeAttr(name)}" class="inline-attach-media" />`;
           } else {
-            slot.innerHTML = `<a href="${url}" download="${escapeAttr(name)}" class="inline-attach-file">📎 ${escapeHtml(name)} — click to download</a>`;
+            // Content-Type couldn't be confirmed as image/video (common
+            // for ticket-level attachments — see the comment on the
+            // "ticket-attachment-N" placeholder name a few lines up,
+            // which has no real extension to guess from, and Telegram
+            // itself doesn't always set a specific Content-Type either).
+            // Rather than give up and show a download link for what
+            // might genuinely be a perfectly normal photo, optimistically
+            // try rendering it as an <img> anyway — a browser decodes
+            // <img> from the ACTUAL file bytes, not the declared MIME
+            // type, so this still displays correctly even when `type`
+            // was wrong/generic. Only truly falls back to the download
+            // link if the browser actually fails to decode it as an
+            // image (this file genuinely isn't one).
+            const img = document.createElement("img");
+            img.alt = name;
+            img.className = "inline-attach-media";
+            img.addEventListener("error", () => {
+              if (!document.body.contains(slot)) return;
+              const downloadName = withExtension(name, type);
+              slot.innerHTML = `<a href="${url}" download="${escapeAttr(downloadName)}" class="inline-attach-file">📎 ${escapeHtml(downloadName)} — click to download</a>`;
+            }, { once: true });
+            slot.innerHTML = "";
+            slot.appendChild(img);
+            img.src = url; // set last so the error listener above is already attached
           }
           // Clicking an inline image/video also opens the fullscreen
           // lightbox, for a closer look — small bonus on top of what
@@ -1998,21 +2088,33 @@
       attachLightboxBody.innerHTML = `<div class="attach-lightbox-status">Loading…</div>`;
       try {
         const { url, type } = await getAttachmentUrl(fileId, name);
-        if (type.startsWith("image/")) {
-          attachLightboxBody.innerHTML = `<img src="${url}" alt="${escapeAttr(name || "attachment")}" />`;
-        } else if (type.startsWith("video/")) {
+        if (type.startsWith("video/")) {
           attachLightboxBody.innerHTML = `<video src="${url}" controls autoplay playsinline></video>`;
+        } else if (type.startsWith("image/")) {
+          attachLightboxBody.innerHTML = `<img src="${url}" alt="${escapeAttr(name || "attachment")}" />`;
         } else {
-          // Not an image or video (PDF/doc/etc.) — hand it off as a
-          // normal download instead of pretending we can preview it
-          // inline.
-          const a = document.createElement("a");
-          a.href = url;
-          a.download = name || "attachment";
-          document.body.appendChild(a);
-          a.click();
-          a.remove();
-          attachLightboxBody.innerHTML = `<div class="attach-lightbox-status">Downloaded — this file type can't be previewed here.</div>`;
+          // Content-Type wasn't confirmed as image/video — same situation
+          // as loadInlineAttachments() above (see its comment on the
+          // "ticket-attachment-N" placeholder name having no real
+          // extension). Try rendering as an <img> anyway before assuming
+          // it's a genuinely non-previewable file — a browser decodes
+          // <img> from the actual bytes, not the declared MIME type.
+          const img = document.createElement("img");
+          img.alt = name || "attachment";
+          img.addEventListener("error", () => {
+            // Really isn't an image — hand it off as a normal download
+            // instead of pretending we can preview it inline.
+            const a = document.createElement("a");
+            a.href = url;
+            a.download = name || "attachment";
+            document.body.appendChild(a);
+            a.click();
+            a.remove();
+            attachLightboxBody.innerHTML = `<div class="attach-lightbox-status">Downloaded — this file type can't be previewed here.</div>`;
+          }, { once: true });
+          attachLightboxBody.innerHTML = "";
+          attachLightboxBody.appendChild(img);
+          img.src = url; // set last so the error listener above is already attached
         }
       } catch (e) {
         attachLightboxBody.innerHTML = `<div class="attach-lightbox-status attach-lightbox-error">${escapeHtml(String((e && e.message) || "Couldn't load this attachment."))}</div>`;
@@ -2037,7 +2139,7 @@
     // reply box first. Scoped with guards instead of to one element:
     //   - no thread open → nothing to attach it to, let it fall through
     //   - an edit/forward modal is open → that modal has its own scoped
-    //     paste handling (see pasteHandler in openForwardModal), let it
+    //     paste handling (see onWindowPaste in openForwardModal), let it
     //     own the paste instead of double-queuing onto the reply below
     //   - the attachment lightbox is open → the person is VIEWING an
     //     existing attachment, not composing a new reply
@@ -2071,14 +2173,10 @@
     // checking itself is authguard.js's job, not this page's.)
     document.addEventListener("visibilitychange", () => {
       if (document.visibilityState === "visible") {
-        const searchEl = document.getElementById("threadSearch");
-        if (!searchEl) return; // not currently on this view (spa-shell) — nothing to refresh
-        loadList(searchEl.value);
+        loadList(document.getElementById("threadSearch").value);
         refreshOpenThread();
       }
     });
   </script>
-  <script src="/assets/toast.js?v=67c1e195"></script>
-  <script src="/assets/announcement-banner.js?v=4881665d"></script>
 </body>
 </html>

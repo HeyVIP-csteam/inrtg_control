@@ -1,48 +1,34 @@
 /**
  * depositSheets.js  (SERVER-ONLY)
  *
- * KV-backed overrides for which Google Sheet the "Deposit Issue" and
- * "Deposit Backup" modules read from — same layering pattern as routes.js
- * (TG Group/Channel): nothing is hardcoded in code, and this lets a
- * SuperAdmin set/change the link live from the browser (the "Deposit
- * Sheet Link" admin page) instead of needing a code edit + redeploy.
+ * KV-backed overrides for which Google Sheet a "Deposit *" module reads
+ * from — same layering pattern as routes.js (TG Group/Channel): a
+ * hardcoded default lives in code, and this lets a SuperAdmin change it
+ * live from the browser (the "Deposit Sheet Link" admin page, which now
+ * mirrors TG Group/Channel's brand-sidebar layout) instead of needing a
+ * code edit + redeploy every time a department swaps in a new Sheet.
  *
  * Stored in the same THREADS_KV namespace as accounts/offices/routes,
- * under its own key prefixes:
+ * under its own key prefix:
  *   deposit-sheet:<moduleSlot>:<brandId>  ->  { sheetId, tabNames: string[] }
- *   deposit-backup:<brandId>              ->  { thisMonth: {sheetId,tabNames}|null }
  *
- * `moduleSlot` is a stable identifier for WHICH module a Deposit Issue-
- * shaped sheet link feeds ("depositIssue" today) — kept as a string
- * constant (not hardcoded inline) specifically so a future module could
- * reuse this same key family under its own slot without colliding.
- * Deposit Backup does NOT use this shape at all — it's a single
- * This-Month slot per brand, so it gets its own key prefix and its own
- * functions below. (A "Last Month" rotation used to sit alongside it —
- * removed 2026-08-15, unused; Deposit Backup search now only searches
- * This Month.)
- *
- * No brand list lives in this file — every function here takes brandId
- * as a plain string and callers resolve it against BRANDS in routing.js,
- * same as routes.js does.
- *
- * No hardcoded default sheet exists anywhere in this module, for either
- * Deposit Issue or Deposit Backup — every brand starts fully
- * unconfigured; searching an unconfigured brand returns "not configured"
- * rather than guessing or reading the wrong sheet. (If this ever needs a
- * bootstrap default for one specific brand, that decision belongs in the
- * calling API files — functions/api/deposit-issue/search.js et al. — not
- * here; see the comments there.)
+ * `moduleSlot` is a stable identifier for WHICH module this sheet feeds
+ * ("depositIssue" today) so a future "Deposit Backup" module can reuse
+ * this same file/pattern under its own slot ("depositBackup") without
+ * colliding with Deposit Issue's per-brand entries.
  */
 
-// Brands temporarily hidden from Deposit Issue / Deposit Backup's
-// agent-facing pages (brand dropdown, "All Brands" directory/fan-out) —
-// NOT from the admin "Deposit Sheet Link" page, so a SuperAdmin can
-// still pre-configure a hidden brand's sheet ahead of time. Reversible:
-// remove the id here (and from the matching `BRANDS` array in
-// public/deposit-issue.html / public/deposit-backup.html) once that
-// brand's Deposit Support sheet actually exists.
-export const DEPOSIT_HIDDEN_BRANDS = ["jeetway"]; // Jeetway has no Deposit Support sheet yet
+export const PKR_BRANDS = [
+  { id: "crickex", name: "Crickex" },
+  { id: "betjili", name: "Betjili" },
+  { id: "mostplay", name: "Mostplay" },
+  { id: "jeetwin", name: "Jeetwin" },
+  { id: "sbj66", name: "Sbj66" },
+  { id: "heybaji", name: "Heybaji" },
+  { id: "superbaji", name: "Superbaji" },
+  { id: "kv8", name: "KV8" },
+  { id: "darazplay", name: "Darazplay" },
+];
 
 function sheetKey(moduleSlot, brandId) {
   return `deposit-sheet:${moduleSlot}:${brandId}`;
@@ -77,7 +63,8 @@ function parseConfig(raw) {
 
 // Single-brand read — used at request time (search.js/update.js) when a
 // specific brand is targeted. Returns null if nothing's been configured
-// for this brand yet.
+// for this brand yet (caller decides what the fallback default is, if
+// any — e.g. search.js only has a hardcoded fallback for "crickex").
 export async function getDepositSheetOverride(env, moduleSlot, brandId) {
   if (!env.THREADS_KV) return null;
   const raw = await env.THREADS_KV.get(sheetKey(moduleSlot, brandId));
@@ -86,9 +73,7 @@ export async function getDepositSheetOverride(env, moduleSlot, brandId) {
 
 // Batch read across all brands — used by the admin GET endpoint and by
 // search.js's "All Brands" mode (which needs to know every configured
-// sheet up front to fan the search out across all of them). Always
-// Promise.all, never a sequential loop — matters more once this scales
-// past a handful of brands.
+// sheet up front to fan the search out across all of them).
 export async function getAllDepositSheetOverrides(env, moduleSlot, brandIds) {
   if (!env.THREADS_KV) return {};
   const entries = await Promise.all(
@@ -115,26 +100,34 @@ export async function deleteDepositSheetOverride(env, moduleSlot, brandId) {
 }
 
 /**
- * ── Deposit Backup: "This Month" sheet link ──
+ * ── Deposit Backup: "This Month" / "Last Month" rotation ──
  *
- * Used to be a combined "This Month"/"Last Month" rotation pair (one KV
- * entry per brand, a rollover action to shift This Month into Last
- * Month). Last Month was removed 2026-08-15 — unused; only This Month
- * is stored now.
+ * Deliberately stored as ONE combined KV entry per brand (not two
+ * separate keys) so the rollover operation below is a single atomic
+ * write — no risk of "This Month cleared but Last Month write failed"
+ * leaving things half-updated.
+ *
+ *   deposit-backup:<brandId> -> { thisMonth: {sheetId,tabNames}|null,
+ *                                  lastMonth: {sheetId,tabNames}|null }
+ *
+ * Only "This Month" is ever directly editable — "Last Month" is
+ * read-only in the UI and only ever changes via rollDepositBackup()
+ * below, by design (see the admin page for the reasoning): it's always
+ * "whatever This Month was, before the most recent rollover."
  */
 function backupKey(brandId) {
   return `deposit-backup:${brandId}`;
 }
 
 export async function getDepositBackup(env, brandId) {
-  if (!env.THREADS_KV) return { thisMonth: null };
+  if (!env.THREADS_KV) return { thisMonth: null, lastMonth: null };
   const raw = await env.THREADS_KV.get(backupKey(brandId));
-  if (!raw) return { thisMonth: null };
+  if (!raw) return { thisMonth: null, lastMonth: null };
   try {
     const parsed = JSON.parse(raw);
-    return { thisMonth: parsed.thisMonth || null };
+    return { thisMonth: parsed.thisMonth || null, lastMonth: parsed.lastMonth || null };
   } catch {
-    return { thisMonth: null };
+    return { thisMonth: null, lastMonth: null };
   }
 }
 
@@ -143,14 +136,29 @@ export async function saveDepositBackupThisMonth(env, brandId, { sheetUrlOrId, t
   if (!sheetId) throw new Error("Couldn't find a Sheet ID in that link — paste the full Google Sheets URL or just the ID.");
   const cleanTabs = String(tabNames || "").split(",").map((t) => t.trim()).filter(Boolean);
   if (!cleanTabs.length) throw new Error("At least one tab name is required.");
-  const updated = { thisMonth: { sheetId, tabNames: cleanTabs } };
+  const current = await getDepositBackup(env, brandId);
+  const updated = { thisMonth: { sheetId, tabNames: cleanTabs }, lastMonth: current.lastMonth };
   await env.THREADS_KV.put(backupKey(brandId), JSON.stringify(updated));
   return updated;
 }
 
-// No hardcoded default to "reset" back to, for backup sheets.
+// Clears This Month only (no hardcoded default to "reset" back to, for
+// backup sheets — unlike Deposit Issue's Crickex default). Last Month is
+// left untouched.
 export async function clearDepositBackupThisMonth(env, brandId) {
-  const updated = { thisMonth: null };
+  const current = await getDepositBackup(env, brandId);
+  const updated = { thisMonth: null, lastMonth: current.lastMonth };
+  await env.THREADS_KV.put(backupKey(brandId), JSON.stringify(updated));
+  return updated;
+}
+
+// The rollover: whatever's currently in This Month becomes the new Last
+// Month (discarding whatever was there before), and This Month is
+// cleared out ready for the new link to be pasted in via
+// saveDepositBackupThisMonth() as a separate, explicit next step.
+export async function rollDepositBackup(env, brandId) {
+  const current = await getDepositBackup(env, brandId);
+  const updated = { thisMonth: null, lastMonth: current.thisMonth };
   await env.THREADS_KV.put(backupKey(brandId), JSON.stringify(updated));
   return updated;
 }

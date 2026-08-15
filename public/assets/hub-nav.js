@@ -3,8 +3,8 @@
  * announcements.html, promo.html, deposit-issue.html, deposit-backup.html)
  *
  * Renders the same "ISSUE SUBMISSION" navigation column that lives on
- * index.html (Home + module links + Account Management group) into a
- * mount point on any page, so agents don't have to bounce back to the
+ * index.html (Home + module links + Integration Portal group + Account
+ * Management group) into a mount point on any page, so agents don't have to bounce back to the
  * hub just to get somewhere else — matches the persistent-nav pattern
  * used across php-issue-hub (see CHANGES-batch1-modal-cache-layout.md).
  * Replaces the old standalone "← Back to Home" pill, which is removed
@@ -47,13 +47,23 @@
   const ADMIN_SUBITEMS = [
     { sectionId: "createAccount", mode: "create", label: "Create Account", icon: "➕", accent: "#a78bfa33" },
     { sectionId: "whitelistIp", mode: "whitelist", label: "Whitelist IP", icon: "🌐", accent: "#60a5fa33" },
-    { sectionId: "tgRoutes", mode: "tgroutes", label: "TG Group / Channel", icon: "📡", accent: "#38bdf833" },
-    { sectionId: "depositSheets", mode: "depositsheets", label: "Deposit Sheet Link", icon: "📊", accent: "#4fa6f533" },
     { sectionId: "settings", mode: "settings", label: "Settings", icon: "⚙️", accent: "#f59e0b33" },
     // Reset Password has no permission gate in index.html either — every
     // logged-in agent can reset their own password.
     { sectionId: null, mode: "reset", label: "Reset Password", icon: "🔑", accent: "#f3c46333" },
     { sectionId: "agentProfile", mode: "profile", label: "Agent Profile", icon: "🪪", accent: "#34d39933" },
+  ];
+
+  // Integration Portal (2026-08) — same shape/contract as ADMIN_SUBITEMS
+  // above, rendered as its own separate expandable group positioned
+  // above Account Management (matches index.html's own sidebar). These
+  // 4 used to live inside ADMIN_SUBITEMS (tgRoutes/depositSheets/
+  // bettingLinks moved out here) plus the new "Web Link" (webLink).
+  const INTEGRATION_PORTAL_SUBITEMS = [
+    { sectionId: "tgRoutes", mode: "tgroutes", label: "TG Group / Channel", icon: "📡", accent: "#38bdf833" },
+    { sectionId: "depositSheets", mode: "depositsheets", label: "Deposit Sheet Link", icon: "📊", accent: "#4fa6f533" },
+    { sectionId: "bettingLinks", mode: "bettinglinks", label: "Betting Resources Links", icon: "🔗", accent: "#c8912f33" },
+    { sectionId: "webLink", mode: "weblink", label: "Web Link", icon: "🌐", accent: "#f3c46333" },
   ];
 
   function escapeAttr(s) {
@@ -85,6 +95,16 @@
           <span class="arrow">&rarr;</span>
         </a>
       `;
+      // Active Agents no longer has its own sidebar entry — it now opens
+      // as a popup from the Home page's tool-card grid instead (see
+      // #activeAgentsCard / window.ActiveAgentsModal in index.html), so
+      // there's nothing to render here anymore. Kept as a code comment
+      // (not deleted silently) so a future reader knows this was a
+      // deliberate removal, not an oversight — see canViewActiveAgents()
+      // in functions/_shared/accounts.js for the permission this used to
+      // gate; that permission and its API endpoints are unchanged, only
+      // this nav link is gone.
+
       visibleModules.forEach((m) => {
         const isActive = opts.activeModule && opts.activeModule === m.id;
         html += `
@@ -98,6 +118,36 @@
 
       const rank = ROLE_RANK[authInfo?.role] ?? 0;
       const isOwner = authInfo?.role === "owner";
+
+      // Integration Portal group — positioned above Account Management,
+      // hidden outright unless this account can see "integrationPortal"
+      // at all (mirrors the same gate in index.html's own sidebar), on
+      // top of (not instead of) each subitem's own individual section
+      // gate below.
+      const canSeeIntegrationPortal = isOwner || accountCanSeeAdminSection(authInfo, "integrationPortal");
+      const visibleIntegrationPortal = canSeeIntegrationPortal
+        ? INTEGRATION_PORTAL_SUBITEMS.filter((it) => isOwner || accountCanSeeAdminSection(authInfo, it.sectionId))
+        : [];
+      if (visibleIntegrationPortal.length) {
+        html += `
+          <div class="am-group" id="hubNavIpGroup">
+            <div class="sidebar-item am-toggle expandable" id="hubNavIpToggle">
+              <div class="icon" style="background:#38bdf833;">🔗</div>
+              <div class="text"><div class="name">Integration Portal</div><div class="desc">TG routes, sheets &amp; external links</div></div>
+              <span class="arrow">&rarr;</span>
+            </div>
+            <div class="sidebar-subitems" id="hubNavIpSubitems">
+              ${visibleIntegrationPortal
+                .map(
+                  (it) =>
+                    `<div class="sidebar-subitem" data-admin-mode="${escapeAttr(it.mode)}" style="--sub-accent:${it.accent};"><span class="sub-icon">${it.icon}</span> ${it.label}</div>`
+                )
+                .join("")}
+            </div>
+          </div>
+        `;
+      }
+
       const visibleAdmin = ADMIN_SUBITEMS.filter((it) => it.sectionId === null || isOwner || accountCanSeeAdminSection(authInfo, it.sectionId));
       if (visibleAdmin.length) {
         html += `
@@ -121,6 +171,15 @@
 
       mountEl.innerHTML = html;
 
+      const ipToggle = document.getElementById("hubNavIpToggle");
+      const ipSubitems = document.getElementById("hubNavIpSubitems");
+      if (ipToggle && ipSubitems) {
+        ipToggle.addEventListener("click", () => {
+          ipToggle.classList.toggle("open");
+          ipSubitems.classList.toggle("open");
+        });
+      }
+
       const toggle = document.getElementById("hubNavAcctToggle");
       const subitems = document.getElementById("hubNavAcctSubitems");
       if (toggle && subitems) {
@@ -136,6 +195,51 @@
           // ?admin= handling at the bottom of index.html's script).
           location.href = "/?admin=" + encodeURIComponent(el.dataset.adminMode);
         });
+      });
+
+      this._setupMobileToggle(mountEl);
+    },
+
+    // ---- Small-screen drawer (2026-08) ----------------------------------
+    // On a narrow viewport (≤820px, see style.css) this same rendered
+    // nav becomes a fixed-position, off-canvas drawer instead of a
+    // permanent 290px column — a hamburger button (injected into the
+    // page's .topbar-left, since every page that mounts HubNav shares
+    // that exact markup) toggles it open/closed via a single class on
+    // <body>, and a full-screen backdrop closes it on outside-click.
+    // Above 820px none of this applies: the toggle button is hidden by
+    // CSS and .sidebar renders exactly as it always has, in-flow. Only
+    // ever set up once per page load (mount() is only called once per
+    // page in practice, but the id check below makes a second call
+    // harmless instead of injecting a duplicate button/backdrop).
+    _setupMobileToggle(mountEl) {
+      if (document.getElementById("hubNavToggleBtn")) return;
+      const topbarLeft = document.querySelector(".topbar-left");
+      if (!topbarLeft) return;
+
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.id = "hubNavToggleBtn";
+      btn.className = "hub-nav-toggle";
+      btn.setAttribute("aria-label", "Menu");
+      btn.textContent = "☰";
+      topbarLeft.insertBefore(btn, topbarLeft.firstChild);
+
+      const backdrop = document.createElement("div");
+      backdrop.className = "hub-nav-backdrop";
+      backdrop.id = "hubNavBackdrop";
+      document.body.appendChild(backdrop);
+
+      const close = () => document.body.classList.remove("hubnav-open");
+      btn.addEventListener("click", () => document.body.classList.toggle("hubnav-open"));
+      backdrop.addEventListener("click", close);
+      // Any actual navigation link (or an Account Management sub-item,
+      // which navigates via location.href above) should close the
+      // drawer behind it — but NOT the "Account Management" toggle
+      // itself, which only expands its sub-list in place and would
+      // otherwise immediately close right as it opens.
+      mountEl.querySelectorAll(".sidebar-item:not(.expandable), .sidebar-subitem").forEach((el) => {
+        el.addEventListener("click", close);
       });
     },
   };
