@@ -266,6 +266,8 @@
           <div class="sidebar-subitem" id="subDepositSheets" style="display:none;--sub-accent:#2f6fed33;"><span class="sub-icon">🧾</span> Deposit Sheet Link</div>
           <div class="sidebar-subitem" id="subBettingLinks" style="display:none;--sub-accent:#a78bfa33;"><span class="sub-icon">🔗</span> Betting Resources Links</div>
           <div class="sidebar-subitem" id="subWebLinks" style="display:none;--sub-accent:#22d3ee33;"><span class="sub-icon">🔗</span> Web Link</div>
+          <div class="sidebar-subitem" id="subPromoCodeSheet" style="display:none;--sub-accent:#f472b633;"><span class="sub-icon">🎟️</span> Promo Code Gsheet</div>
+          <div class="sidebar-subitem" id="subIssueSubmissionSheet" style="display:none;--sub-accent:#34d39933;"><span class="sub-icon">🧾</span> Issue Submission Gsheet</div>
         </div>
       </div>
 
@@ -603,12 +605,23 @@
       // pill's own ✏️ button (previously any logged-in agent). See
       // functions/_shared/accounts.js's matching entry for the full story.
       { id: "webLinks", name: "Web Link", icon: "🔗", floorRank: ROLE_RANK.superadmin },
+      // Added — Integration Portal's Promo Code Gsheet / Issue Submission
+      // Gsheet rows (KV override for functions/api/promo-search.js and
+      // functions/api/submit.js respectively). MUST be mirrored into
+      // ADMIN_SECTIONS / EDITABLE_ADMIN_SECTIONS in
+      // functions/_shared/accounts.js or these two sub-items will never
+      // pass the server-side canSeeAdminSection()/canEditAdminSection()
+      // checks in functions/api/admin/promo-code-sheet.js and
+      // functions/api/admin/issue-submission-sheet.js, even once visible
+      // here client-side.
+      { id: "promoCodeSheet", name: "Promo Code Gsheet", icon: "🎟️", floorRank: ROLE_RANK.superadmin },
+      { id: "issueSubmissionSheet", name: "Issue Submission Gsheet", icon: "🧾", floorRank: ROLE_RANK.superadmin },
       { id: "settings", name: "Settings", icon: "⚙️", floorRank: ROLE_RANK.admin },
       // "announcements" and "activeAgents" USED to live here — moved to
       // OWNER_TOPIC_ITEMS below, 2026-08-10 (see the comment on that
       // constant, and on the matching one in functions/_shared/accounts.js).
     ];
-    const EDITABLE_ADMIN_SECTIONS = ["whitelistIp", "tgRoutes", "agentProfile", "depositSheets", "settings", "bettingLinks", "webLinks"];
+    const EDITABLE_ADMIN_SECTIONS = ["whitelistIp", "tgRoutes", "agentProfile", "depositSheets", "settings", "bettingLinks", "webLinks", "promoCodeSheet", "issueSubmissionSheet"];
     // SECURITY FIX — 2026-07-28: role-based defaults for accounts the
     // Owner has never explicitly touched. Mirrors
     // ADMIN_SECTIONS_DEFAULT_SEEN / ADMIN_SECTIONS_DEFAULT_EDIT in
@@ -688,6 +701,8 @@
     document.getElementById("subDepositSheets").style.display = canSeeAdminSection("depositSheets") ? "flex" : "none";
     document.getElementById("subBettingLinks").style.display = canSeeAdminSection("bettingLinks") ? "flex" : "none";
     document.getElementById("subWebLinks").style.display = canSeeAdminSection("webLinks") ? "flex" : "none";
+    document.getElementById("subPromoCodeSheet").style.display = canSeeAdminSection("promoCodeSheet") ? "flex" : "none";
+    document.getElementById("subIssueSubmissionSheet").style.display = canSeeAdminSection("issueSubmissionSheet") ? "flex" : "none";
     document.getElementById("subSettings").style.display = canSeeAdminSection("settings") ? "flex" : "none";
     // Integration Portal's own toggle/group — hidden entirely (not just
     // expanded-to-empty) when this account can't see any of its 4
@@ -706,7 +721,7 @@
     //      that already existed, still needed so an account that passed
     //      gate 1 but was never granted any of the 4 individual items
     //      doesn't land on an empty dropdown.
-    const anyIntegrationPortalVisible = canSeeAdminSection("tgRoutes") || canSeeAdminSection("depositSheets") || canSeeAdminSection("bettingLinks") || canSeeAdminSection("webLinks");
+    const anyIntegrationPortalVisible = canSeeAdminSection("tgRoutes") || canSeeAdminSection("depositSheets") || canSeeAdminSection("bettingLinks") || canSeeAdminSection("webLinks") || canSeeAdminSection("promoCodeSheet") || canSeeAdminSection("issueSubmissionSheet");
     document.getElementById("integrationPortalGroup").style.display = (canAccessOwnerTopic("integrationPortal") && anyIntegrationPortalVisible) ? "" : "none";
 
     // ---- Announcement tool card — same canSeeAdminSection gate as the
@@ -795,6 +810,8 @@
     document.getElementById("subDepositSheets").addEventListener("click", () => openAcctModal("depositsheets"));
     document.getElementById("subBettingLinks").addEventListener("click", () => openAcctModal("bettinglinks"));
     document.getElementById("subWebLinks").addEventListener("click", () => openAcctModal("weblinks"));
+    document.getElementById("subPromoCodeSheet").addEventListener("click", () => openAcctModal("promocodesheet"));
+    document.getElementById("subIssueSubmissionSheet").addEventListener("click", () => openAcctModal("issuesubmissionsheet"));
     document.getElementById("subSettings").addEventListener("click", () => openAcctModal("settings"));
     document.getElementById("subResetPassword").addEventListener("click", () => openAcctModal("reset"));
     document.getElementById("subAgentProfile").addEventListener("click", () => openAcctModal("profile"));
@@ -848,15 +865,15 @@
       acctBody.innerHTML = '<p class="edit-modal-note">Loading…</p>';
       acctBackdrop.classList.add("is-open");
       const modalEl = acctBackdrop.querySelector(".edit-modal");
-      modalEl.classList.toggle("wide", mode === "profile" || mode === "tgroutes" || mode === "depositsheets" || mode === "settings" || mode === "whitelist" || mode === "bettinglinks" || mode === "weblinks");
-      // "profile", "tgroutes", "depositsheets", "settings", and "weblinks"
-      // all use per-row inline save buttons instead of one global footer
-      // Save (too many independently-editable rows for a single "Save" to
-      // mean anything useful). With Cancel removed (closing is via the X
-      // button now), the whole actions row would otherwise just be dead
-      // space when Save is hidden — hide the row itself, not just the
-      // button inside it.
-      const showFooterSave = mode !== "profile" && mode !== "tgroutes" && mode !== "depositsheets" && mode !== "settings" && mode !== "whitelist" && mode !== "weblinks";
+      modalEl.classList.toggle("wide", mode === "profile" || mode === "tgroutes" || mode === "depositsheets" || mode === "settings" || mode === "whitelist" || mode === "bettinglinks" || mode === "weblinks" || mode === "promocodesheet" || mode === "issuesubmissionsheet");
+      // "profile", "tgroutes", "depositsheets", "settings", "weblinks",
+      // "promocodesheet", and "issuesubmissionsheet" all use per-row
+      // inline save buttons instead of one global footer Save (too many
+      // independently-editable rows for a single "Save" to mean anything
+      // useful). With Cancel removed (closing is via the X button now),
+      // the whole actions row would otherwise just be dead space when
+      // Save is hidden — hide the row itself, not just the button inside it.
+      const showFooterSave = mode !== "profile" && mode !== "tgroutes" && mode !== "depositsheets" && mode !== "settings" && mode !== "whitelist" && mode !== "weblinks" && mode !== "promocodesheet" && mode !== "issuesubmissionsheet";
       document.getElementById("acctModalSave").style.display = showFooterSave ? "" : "none";
       document.getElementById("acctModalActions").style.display = showFooterSave ? "" : "none";
       const roleFilterEl = document.getElementById("acctProfileRoleFilter");
@@ -964,6 +981,16 @@
       if (mode === "weblinks") {
         acctTitle.textContent = "Web Link";
         await loadWebLinks();
+      }
+
+      if (mode === "promocodesheet") {
+        acctTitle.textContent = "Promo Code Gsheet";
+        await loadPromoCodeSheet();
+      }
+
+      if (mode === "issuesubmissionsheet") {
+        acctTitle.textContent = "Issue Submission Gsheet";
+        await loadIssueSubmissionSheet();
       }
     }
 
@@ -1536,6 +1563,221 @@
       renderWebLinks();
     }
 
+    // ---- Promo Code Gsheet (single global slot, no brand dimension) ----
+    // Backed by /api/admin/promo-code-sheet — see
+    // functions/_shared/promoCodeSheetOverride.js for the KV layer. Reuses
+    // the tgroute-* row styling but skips the .tgroute-brands column
+    // entirely (single-value form, no per-brand rows to pick between).
+    let acctPromoCodeSheetData = null;
+
+    async function loadPromoCodeSheet() {
+      const res = await window.AgentAuth.authFetch("/api/admin/promo-code-sheet");
+      const data = await res.json();
+      if (!data.ok) {
+        acctBody.innerHTML = `<p class="edit-modal-note err">${acctEsc(data.error || "Failed to load.")}</p>`;
+        return;
+      }
+      acctPromoCodeSheetData = data.sheet;
+      renderPromoCodeSheet();
+    }
+
+    function renderPromoCodeSheet() {
+      if (!acctPromoCodeSheetData) return;
+      const sheet = acctPromoCodeSheetData;
+      const canEdit = canEditAdminSection("promoCodeSheet");
+      const roAttr = canEdit ? "" : "disabled";
+
+      acctBody.innerHTML = `
+        <div class="tgroute-modules">
+          <div class="tgroute-row" data-row="promocode">
+            <div class="tgroute-mod-name">🎟️ Promo Code Sheet
+              <span class="route-tag${sheet.isOverride ? " custom" : ""}">${sheet.isOverride ? "custom" : "default"}</span>
+            </div>
+            <div class="tgroute-fields" style="flex-direction:column; align-items:stretch;">
+              <input type="text" class="pcs-sheet" placeholder="Google Sheet URL or ID" value="${acctEsc(sheet.sheetId)}" autocomplete="off" ${roAttr} />
+              <input type="text" class="pcs-tabs" placeholder="Tab names, comma-separated" value="${acctEsc((sheet.tabNames || []).join(", "))}" autocomplete="off" ${roAttr} />
+              ${canEdit ? `<div class="tgroute-row-actions">
+                <button type="button" class="tgroute-action-btn pcs-save">Save</button>
+                ${sheet.isOverride ? '<button type="button" class="tgroute-action-btn tgroute-action-secondary pcs-reset">Reset</button>' : ""}
+              </div>` : ""}
+            </div>
+          </div>
+        </div>
+        <hr class="tgroute-divider" />
+        ${canEdit ? "" : '<p class="edit-modal-note">View only.</p>'}
+        <p class="edit-modal-note tgroute-footnote">One shared workbook used by Promo Code Search across every team's tab. Changes apply to the very next search — no redeploy needed.</p>`;
+
+      const row = acctBody.querySelector('[data-row="promocode"]');
+      row.querySelector(".pcs-save")?.addEventListener("click", () => savePromoCodeSheet(row));
+      row.querySelector(".pcs-reset")?.addEventListener("click", () => resetPromoCodeSheet());
+    }
+
+    async function savePromoCodeSheet(row) {
+      const sheetUrlOrId = row.querySelector(".pcs-sheet").value.trim();
+      const tabNames = row.querySelector(".pcs-tabs").value.trim();
+      if (!sheetUrlOrId) return setAcctNote("Sheet URL or ID is required.", "err");
+      if (!tabNames) return setAcctNote("At least one tab name is required.", "err");
+      setAcctNote("Saving…");
+      const res = await window.AgentAuth.authFetch("/api/admin/promo-code-sheet", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "save", sheetUrlOrId, tabNames }),
+      });
+      const data = await res.json();
+      if (!data.ok) return setAcctNote(data.error || "Save failed.", "err");
+      acctPromoCodeSheetData = data.sheet;
+      setAcctNote("Save success.", "ok");
+      renderPromoCodeSheet();
+    }
+
+    async function resetPromoCodeSheet() {
+      setAcctNote("Resetting…");
+      const res = await window.AgentAuth.authFetch("/api/admin/promo-code-sheet", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "reset" }),
+      });
+      const data = await res.json();
+      if (!data.ok) return setAcctNote(data.error || "Reset failed.", "err");
+      acctPromoCodeSheetData = data.sheet;
+      setAcctNote("Reset success.", "ok");
+      renderPromoCodeSheet();
+    }
+
+    // ---- Issue Submission Gsheet (brand x module grid + dynamic
+    // Promotion Request rows) ----
+    // Same brand-sidebar layout as TG Group/Channel — one row per fixed
+    // module for the selected brand, plus one row per Promotion Request
+    // promotion type that brand has configured. Backed by
+    // /api/admin/issue-submission-sheet — see
+    // functions/_shared/issueSubmissionSheets.js for the KV layer.
+    let acctIssueSheetData = null;
+    let acctIssueSheetSelectedBrand = null;
+
+    async function loadIssueSubmissionSheet() {
+      const res = await window.AgentAuth.authFetch("/api/admin/issue-submission-sheet");
+      const data = await res.json();
+      if (!data.ok) {
+        acctBody.innerHTML = `<p class="edit-modal-note err">${acctEsc(data.error || "Failed to load.")}</p>`;
+        return;
+      }
+      acctIssueSheetData = data;
+      if (!acctIssueSheetSelectedBrand || !data.brands.some((b) => b.id === acctIssueSheetSelectedBrand)) {
+        acctIssueSheetSelectedBrand = data.brands[0]?.id || null;
+      }
+      renderIssueSubmissionSheet();
+    }
+
+    function renderIssueSubmissionSheet() {
+      if (!acctIssueSheetData) return;
+      const { brands, modules, sheets, promotions } = acctIssueSheetData;
+      const canEdit = canEditAdminSection("issueSubmissionSheet");
+      const roAttr = canEdit ? "" : "disabled";
+      const brandId = acctIssueSheetSelectedBrand;
+
+      const brandListHtml = brands.map((b) => `
+        <div class="tgroute-brand${b.id === brandId ? " selected" : ""}" data-brand="${acctEsc(b.id)}">${acctEsc(b.name)}</div>
+      `).join("");
+
+      const moduleRowsHtml = modules.map((m) => {
+        const entry = sheets[`${brandId}|${m.id}`] || { sheetId: "", tabNames: [], isOverride: false };
+        return `
+          <div class="tgroute-row" data-row="module" data-module="${acctEsc(m.id)}">
+            <div class="tgroute-mod-name">${m.emoji || ""} ${acctEsc(m.name)}
+              <span class="route-tag${entry.isOverride ? " custom" : ""}">${entry.isOverride ? "custom" : "default"}</span>
+            </div>
+            <div class="tgroute-fields">
+              <input type="text" class="iss-sheet" placeholder="Google Sheet URL or ID" value="${acctEsc(entry.sheetId)}" autocomplete="off" ${roAttr} />
+              <input type="text" class="iss-tabs" placeholder="Tab names, comma-separated" value="${acctEsc((entry.tabNames || []).join(", "))}" autocomplete="off" ${roAttr} />
+              ${canEdit ? `<div class="tgroute-row-actions">
+                <button type="button" class="tgroute-action-btn iss-save">Save</button>
+                ${entry.isOverride ? '<button type="button" class="tgroute-action-btn tgroute-action-secondary iss-reset">Reset</button>' : ""}
+              </div>` : ""}
+            </div>
+          </div>`;
+      }).join("");
+
+      const promoList = promotions[brandId] || [];
+      const promoRowsHtml = promoList.map((p) => `
+        <div class="tgroute-row" data-row="promotion" data-promotion="${acctEsc(p.promotion)}">
+          <div class="tgroute-mod-name">🎁 Promotion Request — ${acctEsc(p.promotion)}
+            <span class="route-tag${p.isOverride ? " custom" : ""}">${p.isOverride ? "custom" : "default"}</span>
+          </div>
+          <div class="tgroute-fields">
+            <input type="text" class="iss-sheet" placeholder="Google Sheet URL or ID" value="${acctEsc(p.sheetId)}" autocomplete="off" ${roAttr} />
+            <input type="text" class="iss-tabs" placeholder="Tab names, comma-separated" value="${acctEsc((p.tabNames || []).join(", "))}" autocomplete="off" ${roAttr} />
+            ${canEdit ? `<div class="tgroute-row-actions">
+              <button type="button" class="tgroute-action-btn iss-save">Save</button>
+              ${p.isOverride ? '<button type="button" class="tgroute-action-btn tgroute-action-secondary iss-reset">Reset</button>' : ""}
+            </div>` : ""}
+          </div>
+        </div>`).join("");
+
+      acctBody.innerHTML = `
+        <div class="tgroute-layout">
+          <div class="tgroute-brands">${brandListHtml}</div>
+          <div class="tgroute-modules">${moduleRowsHtml}${promoRowsHtml}</div>
+        </div>
+        <hr class="tgroute-divider" />
+        ${canEdit ? "" : '<p class="edit-modal-note">View only.</p>'}
+        <p class="edit-modal-note tgroute-footnote">Only WHICH sheet/tab a module writes to is overridable — the column layout itself always stays the built-in default. Changes apply to the very next form submission — no redeploy needed. Multiple comma-separated tab names are tried in order; the first one that actually exists on the sheet is used.</p>`;
+
+      acctBody.querySelectorAll(".tgroute-brand").forEach((el) => {
+        el.addEventListener("click", () => {
+          acctIssueSheetSelectedBrand = el.dataset.brand;
+          setAcctNote("");
+          renderIssueSubmissionSheet();
+        });
+      });
+      acctBody.querySelectorAll('[data-row="module"]').forEach((row) => {
+        row.querySelector(".iss-save")?.addEventListener("click", () => saveIssueSheetRow(row, { moduleId: row.dataset.module }));
+        row.querySelector(".iss-reset")?.addEventListener("click", () => resetIssueSheetRow({ moduleId: row.dataset.module }));
+      });
+      acctBody.querySelectorAll('[data-row="promotion"]').forEach((row) => {
+        row.querySelector(".iss-save")?.addEventListener("click", () => saveIssueSheetRow(row, { promotion: row.dataset.promotion }));
+        row.querySelector(".iss-reset")?.addEventListener("click", () => resetIssueSheetRow({ promotion: row.dataset.promotion }));
+      });
+    }
+
+    async function saveIssueSheetRow(row, target) {
+      const sheetUrlOrId = row.querySelector(".iss-sheet").value.trim();
+      const tabNames = row.querySelector(".iss-tabs").value.trim();
+      if (!sheetUrlOrId) return setAcctNote("Sheet URL or ID is required.", "err");
+      if (!tabNames) return setAcctNote("At least one tab name is required.", "err");
+      setAcctNote("Saving…");
+      const res = await window.AgentAuth.authFetch("/api/admin/issue-submission-sheet", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "save", brandId: acctIssueSheetSelectedBrand, sheetUrlOrId, tabNames, ...target }),
+      });
+      const data = await res.json();
+      if (!data.ok) return setAcctNote(data.error || "Save failed.", "err");
+      applyIssueSheetResult(target, data.sheet);
+      setAcctNote("Save success.", "ok");
+      renderIssueSubmissionSheet();
+    }
+
+    async function resetIssueSheetRow(target) {
+      setAcctNote("Resetting…");
+      const res = await window.AgentAuth.authFetch("/api/admin/issue-submission-sheet", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "reset", brandId: acctIssueSheetSelectedBrand, ...target }),
+      });
+      const data = await res.json();
+      if (!data.ok) return setAcctNote(data.error || "Reset failed.", "err");
+      applyIssueSheetResult(target, data.sheet);
+      setAcctNote("Reset success.", "ok");
+      renderIssueSubmissionSheet();
+    }
+
+    function applyIssueSheetResult(target, sheet) {
+      const brandId = acctIssueSheetSelectedBrand;
+      if (target.moduleId) {
+        acctIssueSheetData.sheets[`${brandId}|${target.moduleId}`] = sheet;
+      } else {
+        const list = acctIssueSheetData.promotions[brandId] || [];
+        const idx = list.findIndex((p) => p.promotion === target.promotion);
+        if (idx >= 0) list[idx] = { promotion: target.promotion, ...sheet };
+      }
+    }
+
     async function loadAgentProfileTable() {
       const [accountsRes, officesRes] = await Promise.all([
         window.AgentAuth.authFetch("/api/admin/accounts"),
@@ -1769,7 +2011,7 @@
       // above) — kept as a small local set here rather than a new
       // ADMIN_SECTIONS_LIST field, since it's purely how this one modal
       // groups the checkboxes for display.
-      const INTEGRATION_PORTAL_SECTION_IDS = ["tgRoutes", "depositSheets", "bettingLinks", "webLinks"];
+      const INTEGRATION_PORTAL_SECTION_IDS = ["tgRoutes", "depositSheets", "bettingLinks", "webLinks", "promoCodeSheet", "issueSubmissionSheet"];
       const accountMgmtSectionChecks = ADMIN_SECTIONS_LIST.filter((s) => !INTEGRATION_PORTAL_SECTION_IDS.includes(s.id)).map(renderAdminSectionCheck).join("");
       const integrationPortalSectionChecks = ADMIN_SECTIONS_LIST.filter((s) => INTEGRATION_PORTAL_SECTION_IDS.includes(s.id)).map(renderAdminSectionCheck).join("");
 

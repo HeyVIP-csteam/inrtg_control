@@ -122,6 +122,14 @@ export const ADMIN_SECTIONS_LIST = [
   // can still SEE and click the pills (GET /api/brand-config stays
   // unauthenticated), only EDITING a link is gated here.
   { id: "webLinks", name: "Web Link", icon: "🔗", floorRank: ROLE_RANK.superadmin },
+  // Added — Integration Portal's Promo Code Gsheet / Issue Submission
+  // Gsheet rows (KV override for functions/api/promo-search.js and
+  // functions/api/submit.js respectively). Same tier/shape as
+  // depositSheets/webLinks above — sensitive config surface, opt-in-only,
+  // and (like the rest of the Integration Portal group) also gated behind
+  // the "integrationPortal" OWNER_TOPIC_ITEMS grant below.
+  { id: "promoCodeSheet", name: "Promo Code Gsheet", icon: "🎟️", floorRank: ROLE_RANK.superadmin },
+  { id: "issueSubmissionSheet", name: "Issue Submission Gsheet", icon: "🧾", floorRank: ROLE_RANK.superadmin },
   // NOTE — "announcements" and "activeAgents" USED to live here (both
   // superadmin-tier, Owner-controlled Account Management Access items).
   // Moved out, 2026-08-10 — they're now OWNER_TOPIC_ITEMS below, living
@@ -142,13 +150,13 @@ export const ADMIN_SECTIONS_DEFAULT_SEEN = {
   agent: [],
   senior: ["createAccount"],
   admin: ["whitelistIp"],
-  superadmin: ["createAccount", "whitelistIp", "tgRoutes", "agentProfile", "depositSheets", "settings", "bettingLinks", "webLinks"],
+  superadmin: ["createAccount", "whitelistIp", "tgRoutes", "agentProfile", "depositSheets", "settings", "bettingLinks", "webLinks", "promoCodeSheet", "issueSubmissionSheet"],
 };
 export const ADMIN_SECTIONS_DEFAULT_EDIT = {
   agent: [],
   senior: [],
   admin: [], // Whitelist IP visible but view-only by default
-  superadmin: ["whitelistIp", "tgRoutes", "agentProfile", "depositSheets", "settings", "bettingLinks", "webLinks"],
+  superadmin: ["whitelistIp", "tgRoutes", "agentProfile", "depositSheets", "settings", "bettingLinks", "webLinks", "promoCodeSheet", "issueSubmissionSheet"],
 };
 
 // ---- Owner Topics ("Topic access", Owner-gated items) ----
@@ -201,8 +209,8 @@ export const OWNER_TOPIC_ITEMS = [
   // needs an EXPLICIT per-account grant here before it shows in the
   // sidebar at all, on top of (not instead of) the existing
   // "Integration Portal Access" checkboxes in Account Management Access
-  // (see EDITABLE ADMIN_SECTIONS / canSeeAdminSection for tgRoutes/
-  // depositSheets/bettingLinks/webLinks). Same reasoning as everywhere
+  // (see EDITABLE_ADMIN_SECTIONS / canSeeAdminSection for tgRoutes/
+  // depositSheets/bettingLinks/webLinks/promoCodeSheet/issueSubmissionSheet). Same reasoning as everywhere
   // else this list is used: this is a coarse "can this account see the
   // menu entry at all" gate, separate from the finer "which of the 4
   // items inside it, view or edit" gate underneath — an account needs
@@ -262,7 +270,7 @@ export function canManageOthersAdminAccess(account) {
 // View-only. (The separate "actor must outrank the TARGET account" rule
 // for Agent Profile edits, in functions/api/admin/accounts.js, is a
 // different, still-active protection — not replaced by this.)
-export const EDITABLE_ADMIN_SECTIONS = ["whitelistIp", "tgRoutes", "agentProfile", "depositSheets", "settings", "bettingLinks", "webLinks"];
+export const EDITABLE_ADMIN_SECTIONS = ["whitelistIp", "tgRoutes", "agentProfile", "depositSheets", "settings", "bettingLinks", "webLinks", "promoCodeSheet", "issueSubmissionSheet"];
 
 export function canEditAdminSection(account, sectionId) {
   if (!account) return true; // bootstrap mode
