@@ -2,11 +2,7 @@
  * GET /api/announcements -> { ok, announcements: [{id, text, topic, startAt, endAt}], rotateIntervalMs }
  *
  * Public banner endpoint — any LOGGED-IN account can call this (not
- * admin-only, the banner is a broadcast). Gated by the Maintenance/
- * Coming-soon system under item id "announcements" (see
- * _shared/featureStatus.js): if that's toggled off and the caller's role
- * isn't in the bypass list, this returns an EMPTY list, not a 403 — the
- * banner just stays quiet rather than erroring for everyone else.
+ * admin-only, the banner is a broadcast).
  *
  * Only returns announcements where isEffectivelyActive() is true right
  * now (see _shared/announcements.js — this is what makes schedules turn
@@ -14,7 +10,6 @@
  */
 import { verifyRequest } from "../_shared/accounts.js";
 import { getActiveAnnouncements, getAnnouncementSettings } from "../_shared/announcements.js";
-import { getFeatureStatus, accountCanBypass } from "../_shared/featureStatus.js";
 
 export async function onRequestGet(context) {
   try {
@@ -29,11 +24,6 @@ async function handleGet({ request, env }) {
   if (!account) return json({ ok: false, error: "Login required." }, 401);
 
   const settings = await getAnnouncementSettings(env);
-
-  const status = await getFeatureStatus(env, "announcements");
-  if (status.status !== "active" && !accountCanBypass(account, status.bypassRoles)) {
-    return json({ ok: true, announcements: [], rotateIntervalMs: settings.rotateIntervalMs });
-  }
 
   const active = await getActiveAnnouncements(env);
   const announcements = active.map((a) => ({

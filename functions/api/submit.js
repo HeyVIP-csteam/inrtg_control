@@ -8,7 +8,6 @@ import { uploadAttachmentToR2, screenshotUrl } from "../_shared/r2.js";
 import { createThread } from "../_shared/threads.js";
 import { verifyRequest, canSeeBrand, canSeeModule } from "../_shared/accounts.js";
 import { getRouteOverride } from "../_shared/routes.js";
-import { getFeatureStatus, accountCanBypass } from "../_shared/featureStatus.js";
 import { compressImageForTelegram } from "../_shared/telegramImageCompress.js";
 
 const VALID_MODULES = Object.keys(MODULE_META);
@@ -56,14 +55,6 @@ async function handleSubmit({ request, env }) {
   // reason to even validate brandId for a module this account can't use.
   if (!canSeeModule(account, moduleId)) {
     return json({ ok: false, error: `Your account doesn't have access to the ${MODULE_META[moduleId]?.name || moduleId} topic.` }, 403);
-  }
-  // Maintenance/Coming-soon toggle (Settings admin panel) — separate
-  // from the allowedModules check above; this is a live on/off switch
-  // any SuperAdmin/Owner controls, not a per-account access scope. See
-  // _shared/featureStatus.js.
-  const featureStatus = await getFeatureStatus(env, moduleId);
-  if (featureStatus.status !== "active" && !accountCanBypass(account, featureStatus.bypassRoles)) {
-    return json({ ok: false, error: "Currently unavailable." }, 403);
   }
   const brand = BRANDS[brandId];
   if (!brand) {

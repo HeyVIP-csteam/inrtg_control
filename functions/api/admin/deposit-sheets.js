@@ -2,14 +2,13 @@
  * /api/admin/deposit-sheets  ("Deposit Sheet Link" admin page)
  *
  * Same brand-sidebar shape as /api/admin/routes (TG Group/Channel) — one
- * row per brand for Deposit Issue, plus a This Month / Last Month pair
- * for Deposit Backup, each independently overridable.
+ * row per brand for Deposit Issue, plus a This Month sheet for Deposit
+ * Backup, each independently overridable.
  *
  *   GET
  *     -> { ok: true, brands: [{id,name}],
  *          sheets: { [brandId]: { sheetId, tabNames, isOverride } },
- *          backup: { [brandId]: { thisMonth: {sheetId,tabNames}|null,
- *                                  lastMonth: {sheetId,tabNames}|null } } }
+ *          backup: { [brandId]: { thisMonth: {sheetId,tabNames}|null } } }
  *        `isOverride: true` means it's a live KV override; `false` means
  *        the brand has no Deposit Issue sheet linked yet (sheetId: "").
  *        No hardcoded default exists for any brand — see depositSheets.js.
@@ -24,12 +23,10 @@
  *   POST { action:"reset", brandId } -> delete the Deposit Issue
  *     override, reverting that brand back to fully unconfigured.
  *
- *   Deposit Backup — "This Month" / "Last Month" rotation. Only This
- *   Month is ever directly editable; Last Month is read-only in the UI
- *   and only changes via the rollover action. See depositSheets.js.
+ *   Deposit Backup — "This Month" sheet. (A "Last Month" rotation used
+ *   to sit alongside this — removed 2026-08-15, unused.)
  *   POST { action:"saveBackupThisMonth", brandId, sheetUrlOrId, tabNames }
  *   POST { action:"clearBackupThisMonth", brandId }
- *   POST { action:"rollBackup", brandId }
  *
  * NOTE: this admin GET/POST intentionally still lists EVERY brand,
  * including ones currently in DEPOSIT_HIDDEN_BRANDS (depositSheets.js)
@@ -47,7 +44,6 @@ import {
   getDepositBackup,
   saveDepositBackupThisMonth,
   clearDepositBackupThisMonth,
-  rollDepositBackup,
 } from "../../_shared/depositSheets.js";
 
 const MODULE_SLOT = "depositIssue"; // must match deposit-issue/{search,update,sheet-links}.js
@@ -147,10 +143,6 @@ async function handlePost({ request, env }) {
   }
   if (body.action === "clearBackupThisMonth") {
     const updated = await clearDepositBackupThisMonth(env, brandId);
-    return json({ ok: true, brandId, backup: updated });
-  }
-  if (body.action === "rollBackup") {
-    const updated = await rollDepositBackup(env, brandId);
     return json({ ok: true, brandId, backup: updated });
   }
 

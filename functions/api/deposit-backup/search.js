@@ -1,19 +1,15 @@
 /**
  * POST /api/deposit-backup/search
  *
- * Deposit Backup — read-only search across one brand's "This Month" and
- * "Last Month" backup sheets (see functions/_shared/depositSheets.js for
- * how those two are stored/rotated). Modeled on Deposit Issue's
- * search.js (same auth gate, same tab-resolution/caching, same
- * per-brand access control), with three differences:
+ * Deposit Backup — read-only search across one brand's "This Month"
+ * backup sheet (see functions/_shared/depositSheets.js). Modeled on
+ * Deposit Issue's search.js (same auth gate, same tab-resolution/
+ * caching, same per-brand access control), with two differences:
  *
  *   1. No update endpoint — read-only by design. Results still include
  *      the CS-facing columns (CS PIC, Status CS, etc.) for reference,
  *      just not editable.
- *   2. Two sheets per brand — "This Month" and "Last Month" are searched
- *      together by default, each result tagged with which one it came
- *      from.
- *   3. No "All Brands" fan-out at all (stricter than Deposit Issue,
+ *   2. No "All Brands" fan-out at all (stricter than Deposit Issue,
  *      which at least still has a directory mode) — a specific brand is
  *      always required. No hardcoded default sheet for any brand.
  *
@@ -21,6 +17,11 @@
  * brand — see functions/_shared/depositColumns.js. Confirmed 2026-08-01
  * from BetVisa's real backup sheet screenshot; applies to every brand's
  * Deposit Backup sheet the same way.
+ *
+ * (A "Last Month" sheet used to be searched alongside This Month —
+ * removed 2026-08-15, unused. The `months` loop below is left generic
+ * on purpose rather than flattened to a single This-Month-only path, in
+ * case a second source is ever needed again.)
  */
 import { verifyRequest, canSeeBrand } from "../../_shared/accounts.js";
 import { BRANDS } from "../../_shared/routing.js";
@@ -28,12 +29,11 @@ import { getDepositBackup, DEPOSIT_HIDDEN_BRANDS } from "../../_shared/depositSh
 import { batchGetValues, getSheetTabs } from "../../_shared/googleSheets.js";
 import { getAccessToken } from "../../_shared/googleOAuth.js";
 import { BACKUP_COLUMNS as cols } from "../../_shared/depositColumns.js";
-import { getFeatureStatus, accountCanBypass } from "../../_shared/featureStatus.js";
 
 // Column layout is the SAME for every brand's Deposit Backup sheet — see
 // depositColumns.js. (Deposit Issue uses a different layout, also
 // per-module not per-brand — don't confuse the two.)
-const MAX_RESULTS = 500; // global cap across This Month + Last Month combined
+const MAX_RESULTS = 500; // global cap across this brand's backup sheet(s)
 
 function normalizeTabName(name) {
   return String(name).normalize("NFKC").replace(/\s+/g, " ").trim().toLowerCase();
@@ -50,8 +50,7 @@ function formatRequestDateTime(dateRaw, timeRaw) {
 }
 
 // Computed from the RAW date/time (before formatRequestDateTime
-// overwrites the display value), so This Month + Last Month interleave
-// by actual transaction time rather than staying grouped by sheet.
+// overwrites the display value), for a consistent most-recent-first sort.
 function sortTimestamp(dateRaw, timeRaw) {
   const dm = String(dateRaw || "").trim().match(/^(\d{4})-(\d{2})-(\d{2})$/);
   if (!dm) return 0;
@@ -93,13 +92,6 @@ async function handleSearch({ request, env }) {
   const account = await verifyRequest(request, env);
   if (!account) return json({ ok: false, error: "Login required." }, 401);
 
-  // Maintenance/Coming-soon toggle (Settings admin panel) — see
-  // _shared/featureStatus.js.
-  const featureStatus = await getFeatureStatus(env, "deposit_backup");
-  if (featureStatus.status !== "active" && !accountCanBypass(account, featureStatus.bypassRoles)) {
-    return json({ ok: false, error: "Currently unavailable." }, 403);
-  }
-
   if (!env.GOOGLE_OAUTH_CLIENT_ID || !env.GOOGLE_OAUTH_CLIENT_SECRET || !env.GOOGLE_OAUTH_REFRESH_TOKEN) {
     return json({ ok: false, error: "Server is missing Google OAuth credentials." }, 500);
   }
@@ -139,7 +131,6 @@ async function handleSearch({ request, env }) {
   const backup = await getDepositBackup(env, requestedBrand);
   const months = [];
   if (backup.thisMonth) months.push({ key: "thisMonth", label: "This Month", sheetId: backup.thisMonth.sheetId, tabNames: backup.thisMonth.tabNames });
-  if (backup.lastMonth) months.push({ key: "lastMonth", label: "Last Month", sheetId: backup.lastMonth.sheetId, tabNames: backup.lastMonth.tabNames });
 
   if (!months.length) {
     return json({ ok: true, results: [], notConfigured: true, brand: requestedBrand });
@@ -240,8 +231,8 @@ async function handleSearch({ request, env }) {
     ok: true,
     results,
     tabWarnings: tabWarnings.length ? tabWarnings : undefined,
-    missingMonths: ["thisMonth", "lastMonth"].filter((k) => !months.some((m) => m.key === k)).length
-      ? ["thisMonth", "lastMonth"].filter((k) => !months.some((m) => m.key === k))
+    missingMonths: ["thisMonth"].filter((k) => !months.some((m) => m.key === k)).length
+      ? ["thisMonth"].filter((k) => !months.some((m) => m.key === k))
       : undefined,
   });
 }

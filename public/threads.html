@@ -2063,21 +2063,7 @@
       document.getElementById("replyInput")?.focus();
     });
 
-    // Maintenance/Coming-soon toggle — catches a direct/bookmarked visit
-    // to this page while a SuperAdmin/Owner has switched it off. Real
-    // enforcement is server-side in functions/api/threads.js.
-    authFetch("/api/feature-status").then((r) => r.json()).then((data) => {
-      const item = data.ok && data.items["tg_reply_threads"];
-      if (item && item.blocked) {
-        document.body.innerHTML = `<div style="display:flex;align-items:center;justify-content:center;height:100vh;color:#e5e7eb;font-family:system-ui;font-size:15px;text-align:center;padding:24px;">${
-          item.status === "coming_soon"
-            ? "🔜 Not available yet, please check back later."
-            : "⚠️ Under maintenance, please try again later."
-        }</div>`;
-        return;
-      }
-      bootDashboard();
-    }).catch(() => bootDashboard()); // Non-fatal — server still enforces the real block.
+    bootDashboard();
 
     // Browsers throttle background-tab timers, so a poll can lag while the
     // tab is hidden (e.g. agent switches to the Telegram app/tab). Catch up

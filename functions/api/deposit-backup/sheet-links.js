@@ -4,8 +4,7 @@
  * Same purpose as Deposit Issue's sheet-links.js: powers the "All
  * Brands" directory view (the only thing "All Brands" does here — no
  * cross-brand search, same as Deposit Issue). Returns, for every brand
- * the logged-in agent can see, whichever of This Month / Last Month are
- * currently linked.
+ * the logged-in agent can see, whichever brands have This Month linked.
  */
 import { verifyRequest, canSeeBrand } from "../../_shared/accounts.js";
 import { BRANDS } from "../../_shared/routing.js";
@@ -34,7 +33,6 @@ async function handleGet({ request, env }) {
         id,
         name: BRANDS[id].name,
         thisMonthSheetId: backup.thisMonth ? backup.thisMonth.sheetId : null,
-        lastMonthSheetId: backup.lastMonth ? backup.lastMonth.sheetId : null,
       };
     })
   );

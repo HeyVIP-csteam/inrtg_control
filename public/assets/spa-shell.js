@@ -242,14 +242,18 @@
     // BUG FIX 2026-08-15: capturingFor used to be reset to null in a
     // `finally` block immediately after this synchronous forEach — but
     // threads.html (and potentially others) don't actually call
-    // setInterval() synchronously here; they kick it off from INSIDE an
-    // async callback (an authFetch(...).then(() => bootDashboard())
-    // feature-status check), which only resumes and calls setInterval()
-    // well AFTER this synchronous block — and therefore after finally
-    // already nulled capturingFor out. Those intervals were silently
-    // never being recorded into viewIntervals[view] at all, so
-    // clearViewIntervals() could never clean them up on navigating away
-    // — a permanent, accumulating interval leak, one pair per Threads
+    // setInterval() synchronously here; at the time this was written
+    // threads.html kicked it off from INSIDE an async callback (an
+    // authFetch(...).then(() => bootDashboard()) maintenance-check —
+    // since removed along with the rest of the Maintenance/Coming-soon
+    // feature, but the same "async work before the first setInterval()
+    // call" shape can recur in any routed page), which only resumes and
+    // calls setInterval() well AFTER this synchronous block — and
+    // therefore after finally already nulled capturingFor out. Those
+    // intervals were silently never being recorded into viewIntervals[view]
+    // at all, so clearViewIntervals() could never clean them up on
+    // navigating away — a permanent, accumulating interval leak, one pair
+    // per Threads
     // visit, each one eventually throwing once it tries to read a DOM
     // node (e.g. #threadSearch) that navigating away already removed.
     // Fix: leave capturingFor pointing at THIS view indefinitely, so any

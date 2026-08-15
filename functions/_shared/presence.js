@@ -3,8 +3,8 @@
  *
  * "Active Agents" — a real-time online/offline board for staff accounts,
  * built on THREADS_KV under its own `presence:` prefix so it never
- * collides with thread/office/account/feature-status keys already
- * living in that same namespace.
+ * collides with thread/office/account keys already living in that same
+ * namespace.
  *
  * TWO STATES ONLY — online / offline. There used to be a third
  * "inactive" state (tab backgrounded / idle) with its own, shorter

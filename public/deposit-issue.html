@@ -316,18 +316,6 @@
   window.initClock();
   window.AgentAuth.renderWhoami("agentWhoami");
 
-  // Maintenance/Coming-soon toggle — catches a direct/bookmarked visit
-  // while a SuperAdmin/Owner has switched this off. Real enforcement is
-  // server-side in functions/api/deposit-issue/search.js + update.js.
-  window.AgentAuth.authFetch("/api/feature-status").then(function (r) { return r.json(); }).then(function (data) {
-    var item = data.ok && data.items["deposit_issue"];
-    if (item && item.blocked) {
-      document.body.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100vh;color:#e5e7eb;font-family:system-ui;font-size:15px;text-align:center;padding:24px;">' +
-        (item.status === "coming_soon" ? "🔜 Not available yet, please check back later." : "⚠️ Under maintenance, please try again later.") +
-        '</div>';
-    }
-  }).catch(function () {});
-
   // Brands — must match functions/_shared/routing.js's BRANDS keys/names
   // exactly. This frontend copy exists only so the brand dropdown/logos
   // render without an extra API round-trip; the backend (BRANDS in

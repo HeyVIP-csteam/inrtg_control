@@ -75,8 +75,6 @@
 <link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;600&display=swap" onload="this.onload=null;this.rel='stylesheet'" />
 <noscript><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;600&display=swap" /></noscript>
 <link rel="stylesheet" href="/assets/style.css?v=63a5348a" />
-<link rel="stylesheet" href="/assets/maintenance-breathing-light.css?v=b3446084" />
-<link rel="stylesheet" href="/assets/settings-dropdown.css?v=ff5b816c" />
 <script src="/assets/theme.js?v=5b27e630"></script>
 <script src="/assets/toast.js?v=67c1e195" defer></script>
 <script src="/assets/starfield.js?v=b6e92821" defer></script>
@@ -295,7 +293,7 @@
       <main class="hub-main">
         <div class="inner" id="viewHome">
           <div class="tool-cards">
-          <a href="/threads.html" data-route="threads" class="tool-card" id="threadsCard" data-feature-item="tg_reply_threads" style="--tool-accent:#38bdf8;">
+          <a href="/threads.html" data-route="threads" class="tool-card" id="threadsCard" style="--tool-accent:#38bdf8;">
             <div class="t-head">
               <div class="t-icon" style="background:#38bdf833;">💬<span class="t-badge" id="threadsUnreadBadge"></span></div>
               <div class="t-name">TG Reply Threads</div>
@@ -306,7 +304,7 @@
               <span class="t-open">Open →</span>
             </div>
           </a>
-          <a href="/deposit-issue.html" data-route="depositIssue" class="tool-card" data-feature-item="deposit_issue" style="--tool-accent:#2f6fed;">
+          <a href="/deposit-issue.html" data-route="depositIssue" class="tool-card" style="--tool-accent:#2f6fed;">
             <div class="t-head">
               <div class="t-icon" style="background:#2f6fed33;">💳</div>
               <div class="t-name">Deposit Issue</div>
@@ -317,7 +315,7 @@
               <span class="t-open">Open →</span>
             </div>
           </a>
-          <a href="/deposit-backup.html" data-route="depositBackup" class="tool-card" data-feature-item="deposit_backup" style="--tool-accent:#2f6fed;">
+          <a href="/deposit-backup.html" data-route="depositBackup" class="tool-card" style="--tool-accent:#2f6fed;">
             <div class="t-head">
               <div class="t-icon" style="background:#2f6fed33;">💻</div>
               <div class="t-name">Deposit Backup</div>
@@ -328,7 +326,7 @@
               <span class="t-open">Open →</span>
             </div>
           </a>
-          <a href="/promo.html" data-route="promo" class="tool-card" data-feature-item="promo_code_search" style="--tool-accent:#f472b6;">
+          <a href="/promo.html" data-route="promo" class="tool-card" style="--tool-accent:#f472b6;">
             <div class="t-head">
               <div class="t-icon" style="background:#f472b633;">🎟️</div>
               <div class="t-name">Promo Code Search</div>
@@ -350,7 +348,7 @@
               <span class="t-open">Open →</span>
             </div>
           </a>
-          <a href="/betting-resources.html" class="tool-card" id="bettingResourcesCard" data-feature-item="betting_resources" style="--tool-accent:#a78bfa;">
+          <a href="/betting-resources.html" class="tool-card" id="bettingResourcesCard" style="--tool-accent:#a78bfa;">
             <div class="t-head">
               <div class="t-icon" style="background:#a78bfa33;">📋</div>
               <div class="t-name">HeyVIP Betting Rules</div>
@@ -402,10 +400,7 @@
   </div>
 
   <script src="/assets/schemas.js?v=b5c55f4a"></script>
-  <script src="/assets/apply-feature-status-to-ui.js?v=1ee14c16"></script>
   <script src="/assets/announcement-banner.js?v=4881665d"></script>
-  <script src="/assets/settings-dropdown.js?v=437d2f61"></script>
-  <script src="/assets/settings-admin-panel.js?v=53569c6b"></script>
   <script src="/assets/ip-access-panel.js?v=97ca84fa"></script>
   <script src="/assets/active-agents-panel.js?v=b057bd2e"></script>
   <script>
@@ -577,16 +572,6 @@
       list.appendChild(a);
     });
     window.wireFadeLinks(".sidebar-item");
-
-    // ---- Maintenance / Coming-soon toggle — gray out + block click for
-    // anything a SuperAdmin/Owner has switched off in Settings. UX only;
-    // the real enforcement is server-side (submit.js, threads.js,
-    // promo-search.js, deposit-issue/*, deposit-backup/*). See
-    // functions/api/feature-status.js + public/assets/apply-feature-
-    // status-to-ui.js.
-    applyFeatureStatuses({
-      fetchJson: (url) => window.AgentAuth.authFetch(url).then((r) => r.json()),
-    });
 
     // ---- Account Management (sidebar dropdown + 4 focused modals) ----
     // Rank matches functions/_shared/accounts.js ROLE_RANK exactly — keep
@@ -982,54 +967,33 @@
       }
     }
 
-    // ---- Settings (maintenance / coming-soon toggle) ----
-    // Reuses the exact same .tgroute-row/.tgroute-fields styling as TG
-    // Group / Channel above, plus the portable fs-dropdown component
-    // (public/assets/settings-dropdown.css/js) and renderer (public/
-    // assets/settings-admin-panel.js). Backed by
-    // /api/admin/feature-status; the live "what's blocked for me" read
-    // any agent gets is /api/feature-status (see apply-feature-status-
-    // to-ui.js, called once on page load above).
+    // ---- Settings ----
+    // Now just the two standalone tools below (Mention history backfill +
+    // Announcement rotation speed) — the Maintenance/Coming-soon toggle
+    // that used to live here (and the panel/dropdown machinery that
+    // rendered it — settings-admin-panel.js, settings-dropdown.js/css,
+    // maintenance-breathing-light.css, functions/_shared/featureStatus.js,
+    // functions/api/admin/feature-status.js, functions/api/feature-
+    // status.js, and the per-endpoint blocking checks in submit.js/
+    // threads.js/promo-search.js/deposit-issue//deposit-backup/*) was
+    // removed 2026-08-15 — unused, and every enforcement point it added
+    // to those endpoints is gone with it.
     async function loadFeatureSettings() {
-      const res = await window.AgentAuth.authFetch("/api/admin/feature-status");
-      const data = await res.json();
-      if (!data.ok) {
-        acctBody.innerHTML = `<p class="edit-modal-note err">${acctEsc(data.error || "Failed to load.")}</p>`;
-        return;
-      }
-      const canEditSettings = canEditAdminSection("settings");
+      acctTitle.textContent = "Settings";
       document.getElementById("acctModalSave").style.display = "none";
       document.getElementById("acctModalActions").style.display = "none";
-      // renderFeatureSettingsPanel() re-renders by replacing its
-      // container's ENTIRE innerHTML every time any row's Save is
-      // clicked (see settings-admin-panel.js's render()). Passing
-      // acctBody itself as that container used to wipe out the Mention
-      // backfill / Announcement rotation speed blocks appended below it
-      // (they're siblings of whatever this panel renders) — clicking
-      // Save on ANY maintenance/coming-soon row made those two sections
-      // vanish. Giving it its own dedicated child div means its
-      // self-driven re-renders only ever touch that div, never the
-      // siblings appended after it.
-      acctBody.innerHTML = '<div id="featureStatusPanel"></div>';
-      const featureStatusPanel = document.getElementById("featureStatusPanel");
-      renderFeatureSettingsPanel(featureStatusPanel, data.items, {
-        authFetch: window.AgentAuth.authFetch,
-        escapeHtml: acctEsc,
-        canEdit: canEditSettings,
-        setNote: setAcctNote,
-        onSaved: (itemId, item) => {
-          // Use the value THIS save just returned, not a re-fetch — KV
-          // is only eventually consistent (see featureStatus.js's header
-          // comment). Compute `blocked` against the CURRENT viewer's own
-          // role, same contract as /api/feature-status.
-          applyFeatureStatusItem(itemId, {
-            status: item.status,
-            blocked: item.status !== "active" && !item.bypassRoles.includes(authInfo?.role),
-          });
-        },
-      });
+      const canEditSettings = canEditAdminSection("settings");
+      acctBody.innerHTML = "";
       if (canEditSettings) renderMentionBackfillTool(acctBody);
       renderAnnouncementRotationControl(acctBody, canEditSettings);
+      // Both tools wrap themselves in a ".tgroute-divider" box (a top
+      // border + margin meant to separate them from whatever used to be
+      // rendered above — originally the Maintenance/Coming-soon panel,
+      // now nothing). Strip that top border/margin off whichever one
+      // ends up first so the modal doesn't open with a floating divider
+      // line right under the title.
+      const firstDivider = acctBody.querySelector(".tgroute-divider");
+      if (firstDivider) firstDivider.style.cssText = "border-top:none; margin-top:0;";
     }
 
     // ---- Announcement rotation-speed control ----
@@ -1374,9 +1338,8 @@
       `).join("");
 
       const issue = sheets[acctDepositSelectedBrand] || { sheetId: "", tabNames: [], isOverride: false };
-      const back = backup[acctDepositSelectedBrand] || { thisMonth: null, lastMonth: null };
+      const back = backup[acctDepositSelectedBrand] || { thisMonth: null };
       const thisMonth = back.thisMonth || { sheetId: "", tabNames: [] };
-      const lastMonth = back.lastMonth; // null = not linked, never directly editable
 
       acctBody.innerHTML = `
         <div class="tgroute-layout">
@@ -1411,18 +1374,6 @@
               </div>
             </div>
 
-            <div class="tgroute-row" data-row="backup-last">
-              <div class="tgroute-mod-name">🗓️ Deposit Backup — Last Month
-                <span class="route-tag${lastMonth ? " custom" : ""}">${lastMonth ? "linked" : "not linked"}</span>
-              </div>
-              <div class="tgroute-fields">
-                <input type="text" value="${acctEsc(lastMonth ? lastMonth.sheetId : "")}" placeholder="(set automatically by rollover)" disabled />
-                <input type="text" value="${acctEsc(lastMonth ? (lastMonth.tabNames || []).join(", ") : "")}" disabled />
-              </div>
-              <p class="edit-modal-note tgroute-footnote" style="margin-top:8px;">Last Month is read-only — it's always "whatever This Month was, before the most recent rollover." ${canEdit ? 'Use the button below at the start of a new month, after saving the new sheet into "This Month" above is no longer needed for the old one.' : ''}</p>
-              ${canEdit ? `<button type="button" class="tgroute-action-btn tgroute-action-secondary ds-roll" style="margin-top:4px;">Roll: This Month → Last Month</button>` : ""}
-            </div>
-
           </div>
         </div>
         <hr class="tgroute-divider" />
@@ -1446,10 +1397,6 @@
         thisRow.querySelector(".ds-save-this")?.addEventListener("click", () => saveDepositSheetRow(thisRow, "saveBackupThisMonth"));
         thisRow.querySelector(".ds-clear-this")?.addEventListener("click", () => resetDepositSheetRow("clearBackupThisMonth"));
       }
-      acctBody.querySelector(".ds-roll")?.addEventListener("click", () => {
-        if (!confirm(`Roll over ${acctDepositData.brands.find((b) => b.id === acctDepositSelectedBrand)?.name || ""}'s Deposit Backup? This Month becomes the new Last Month (discarding whatever was there before), and This Month is cleared out.`)) return;
-        resetDepositSheetRow("rollBackup");
-      });
     }
 
     async function saveDepositSheetRow(row, action) {
@@ -1470,16 +1417,15 @@
     }
 
     async function resetDepositSheetRow(action) {
-      const verb = action === "rollBackup" ? "Roll over" : "Reset";
-      setAcctNote(action === "rollBackup" ? "Rolling over…" : "Resetting…");
+      setAcctNote("Resetting…");
       const res = await window.AgentAuth.authFetch("/api/admin/deposit-sheets", {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action, brandId: acctDepositSelectedBrand }),
       });
       const data = await res.json();
-      if (!data.ok) return setAcctNote(data.error || `${verb} failed.`, "err");
+      if (!data.ok) return setAcctNote(data.error || "Reset failed.", "err");
       applyDepositSheetResult(action, data);
-      setAcctNote(`${verb} success.`, "ok");
+      setAcctNote("Reset success.", "ok");
       renderDepositSheets();
     }
 

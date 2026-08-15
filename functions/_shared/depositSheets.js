@@ -10,16 +10,17 @@
  * Stored in the same THREADS_KV namespace as accounts/offices/routes,
  * under its own key prefixes:
  *   deposit-sheet:<moduleSlot>:<brandId>  ->  { sheetId, tabNames: string[] }
- *   deposit-backup:<brandId>              ->  { thisMonth: {sheetId,tabNames}|null,
- *                                                lastMonth: {sheetId,tabNames}|null }
+ *   deposit-backup:<brandId>              ->  { thisMonth: {sheetId,tabNames}|null }
  *
  * `moduleSlot` is a stable identifier for WHICH module a Deposit Issue-
  * shaped sheet link feeds ("depositIssue" today) — kept as a string
  * constant (not hardcoded inline) specifically so a future module could
  * reuse this same key family under its own slot without colliding.
- * Deposit Backup does NOT use this shape at all — it needs a This
- * Month/Last Month rotation pair per brand instead of one flat slot, so
- * it gets its own key prefix and its own functions below.
+ * Deposit Backup does NOT use this shape at all — it's a single
+ * This-Month slot per brand, so it gets its own key prefix and its own
+ * functions below. (A "Last Month" rotation used to sit alongside it —
+ * removed 2026-08-15, unused; Deposit Backup search now only searches
+ * This Month.)
  *
  * No brand list lives in this file — every function here takes brandId
  * as a plain string and callers resolve it against BRANDS in routing.js,
@@ -114,31 +115,26 @@ export async function deleteDepositSheetOverride(env, moduleSlot, brandId) {
 }
 
 /**
- * ── Deposit Backup: "This Month" / "Last Month" rotation ──
+ * ── Deposit Backup: "This Month" sheet link ──
  *
- * Deliberately stored as ONE combined KV entry per brand (not two
- * separate keys) so the rollover operation below is a single atomic
- * write — no risk of "This Month cleared but Last Month write failed"
- * leaving things half-updated.
- *
- * Only "This Month" is ever directly editable — "Last Month" is
- * read-only in the UI and only ever changes via rollDepositBackup()
- * below: it's always "whatever This Month was, before the most recent
- * rollover."
+ * Used to be a combined "This Month"/"Last Month" rotation pair (one KV
+ * entry per brand, a rollover action to shift This Month into Last
+ * Month). Last Month was removed 2026-08-15 — unused; only This Month
+ * is stored now.
  */
 function backupKey(brandId) {
   return `deposit-backup:${brandId}`;
 }
 
 export async function getDepositBackup(env, brandId) {
-  if (!env.THREADS_KV) return { thisMonth: null, lastMonth: null };
+  if (!env.THREADS_KV) return { thisMonth: null };
   const raw = await env.THREADS_KV.get(backupKey(brandId));
-  if (!raw) return { thisMonth: null, lastMonth: null };
+  if (!raw) return { thisMonth: null };
   try {
     const parsed = JSON.parse(raw);
-    return { thisMonth: parsed.thisMonth || null, lastMonth: parsed.lastMonth || null };
+    return { thisMonth: parsed.thisMonth || null };
   } catch {
-    return { thisMonth: null, lastMonth: null };
+    return { thisMonth: null };
   }
 }
 
@@ -147,28 +143,14 @@ export async function saveDepositBackupThisMonth(env, brandId, { sheetUrlOrId, t
   if (!sheetId) throw new Error("Couldn't find a Sheet ID in that link — paste the full Google Sheets URL or just the ID.");
   const cleanTabs = String(tabNames || "").split(",").map((t) => t.trim()).filter(Boolean);
   if (!cleanTabs.length) throw new Error("At least one tab name is required.");
-  const current = await getDepositBackup(env, brandId);
-  const updated = { thisMonth: { sheetId, tabNames: cleanTabs }, lastMonth: current.lastMonth };
+  const updated = { thisMonth: { sheetId, tabNames: cleanTabs } };
   await env.THREADS_KV.put(backupKey(brandId), JSON.stringify(updated));
   return updated;
 }
 
-// Clears This Month only — no hardcoded default to "reset" back to, for
-// backup sheets. Last Month is left untouched.
+// No hardcoded default to "reset" back to, for backup sheets.
 export async function clearDepositBackupThisMonth(env, brandId) {
-  const current = await getDepositBackup(env, brandId);
-  const updated = { thisMonth: null, lastMonth: current.lastMonth };
-  await env.THREADS_KV.put(backupKey(brandId), JSON.stringify(updated));
-  return updated;
-}
-
-// The rollover: whatever's currently in This Month becomes the new Last
-// Month (discarding whatever was there before), and This Month is
-// cleared out ready for the new link to be pasted in via
-// saveDepositBackupThisMonth() as a separate, explicit next step.
-export async function rollDepositBackup(env, brandId) {
-  const current = await getDepositBackup(env, brandId);
-  const updated = { thisMonth: null, lastMonth: current.thisMonth };
+  const updated = { thisMonth: null };
   await env.THREADS_KV.put(backupKey(brandId), JSON.stringify(updated));
   return updated;
 }

@@ -99,10 +99,10 @@ export const ADMIN_SECTIONS_LIST = [
   { id: "whitelistIp", name: "IP Access", icon: "🌐", floorRank: ROLE_RANK.admin },
   { id: "tgRoutes", name: "TG Group / Channel", icon: "📡", floorRank: ROLE_RANK.admin },
   { id: "agentProfile", name: "Agent Profile", icon: "🪪", floorRank: ROLE_RANK.admin },
-  // Maintenance/Coming-soon toggle for the hub's modules + TG Reply
-  // Threads/Promo Code Search/Deposit Issue/Deposit Backup — see
-  // _shared/featureStatus.js. Same tier as tgRoutes (both are
-  // feature-control panels, not raw account/financial data).
+  // Settings admin panel — @ mention history backfill (TG Reply
+  // Threads) + the announcement banner's rotation speed. Same tier as
+  // tgRoutes (both are feature-control panels, not raw account/
+  // financial data).
   { id: "settings", name: "Settings", icon: "⚙️", floorRank: ROLE_RANK.admin },
   // Sensitive config surface (wrong link = CS reading/editing the wrong
   // brand's live deposit data) — floor is superadmin, not admin, so
