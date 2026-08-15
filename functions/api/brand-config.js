@@ -1,9 +1,18 @@
 /**
  * GET  /api/brand-config  -> { ok, config } — public, used to render the hub's brand pills
- * POST /api/brand-config  -> JSON { brand, link } — requires a logged-in account
- *                             (see _shared/accounts.js). Being logged in as any
- *                             agent IS the authorization now — no separate shared
- *                             edit password anymore.
+ * POST /api/brand-config  -> JSON { brand, link } — requires Can-Edit access to
+ *                             the "webLinks" Account Management Access section
+ *                             (see _shared/accounts.js). Editing here moved
+ *                             behind that gate 2026-08-15 — previously any
+ *                             logged-in agent could save through this endpoint
+ *                             (via the home page pill's own ✏️ button, now
+ *                             removed); the real editing surface is now the
+ *                             "Web Link" admin page (functions/api/admin/
+ *                             web-links.js), which posts to this same endpoint.
+ *                             GET stays fully public/unauthenticated on
+ *                             purpose — any agent still needs to read the
+ *                             links to render + click the pills, only saving
+ *                             a new link is gated.
  *
  * Config is a small JSON blob stored in the R2 bucket (env.SCREENSHOTS_BUCKET)
  * at key "brand-config.json": { [brandId]: { logoUrl, link } }.
@@ -23,7 +32,7 @@
  * owner) — small source image (60×60), upscaled to match the others;
  * looks fine at the 24px pill size this actually renders at.
  */
-import { verifyRequest } from "../_shared/accounts.js";
+import { authenticateStaff, ROLE_RANK, canEditAdminSection } from "../_shared/accounts.js";
 
 const DEFAULT_LOGOS = {
   crickex: "/assets/img/brands/crickex.png",
@@ -55,8 +64,11 @@ async function handlePost({ request, env }) {
   const bucket = env.SCREENSHOTS_BUCKET;
   if (!bucket) return json({ ok: false, error: "Server is missing the SCREENSHOTS_BUCKET R2 binding." }, 500);
 
-  const account = await verifyRequest(request, env);
-  if (!account) return json({ ok: false, error: "Login required." }, 401);
+  const auth = await authenticateStaff(request, env, ROLE_RANK.senior);
+  if (!auth.ok) return json({ ok: false, error: "Login required." }, 401);
+  if (!canEditAdminSection(auth.account, "webLinks")) {
+    return json({ ok: false, error: "You don't have Can-Edit access to Web Link." }, 403);
+  }
 
   let body;
   try {
@@ -68,17 +80,26 @@ async function handlePost({ request, env }) {
   const { brand, link } = body || {};
   if (!brand) return json({ ok: false, error: "Missing brand." }, 400);
 
-  const config = await readConfig(env);
-  const entry = config[brand] || {};
-  if (link !== undefined) entry.link = link || "";
-
-  config[brand] = entry;
-  await bucket.put("brand-config.json", JSON.stringify(config), { httpMetadata: { contentType: "application/json" } });
-
+  const config = await saveLink(env, brand, link);
   return json({ ok: true, config });
 }
 
-async function readConfig(env) {
+// Shared with functions/api/admin/web-links.js — the "Web Link" admin page
+// posts through THIS same /api/brand-config endpoint (see the file header),
+// so both stay backed by the exact one write path instead of two copies of
+// the R2 read-modify-write that could drift out of sync.
+export async function saveLink(env, brand, link) {
+  const bucket = env.SCREENSHOTS_BUCKET;
+  if (!bucket) throw new Error("Server is missing the SCREENSHOTS_BUCKET R2 binding.");
+  const config = await readConfig(env);
+  const entry = config[brand] || {};
+  if (link !== undefined) entry.link = link || "";
+  config[brand] = entry;
+  await bucket.put("brand-config.json", JSON.stringify(config), { httpMetadata: { contentType: "application/json" } });
+  return config;
+}
+
+export async function readConfig(env) {
   const bucket = env.SCREENSHOTS_BUCKET;
   let config = {};
   if (bucket) {

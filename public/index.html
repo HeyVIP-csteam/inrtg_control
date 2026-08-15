@@ -106,20 +106,12 @@
        inert at normal widths, same as the toggle button above. -->
   <div class="sidebar-backdrop" id="sidebarBackdrop"></div>
 
-  <div class="edit-modal-backdrop" id="editModalBackdrop">
-    <div class="edit-modal">
-      <button type="button" class="modal-close-btn" id="editModalClose" title="Close" aria-label="Close">✕</button>
-      <p class="edit-modal-title" id="editModalTitle">Edit brand</p>
-      <div class="field">
-        <label>Link (opens when the pill is clicked)</label>
-        <input type="text" id="editLink" placeholder="https://..." autocomplete="off" />
-      </div>
-      <p class="edit-modal-note" id="editModalNote"></p>
-      <div class="edit-modal-actions">
-        <button type="button" class="btn-submit" id="editSave">Save</button>
-      </div>
-    </div>
-  </div>
+  <!-- Home-page pill "Edit brand" modal REMOVED 2026-08-15 — link editing
+       moved to the "Web Link" Account Management Access section (see
+       openAcctModal("weblinks") below + functions/api/admin/web-links.js).
+       The Account Management modal (#acctModalBackdrop, further down)
+       already provides its own backdrop/title/note/actions markup, so
+       nothing new was needed here. -->
   <!-- Logo image editing removed for now (file upload wasn't working) — being
        revisited later; brand pills just show colored initials until then. -->
 
@@ -277,6 +269,7 @@
           <div class="sidebar-subitem" id="subTgRoutes" style="display:none;--sub-accent:#38bdf833;"><span class="sub-icon">📡</span> TG Group / Channel</div>
           <div class="sidebar-subitem" id="subDepositSheets" style="display:none;--sub-accent:#2f6fed33;"><span class="sub-icon">🧾</span> Deposit Sheet Link</div>
           <div class="sidebar-subitem" id="subBettingLinks" style="display:none;--sub-accent:#a78bfa33;"><span class="sub-icon">🔗</span> Betting Resources Links</div>
+          <div class="sidebar-subitem" id="subWebLinks" style="display:none;--sub-accent:#22d3ee33;"><span class="sub-icon">🔗</span> Web Link</div>
           <div class="sidebar-subitem" id="subSettings" style="display:none;--sub-accent:#f59e0b33;"><span class="sub-icon">⚙️</span> Settings</div>
           <div class="sidebar-subitem" id="subResetPassword" style="--sub-accent:#f3c46333;"><span class="sub-icon">🔑</span> Reset Password</div>
           <div class="sidebar-subitem" id="subAgentProfile" style="display:none;--sub-accent:#34d39933;"><span class="sub-icon">🪪</span> Agent Profile</div>
@@ -440,7 +433,6 @@
     const brandRowTrack = document.getElementById("brandRowTrack");
     const brandRowEl = document.getElementById("brandRow");
     let brandConfig = {};
-    let editingBrand = null;
 
     function buildBrandPill(b, i) {
       const entry = brandConfig[b.id] || {};
@@ -450,13 +442,14 @@
       const avatar = entry.logoUrl
         ? `<img class="avatar" src="${entry.logoUrl}" alt="${b.name}" />`
         : `<span class="avatar" style="background:${BRAND_COLORS[i % BRAND_COLORS.length]};">${initials}</span>`;
-      el.innerHTML = `${avatar}<span class="pill-name">${b.name}</span><button type="button" class="pill-edit" title="Edit ${b.name}" data-brand="${b.id}">✏️</button>`;
+      // ✏️ inline edit button REMOVED 2026-08-15 — editing a brand's link
+      // moved to the "Web Link" Account Management Access section
+      // (Owner-controlled, see functions/api/admin/web-links.js). Any
+      // agent can still click the pill name to open the link — only
+      // CHANGING the link is gated now.
+      el.innerHTML = `${avatar}<span class="pill-name">${b.name}</span>`;
       el.querySelector(".pill-name").addEventListener("click", () => {
         if (entry.link) window.open(entry.link, "_blank", "noopener");
-      });
-      el.querySelector(".pill-edit").addEventListener("click", (e) => {
-        e.stopPropagation();
-        openEditModal(b);
       });
       return el;
     }
@@ -542,54 +535,6 @@
     loadThreadsSummary();
     setInterval(loadThreadsSummary, 15000);
 
-    // ---- Edit modal ----
-    const backdrop = document.getElementById("editModalBackdrop");
-    const modalTitle = document.getElementById("editModalTitle");
-    const modalNote = document.getElementById("editModalNote");
-    const linkInput = document.getElementById("editLink");
-
-    function openEditModal(brand) {
-      editingBrand = brand;
-      modalTitle.textContent = `Edit ${brand.name}`;
-      modalNote.textContent = "";
-      modalNote.className = "edit-modal-note";
-      linkInput.value = (brandConfig[brand.id] && brandConfig[brand.id].link) || "";
-      backdrop.classList.add("is-open");
-    }
-    function closeEditModal() {
-      backdrop.classList.remove("is-open");
-      editingBrand = null;
-    }
-    document.getElementById("editModalClose").addEventListener("click", closeEditModal);
-    backdrop.addEventListener("click", (e) => { if (e.target === backdrop) closeEditModal(); });
-
-    document.getElementById("editSave").addEventListener("click", async () => {
-      if (!editingBrand) return;
-      modalNote.textContent = "Saving…";
-      modalNote.className = "edit-modal-note";
-
-      try {
-        // Logged-in-agent + this account's own credentials IS the
-        // authorization now — no separate shared edit password anymore
-        // (see functions/api/brand-config.js).
-        const res = await window.AgentAuth.authFetch("/api/brand-config", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ brand: editingBrand.id, link: linkInput.value || "" }),
-        });
-        const data = await res.json();
-        if (!res.ok || !data.ok) throw new Error(data.error || "Save failed.");
-        brandConfig = data.config;
-        renderBrandRow();
-        modalNote.textContent = "Saved.";
-        modalNote.className = "edit-modal-note ok";
-        setTimeout(closeEditModal, 600);
-      } catch (err) {
-        modalNote.textContent = err.message || "Save failed.";
-        modalNote.className = "edit-modal-note err";
-      }
-    });
-
     const hubStats = document.getElementById("hubStats");
     const visibleBrandCount = (window.AgentAuth ? window.AgentAuth.filterAllowedBrands(window.BRANDS) : window.BRANDS).length;
     const visibleModules = window.AgentAuth ? window.AgentAuth.filterAllowedModules(window.MODULES) : window.MODULES;
@@ -656,12 +601,16 @@
       { id: "agentProfile", name: "Agent Profile", icon: "🪪", floorRank: ROLE_RANK.admin },
       { id: "depositSheets", name: "Deposit Sheet Link", icon: "🧾", floorRank: ROLE_RANK.superadmin },
       { id: "bettingLinks", name: "Betting Resources Links", icon: "🔗", floorRank: ROLE_RANK.superadmin },
+      // Home-page brand-pill link editing — moved here 2026-08-15 from the
+      // pill's own ✏️ button (previously any logged-in agent). See
+      // functions/_shared/accounts.js's matching entry for the full story.
+      { id: "webLinks", name: "Web Link", icon: "🔗", floorRank: ROLE_RANK.superadmin },
       { id: "settings", name: "Settings", icon: "⚙️", floorRank: ROLE_RANK.admin },
       // "announcements" and "activeAgents" USED to live here — moved to
       // OWNER_TOPIC_ITEMS below, 2026-08-10 (see the comment on that
       // constant, and on the matching one in functions/_shared/accounts.js).
     ];
-    const EDITABLE_ADMIN_SECTIONS = ["whitelistIp", "tgRoutes", "agentProfile", "depositSheets", "settings", "bettingLinks"];
+    const EDITABLE_ADMIN_SECTIONS = ["whitelistIp", "tgRoutes", "agentProfile", "depositSheets", "settings", "bettingLinks", "webLinks"];
     // SECURITY FIX — 2026-07-28: role-based defaults for accounts the
     // Owner has never explicitly touched. Mirrors
     // ADMIN_SECTIONS_DEFAULT_SEEN / ADMIN_SECTIONS_DEFAULT_EDIT in
@@ -675,13 +624,13 @@
       agent: [],
       senior: ["createAccount"],
       admin: ["whitelistIp"],
-      superadmin: ["createAccount", "whitelistIp", "tgRoutes", "agentProfile", "depositSheets", "settings", "bettingLinks"],
+      superadmin: ["createAccount", "whitelistIp", "tgRoutes", "agentProfile", "depositSheets", "settings", "bettingLinks", "webLinks"],
     };
     const ADMIN_SECTIONS_DEFAULT_EDIT = {
       agent: [],
       senior: [],
       admin: [], // Whitelist IP visible by default, but view-only
-      superadmin: ["whitelistIp", "tgRoutes", "agentProfile", "depositSheets", "settings", "bettingLinks"],
+      superadmin: ["whitelistIp", "tgRoutes", "agentProfile", "depositSheets", "settings", "bettingLinks", "webLinks"],
     };
 
     // ---- Owner Topics ("Topic access", Owner-gated items) ----
@@ -735,6 +684,7 @@
     document.getElementById("subAgentProfile").style.display = canSeeAdminSection("agentProfile") ? "flex" : "none";
     document.getElementById("subDepositSheets").style.display = canSeeAdminSection("depositSheets") ? "flex" : "none";
     document.getElementById("subBettingLinks").style.display = canSeeAdminSection("bettingLinks") ? "flex" : "none";
+    document.getElementById("subWebLinks").style.display = canSeeAdminSection("webLinks") ? "flex" : "none";
     document.getElementById("subSettings").style.display = canSeeAdminSection("settings") ? "flex" : "none";
 
     // ---- Announcement tool card — same canSeeAdminSection gate as the
@@ -815,6 +765,7 @@
     document.getElementById("subTgRoutes").addEventListener("click", () => openAcctModal("tgroutes"));
     document.getElementById("subDepositSheets").addEventListener("click", () => openAcctModal("depositsheets"));
     document.getElementById("subBettingLinks").addEventListener("click", () => openAcctModal("bettinglinks"));
+    document.getElementById("subWebLinks").addEventListener("click", () => openAcctModal("weblinks"));
     document.getElementById("subSettings").addEventListener("click", () => openAcctModal("settings"));
     document.getElementById("subResetPassword").addEventListener("click", () => openAcctModal("reset"));
     document.getElementById("subAgentProfile").addEventListener("click", () => openAcctModal("profile"));
@@ -868,15 +819,15 @@
       acctBody.innerHTML = '<p class="edit-modal-note">Loading…</p>';
       acctBackdrop.classList.add("is-open");
       const modalEl = acctBackdrop.querySelector(".edit-modal");
-      modalEl.classList.toggle("wide", mode === "profile" || mode === "tgroutes" || mode === "depositsheets" || mode === "settings" || mode === "whitelist" || mode === "bettinglinks");
-      // "profile", "tgroutes", "depositsheets", and "settings" all use
-      // per-row inline save buttons instead of one global footer Save
-      // (too many independently-editable rows for a single "Save" to
+      modalEl.classList.toggle("wide", mode === "profile" || mode === "tgroutes" || mode === "depositsheets" || mode === "settings" || mode === "whitelist" || mode === "bettinglinks" || mode === "weblinks");
+      // "profile", "tgroutes", "depositsheets", "settings", and "weblinks"
+      // all use per-row inline save buttons instead of one global footer
+      // Save (too many independently-editable rows for a single "Save" to
       // mean anything useful). With Cancel removed (closing is via the X
       // button now), the whole actions row would otherwise just be dead
       // space when Save is hidden — hide the row itself, not just the
       // button inside it.
-      const showFooterSave = mode !== "profile" && mode !== "tgroutes" && mode !== "depositsheets" && mode !== "settings" && mode !== "whitelist";
+      const showFooterSave = mode !== "profile" && mode !== "tgroutes" && mode !== "depositsheets" && mode !== "settings" && mode !== "whitelist" && mode !== "weblinks";
       document.getElementById("acctModalSave").style.display = showFooterSave ? "" : "none";
       document.getElementById("acctModalActions").style.display = showFooterSave ? "" : "none";
       const roleFilterEl = document.getElementById("acctProfileRoleFilter");
@@ -979,6 +930,11 @@
       if (mode === "bettinglinks") {
         acctTitle.textContent = "Betting Resources Links";
         await loadBettingLinks();
+      }
+
+      if (mode === "weblinks") {
+        acctTitle.textContent = "Web Link";
+        await loadWebLinks();
       }
     }
 
@@ -1489,6 +1445,105 @@
       } else {
         acctDepositData.backup[acctDepositSelectedBrand] = data.backup;
       }
+    }
+
+    // ---- Web Link (the home-page brand-pill marquee's link, moved here
+    // 2026-08-15 from the pill's own ✏️ button) ----
+    // Same brand-sidebar layout as Deposit Sheet Link above, just a single
+    // "link" field per brand instead of Sheet + tab names. Backed by
+    // /api/admin/web-links, which writes through the exact same R2 path
+    // as /api/brand-config (see that file's saveLink()) — so the pills on
+    // Home reflect a save here immediately, no redeploy or extra sync step.
+    let acctWebLinksData = null;
+    let acctWebLinksSelectedBrand = null;
+
+    async function loadWebLinks() {
+      const res = await window.AgentAuth.authFetch("/api/admin/web-links");
+      const data = await res.json();
+      if (!data.ok) {
+        acctBody.innerHTML = `<p class="edit-modal-note err">${acctEsc(data.error || "Failed to load.")}</p>`;
+        return;
+      }
+      acctWebLinksData = data;
+      if (!acctWebLinksSelectedBrand || !data.brands.some((b) => b.id === acctWebLinksSelectedBrand)) {
+        acctWebLinksSelectedBrand = data.brands[0]?.id || null;
+      }
+      renderWebLinks();
+    }
+
+    function renderWebLinks() {
+      if (!acctWebLinksData) return;
+      const { brands, links } = acctWebLinksData;
+      const canEdit = canEditAdminSection("webLinks");
+      const roAttr = canEdit ? "" : "disabled";
+
+      const brandListHtml = brands.map((b) => `
+        <div class="tgroute-brand${b.id === acctWebLinksSelectedBrand ? " selected" : ""}" data-brand="${acctEsc(b.id)}">${acctEsc(b.name)}</div>
+      `).join("");
+
+      const entry = links[acctWebLinksSelectedBrand] || { link: "" };
+
+      acctBody.innerHTML = `
+        <div class="tgroute-layout">
+          <div class="tgroute-brands">${brandListHtml}</div>
+          <div class="tgroute-modules">
+            <div class="tgroute-row" data-row="link">
+              <div class="tgroute-mod-name">🔗 Pill Link
+                <span class="route-tag${entry.link ? " custom" : ""}">${entry.link ? "set" : "not set"}</span>
+              </div>
+              <div class="tgroute-fields">
+                <input type="text" class="wl-link url-input" placeholder="https://..." value="${acctEsc(entry.link)}" autocomplete="off" ${roAttr} />
+                ${canEdit ? `<div class="tgroute-row-actions">
+                  <button type="button" class="tgroute-action-btn wl-save">Save</button>
+                  ${entry.link ? '<button type="button" class="tgroute-action-btn tgroute-action-secondary wl-reset">Reset</button>' : ""}
+                </div>` : ""}
+              </div>
+            </div>
+          </div>
+        </div>
+        <hr class="tgroute-divider" />
+        ${canEdit ? "" : '<p class="edit-modal-note">View only.</p>'}
+        <p class="edit-modal-note tgroute-footnote">This is the link each brand's pill opens on the Home page's marquee row. Changes apply immediately — no redeploy needed.</p>`;
+
+      acctBody.querySelectorAll(".tgroute-brand").forEach((el) => {
+        el.addEventListener("click", () => {
+          acctWebLinksSelectedBrand = el.dataset.brand;
+          setAcctNote("");
+          renderWebLinks();
+        });
+      });
+      const linkRow = acctBody.querySelector('[data-row="link"]');
+      if (linkRow) {
+        linkRow.querySelector(".wl-save")?.addEventListener("click", () => saveWebLinkRow(linkRow));
+        linkRow.querySelector(".wl-reset")?.addEventListener("click", () => resetWebLinkRow());
+      }
+    }
+
+    async function saveWebLinkRow(row) {
+      const link = row.querySelector(".wl-link").value.trim();
+      setAcctNote("Saving…");
+      const res = await window.AgentAuth.authFetch("/api/admin/web-links", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "save", brandId: acctWebLinksSelectedBrand, link }),
+      });
+      const data = await res.json();
+      if (!data.ok) return setAcctNote(data.error || "Save failed.", "err");
+      acctWebLinksData.links[acctWebLinksSelectedBrand] = { link: data.link };
+      setAcctNote("Save success.", "ok");
+      renderWebLinks();
+    }
+
+    async function resetWebLinkRow() {
+      setAcctNote("Resetting…");
+      const res = await window.AgentAuth.authFetch("/api/admin/web-links", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "reset", brandId: acctWebLinksSelectedBrand }),
+      });
+      const data = await res.json();
+      if (!data.ok) return setAcctNote(data.error || "Reset failed.", "err");
+      acctWebLinksData.links[acctWebLinksSelectedBrand] = { link: data.link };
+      setAcctNote("Reset success.", "ok");
+      renderWebLinks();
     }
 
     async function loadAgentProfileTable() {
