@@ -11,6 +11,16 @@
  * And one thing you must do manually per brand sheet: open the sheet →
  * Share → add the service account's email as an Editor. Without that
  * share, the API calls below will fail with a 403.
+ *
+ * A few exported functions below (updateRowByColumns, getSheetTabs,
+ * batchGetValues) accept an optional trailing `tokenOverride` argument —
+ * pass an access token there to skip the service-account token entirely
+ * and use a different credential instead. This exists ONLY for the
+ * Deposit Issue / Deposit Backup modules, which read/write a Sheet this
+ * service account doesn't have access to and instead use a real user's
+ * OAuth token from googleOAuth.js — see that file's comment for why.
+ * Every other caller should keep passing nothing (uses the service
+ * account, as normal).
  */
 
 // Reused across requests within the same Worker isolate so we don't
@@ -117,8 +127,8 @@ export async function appendRowByColumns(env, sheetId, tabName, startColumn, val
  * wrote to, instead of creating a duplicate. `row` is the 1-indexed
  * Sheets row number returned by appendRowByColumns() at submit time.
  */
-export async function updateRowByColumns(env, sheetId, tabName, startColumn, row, values) {
-  const token = await getAccessToken(env);
+export async function updateRowByColumns(env, sheetId, tabName, startColumn, row, values, tokenOverride) {
+  const token = tokenOverride || await getAccessToken(env);
   const endColumn = columnLetter(columnIndex(startColumn) + values.length - 1);
   const range = `${tabName}!${startColumn}${row}:${endColumn}${row}`;
 
@@ -147,7 +157,10 @@ export async function writeRowForDate(env, sheetId, tab, { leftBlock, rightBlock
   const scanEndColumn = columnLetter(columnIndex(rightBlock.startColumn) + rightBlock.width - 1);
   const scanRange = `${tab}!${leftBlock.startColumn}2:${scanEndColumn}1000`;
   const getUrl = `https://sheets.googleapis.com/v4/spreadsheets/${sheetId}/values/${encodeURIComponent(scanRange)}`;
-  const getRes = await fetch(getUrl, { headers: { Authorization: `Bearer ${token}` } });
+  const getRes = await fetch(getUrl, {
+    headers: { Authorization: `Bearer ${token}`, "Cache-Control": "no-cache" },
+    cf: { cacheTtl: -1, cacheEverything: false },
+  });
   if (!getRes.ok) throw new Error(`Sheets read failed (${getRes.status}): ${await getRes.text()}`);
   const data = await getRes.json();
   const rows = data.values || [];
@@ -181,6 +194,13 @@ export async function writeRowForDate(env, sheetId, tab, { leftBlock, rightBlock
     body: JSON.stringify({ values: [values] }),
   });
   if (!putRes.ok) throw new Error(`Sheets update failed (${putRes.status}): ${await putRes.text()}`);
+  // targetRow is computed locally above (from the scan), not parsed out of
+  // the PUT response — unlike appendRowByColumns, this write always knows
+  // exactly which row it's touching before it even makes the request. See
+  // submit.js's daily_report branch for why this now gets returned:
+  // editDetails() (functions/api/threads/[id].js) needs it to overwrite
+  // the right row later instead of guessing.
+  return { row: targetRow };
 }
 
 /**
@@ -192,12 +212,30 @@ export async function writeRowForDate(env, sheetId, tab, { leftBlock, rightBlock
  * tabs that actually exist before calling batchGetValues.
  */
 export async function getSheetTabTitles(env, sheetId) {
-  const token = await getAccessToken(env);
-  const url = `https://sheets.googleapis.com/v4/spreadsheets/${sheetId}?fields=sheets.properties.title`;
-  const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+  const tabs = await getSheetTabs(env, sheetId);
+  return tabs.map((t) => t.title);
+}
+
+/**
+ * Same metadata read as getSheetTabTitles, but also keeps each tab's
+ * `gid` (its internal numeric sheetId — different from the spreadsheet's
+ * own ID) alongside the title. Needed to build a direct link straight to
+ * a specific tab/row in Google Sheets:
+ * https://docs.google.com/spreadsheets/d/<sheetId>/edit#gid=<gid>&range=A5
+ * Used by Deposit Issue / Deposit Backup's search results ("Open in
+ * Google Sheets" deep link) — Promo Code Search only needs titles, so it
+ * keeps using getSheetTabTitles above.
+ */
+export async function getSheetTabs(env, sheetId, tokenOverride) {
+  const token = tokenOverride || await getAccessToken(env);
+  const url = `https://sheets.googleapis.com/v4/spreadsheets/${sheetId}?fields=sheets.properties(title,sheetId)`;
+  const res = await fetch(url, {
+    headers: { Authorization: `Bearer ${token}`, "Cache-Control": "no-cache" },
+    cf: { cacheTtl: -1, cacheEverything: false },
+  });
   if (!res.ok) throw new Error(`Sheets metadata read failed (${res.status}): ${await res.text()}`);
   const data = await res.json();
-  return (data.sheets || []).map((s) => s.properties.title);
+  return (data.sheets || []).map((s) => ({ title: s.properties.title, gid: s.properties.sheetId }));
 }
 
 /**
@@ -207,11 +245,14 @@ export async function getSheetTabTitles(env, sheetId) {
  * 2D array — missing/blank rows are simply absent from the array, so
  * always index defensively). Read-only — used by Promo Code Search.
  */
-export async function batchGetValues(env, sheetId, ranges) {
-  const token = await getAccessToken(env);
+export async function batchGetValues(env, sheetId, ranges, tokenOverride) {
+  const token = tokenOverride || await getAccessToken(env);
   const params = ranges.map((r) => `ranges=${encodeURIComponent(r)}`).join("&");
   const url = `https://sheets.googleapis.com/v4/spreadsheets/${sheetId}/values:batchGet?${params}&valueRenderOption=FORMATTED_VALUE`;
-  const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+  const res = await fetch(url, {
+    headers: { Authorization: `Bearer ${token}`, "Cache-Control": "no-cache" },
+    cf: { cacheTtl: -1, cacheEverything: false },
+  });
   if (!res.ok) throw new Error(`Sheets batchGet failed (${res.status}): ${await res.text()}`);
   const data = await res.json();
   return data.valueRanges || [];
@@ -242,7 +283,20 @@ export async function getNextSequenceValue(env, sheetId, tab, column) {
   const token = await getAccessToken(env);
   const range = `${tab}!${column}2:${column}100000`;
   const url = `https://sheets.googleapis.com/v4/spreadsheets/${sheetId}/values/${encodeURIComponent(range)}`;
-  const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+  // This URL is IDENTICAL on every call (same fixed range, regardless of
+  // how much data is actually in the sheet) — exactly the condition that
+  // makes Cloudflare's edge cache (which fetch() respects by default,
+  // even for third-party origins like the Sheets API) serve back a
+  // STALE cached response instead of re-querying Google Sheets, if the
+  // API response happens to include cacheable headers. That would show
+  // up as "the Generate button hands back an old TID even though the
+  // sheet itself is correct" — not a race condition at all, just plain
+  // stale data. `cf: { cacheTtl: -1 ... }` + a `no-cache` request header
+  // both explicitly opt this request out of caching, at every layer.
+  const res = await fetch(url, {
+    headers: { Authorization: `Bearer ${token}`, "Cache-Control": "no-cache" },
+    cf: { cacheTtl: -1, cacheEverything: false },
+  });
   if (!res.ok) throw new Error(`Sheets read failed (${res.status}): ${await res.text()}`);
   const data = await res.json();
   const rows = data.values || [];

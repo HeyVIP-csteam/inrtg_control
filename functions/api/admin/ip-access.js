@@ -1,28 +1,25 @@
 /**
  * /api/admin/ip-access
- *
- * Backs the "IP Access" admin dashboard (4 cards: Total / Approved /
- * Pending / Blocked — see functions/_shared/ipAccess.js for the full
- * design note on how this layers on top of the existing Office/
- * allowedIPs whitelist without changing how a login is actually
- * checked).
- *
- *   GET                                    -> { stats, pending, approved, blocked, offices, record }
- *   POST { action:"approve", officeId, ip }
- *   POST { action:"reject",  officeId, ip }
- *   POST { action:"block",   ip, reason }
- *   POST { action:"unblock", ip }
+ *   GET                                              -> { stats, pending, approved, blocked, offices, record }
+ *   POST { action:"approve",   officeId, ip }
+ *   POST { action:"reject",    officeId, ip }
+ *   POST { action:"block",     ip, reason? }
+ *   POST { action:"unblock",   ip }
  *   POST { action:"manualAdd", officeId, ip }
- *   POST { action:"remove",  officeId, ip }
+ *   POST { action:"remove",    officeId, ip }
  *
- * Gated by the SAME "whitelistIp" admin section as
- * functions/api/admin/offices.js (View for GET, Can-Edit for POST) —
- * this is the same feature area from the account-access-control point of
- * view, just a richer admin page, so it reuses that section rather than
- * inventing a new one an Owner would have to separately grant.
+ * Reuses the existing "whitelistIp" permission bit — Can-See gets GET
+ * (view only), Can-Edit is required for every POST action. Deliberately
+ * NOT a new permission dimension; this whole feature is "make Whitelist
+ * IP smarter", not a separate thing that owners need to remember to
+ * grant separately. See _shared/ipAccess.js for the actual logic — this
+ * file is just auth + request parsing + dispatch.
  */
-import { authenticateStaff, ROLE_RANK, canSeeAdminSection, canEditAdminSection, getOffice, saveOffice, listOffices, setAccountLocked } from "../../_shared/accounts.js";
-import { getIpAccessDashboard, approveIpRequest, rejectIpRequest, blockIp, unblockIp, addManualIp, removeApprovedIp } from "../../_shared/ipAccess.js";
+import { authenticateStaff, ROLE_RANK, canSeeAdminSection, canEditAdminSection } from "../../_shared/accounts.js";
+import {
+  getIpAccessDashboard, listIpAccessLog, isValidIpFormat,
+  approveIpRequest, rejectIpRequest, blockIp, unblockIp, manualAddIp, removeIp,
+} from "../../_shared/ipAccess.js";
 
 export async function onRequestGet(context) {
   try {
@@ -34,12 +31,12 @@ export async function onRequestGet(context) {
 
 async function handleGet({ request, env }) {
   if (!env.THREADS_KV) return json({ ok: false, error: "THREADS_KV is not bound yet." }, 500);
-  const auth = await authenticateStaff(request, env, ROLE_RANK.senior);
+  const auth = await authenticateStaff(request, env, ROLE_RANK.admin);
   if (!auth.ok) return json({ ok: false, error: "Not authorized." }, 401);
-  if (!canSeeAdminSection(auth.account, "whitelistIp")) return json({ ok: false, error: "You don't have access to IP Access." }, 403);
+  if (!canSeeAdminSection(auth.account, "whitelistIp")) return json({ ok: false, error: "Not authorized." }, 403);
 
-  const dashboard = await getIpAccessDashboard(env, { listOffices });
-  return json({ ok: true, ...dashboard });
+  const [dashboard, record] = await Promise.all([getIpAccessDashboard(env), listIpAccessLog(env)]);
+  return json({ ok: true, ...dashboard, record });
 }
 
 export async function onRequestPost(context) {
@@ -52,9 +49,11 @@ export async function onRequestPost(context) {
 
 async function handlePost({ request, env }) {
   if (!env.THREADS_KV) return json({ ok: false, error: "THREADS_KV is not bound yet." }, 500);
-  const auth = await authenticateStaff(request, env, ROLE_RANK.senior);
+  const auth = await authenticateStaff(request, env, ROLE_RANK.admin);
   if (!auth.ok) return json({ ok: false, error: "Not authorized." }, 401);
-  if (!canEditAdminSection(auth.account, "whitelistIp")) return json({ ok: false, error: "You don't have Can-Edit access to IP Access." }, 403);
+  if (!canEditAdminSection(auth.account, "whitelistIp")) {
+    return json({ ok: false, error: "You don't have Can-Edit access to IP Access." }, 403);
+  }
 
   let body;
   try {
@@ -63,71 +62,53 @@ async function handlePost({ request, env }) {
     return json({ ok: false, error: "Invalid JSON body." }, 400);
   }
 
-  // Bootstrap mode (auth.account === null — see authenticateStaff() in
-  // _shared/accounts.js) acts as the Owner for attribution purposes,
-  // same convention used elsewhere for bootstrap actions.
-  const by = auth.account ? auth.account.username : "bootstrap";
-  const byRole = auth.account ? auth.account.role : "owner";
-
+  const by = auth.account?.username || "bootstrap";
+  const byRole = auth.account?.role || "bootstrap";
   const ip = (body.ip || "").trim();
-  if (!ip) return json({ ok: false, error: "Missing IP address." }, 400);
-
-  // Format check on every action that takes a raw, admin-typed IP
-  // (manualAdd, block) — "approve"/"reject" always operate on an IP that
-  // came from a real request's CF-Connecting-IP header (already a valid
-  // address by construction) via a pending record, so they're exempt.
-  // Without this check, something like "https://203.189.67.234" pasted
-  // with a stray prefix would get stored verbatim and silently never
-  // match anything at login time.
-  if ((body.action === "manualAdd" || body.action === "block") && !isValidIpFormat(ip)) {
-    return json({ ok: false, error: `"${ip}" doesn't look like a valid IPv4 or IPv6 address.` }, 400);
-  }
 
   try {
-    switch (body.action) {
-      case "approve": {
-        if (!body.officeId) return json({ ok: false, error: "Missing officeId." }, 400);
-        const result = await approveIpRequest(env, { officeId: body.officeId, ip, by, byRole, getOffice, saveOffice, setAccountLocked });
-        return json({ ok: true, office: result.office });
-      }
-      case "reject": {
-        if (!body.officeId) return json({ ok: false, error: "Missing officeId." }, 400);
-        await rejectIpRequest(env, { officeId: body.officeId, ip, by, byRole });
-        return json({ ok: true });
-      }
-      case "block": {
-        await blockIp(env, { ip, reason: body.reason || "", by, byRole });
-        return json({ ok: true });
-      }
-      case "unblock": {
-        await unblockIp(env, { ip, by, byRole });
-        return json({ ok: true });
-      }
-      case "manualAdd": {
-        if (!body.officeId) return json({ ok: false, error: "Missing officeId." }, 400);
-        const office = await addManualIp(env, { officeId: body.officeId, ip, by, byRole, getOffice, saveOffice });
-        return json({ ok: true, office });
-      }
-      case "remove": {
-        if (!body.officeId) return json({ ok: false, error: "Missing officeId." }, 400);
-        await removeApprovedIp(env, { officeId: body.officeId, ip, by, byRole, getOffice, saveOffice });
-        return json({ ok: true });
-      }
-      default:
-        return json({ ok: false, error: `Unknown action "${body.action}".` }, 400);
+    if (body.action === "approve") {
+      if (!body.officeId || !ip) return json({ ok: false, error: "Missing officeId or ip." }, 400);
+      await approveIpRequest(env, { officeId: body.officeId, ip, by, byRole });
+      return json({ ok: true });
+    }
+
+    if (body.action === "reject") {
+      if (!body.officeId || !ip) return json({ ok: false, error: "Missing officeId or ip." }, 400);
+      await rejectIpRequest(env, { officeId: body.officeId, ip, by, byRole });
+      return json({ ok: true });
+    }
+
+    if (body.action === "block") {
+      if (!ip) return json({ ok: false, error: "Missing ip." }, 400);
+      if (!isValidIpFormat(ip)) return json({ ok: false, error: `"${ip}" doesn't look like a valid IPv4 or IPv6 address.` }, 400);
+      await blockIp(env, { ip, reason: body.reason || "", by, byRole });
+      return json({ ok: true });
+    }
+
+    if (body.action === "unblock") {
+      if (!ip) return json({ ok: false, error: "Missing ip." }, 400);
+      await unblockIp(env, { ip, by, byRole });
+      return json({ ok: true });
+    }
+
+    if (body.action === "manualAdd") {
+      if (!body.officeId || !ip) return json({ ok: false, error: "Missing officeId or ip." }, 400);
+      if (!isValidIpFormat(ip)) return json({ ok: false, error: `"${ip}" doesn't look like a valid IPv4 or IPv6 address.` }, 400);
+      await manualAddIp(env, { officeId: body.officeId, ip, by, byRole });
+      return json({ ok: true });
+    }
+
+    if (body.action === "remove") {
+      if (!body.officeId || !ip) return json({ ok: false, error: "Missing officeId or ip." }, 400);
+      await removeIp(env, { officeId: body.officeId, ip, by, byRole });
+      return json({ ok: true });
     }
   } catch (e) {
     return json({ ok: false, error: String(e && e.message || e) }, 400);
   }
-}
 
-const IPV4_RE = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/;
-const IPV6_RE = /^[0-9a-fA-F:]+:[0-9a-fA-F:]*$/; // loose — full RFC 4291 validation isn't worth the complexity here
-
-function isValidIpFormat(ip) {
-  const m = ip.match(IPV4_RE);
-  if (m) return m.slice(1).every((octet) => Number(octet) <= 255 && String(Number(octet)) === octet.replace(/^0+(?=\d)/, ""));
-  return IPV6_RE.test(ip);
+  return json({ ok: false, error: `Unknown action "${body.action}".` }, 400);
 }
 
 function json(obj, status = 200) {

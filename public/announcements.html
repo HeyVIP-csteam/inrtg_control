@@ -4,355 +4,369 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Announcements</title>
-<script src="/assets/theme.js?v=c61fb537"></script>
 <style>
-/* Inline placeholder canvas background — first thing the browser parses
-   in <head>, so it paints before any network request (external CSS, the
-   photo itself) resolves. Values are hard-coded here (can't use var()
-   yet — style.css may not have loaded) but are kept in exact sync with
-   the "real" html{}/html[data-theme=light]{} rule in style.css, so the
-   moment that stylesheet finishes loading there is zero visible change.
-   Must stay inline and first — an external <link> here would leave a
-   blank gap for a network round trip before anything paints. Only sets
-   background on <html>, never <body>: <body> has its own
-   theme-toggle transition, and animating from this photo to some other
-   background would try to interpolate image -> gradient, which browsers
-   can't do and would just look like a broken flash. */
-html {
-  background-color: #090c1c;
-  background-image:
-    linear-gradient(180deg, rgba(3,4,13,0.35) 0%, rgba(3,4,13,0.55) 55%, rgba(3,4,13,0.75) 100%),
-    url('/assets/img/bg-space.jpg');
-  background-size: cover;
-  background-position: center;
-  background-repeat: no-repeat;
-  background-attachment: fixed;
-}
-html[data-theme="light"] {
-  background-color: #dbe7fb;
-  background-image:
-    radial-gradient(900px 500px at 90% 0%, #eaf1ff 0%, transparent 55%),
-    linear-gradient(160deg, #dbe7fb 0%, #d9cef4 45%, #cdbdf2 75%, #c4b2ee 100%);
-}
+  /* Space photo (dark-shaded, same overlay math as .sf-shade in
+     style.css) as the very first paint, before style.css/starfield.js
+     load — same reasoning as index.html's copy of this rule; see the
+     comment there for the full write-up. */
+  html {
+    background-color: #090c1c;
+    background-image:
+      linear-gradient(180deg, rgba(3,4,13,0.35) 0%, rgba(3,4,13,0.55) 55%, rgba(3,4,13,0.75) 100%),
+      url('/assets/img/bg-space.jpg');
+    background-size: cover;
+    background-position: center;
+    background-repeat: no-repeat;
+    background-attachment: fixed;
+  }
+
+  /* Light-theme override — theme.js (loaded right after this block, and
+     synchronous/non-deferred) sets data-theme on <html> before first
+     paint, so this genuinely applies from frame one rather than flashing
+     in late. The photo is nearly invisible under the light theme's own
+     heavy overlay anyway (see --sf-shade's 0.55-0.72 alpha for
+     [data-theme="light"] in style.css), so rather than fight CSS filter
+     limitations (filter can't be scoped to just a background-image on
+     <html> without also filtering all real content once it loads), this
+     just reuses the light theme's plain --page-bg gradient values
+     directly (kept in sync manually — see :root in style.css if that
+     gradient ever changes) with no photo layer at all. Visually
+     indistinguishable from the real thing once starfield.js mounts. */
+  html[data-theme="light"] {
+    background-color: #dbe7fb;
+    background-image:
+      radial-gradient(900px 500px at 90% 0%, #eaf1ff 0%, transparent 55%),
+      linear-gradient(160deg, #dbe7fb 0%, #d9cef4 45%, #cdbdf2 75%, #c4b2ee 100%);
+  }
 </style>
-<link rel="stylesheet" href="/assets/style.css?v=467b5a4c" />
-<link rel="stylesheet" href="/assets/toast.css?v=5779b14e" />
-<script src="/assets/toast.js?v=d9d84724"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;600&display=swap" onload="this.onload=null;this.rel='stylesheet'" />
+<noscript><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;600&display=swap" /></noscript>
+<link rel="stylesheet" href="/assets/style.css?v=63a5348a" />
+<script src="/assets/theme.js?v=5b27e630"></script>
 <script src="/assets/starfield.js?v=b6e92821" defer></script>
-<script src="/assets/authguard.js?v=19b1b251"></script>
-<script src="/assets/presence-heartbeat.js?v=a0820d9b"></script>
-<script src="/assets/announcement-banner.js?v=26c15118" defer></script>
-<script src="/assets/schemas.js?v=189eea70"></script>
+<script src="/assets/authguard.js?v=9dba9c0c"></script>
+<script src="/assets/presence-heartbeat.js?v=921f46cb"></script>
 </head>
-<body class="threads-page">
+<body class="announcements-page">
   <header class="topbar">
     <div class="topbar-left">
       <img src="/assets/img/logo.webp" alt="HeyVIP" class="logo-img" />
-      <span class="wordmark">PKR CS TEAM - TBC</span>
+      <span class="wordmark">INR CS TEAM - TBC</span>
     </div>
     <div class="topbar-right">
       <span class="clock" id="liveClock"></span>
       <button class="theme-pill" id="themeToggle"></button>
+      <span class="agent-whoami" id="agentWhoami"></span>
     </div>
   </header>
 
-  <div class="threads-shell">
-    <aside class="sidebar" id="hubNavMount"></aside>
-    <div class="threads-content-col">
-      <nav class="brand-row" id="pageBrandRow"><div class="brand-row-track"></div></nav>
-      <div id="announcementBanner"></div>
-      <div class="threads-body-row">
-    <aside class="threads-sidebar" style="width:280px;">
-      <button type="button" class="announce-new-btn" id="newBtn">+ New announcement</button>
-      <div class="threads-search">
-        <span>🔍</span>
-        <input type="text" id="announceSearch" placeholder="Search topic or message..." autocomplete="off" />
-      </div>
-      <div class="threads-section-title" style="cursor:default;">
-        <span>Announcements</span>
-        <span class="count" id="announceCount">0</span>
-      </div>
-      <div class="thread-list" id="announceList" style="margin-bottom:0;"></div>
-    </aside>
+  <div id="announcementBanner"></div>
 
-    <div class="threads-right-col">
-      <main class="threads-main">
-        <div class="thread-scroll-area" style="padding:30px 40px; display:flex; justify-content:center;">
-          <div id="formArea" style="width:640px; height:100%; flex:none;"></div>
-        </div>
-      </main>
-    </div>
-      </div>
-    </div>
+  <div class="ann-page-backrow">
+    <a href="/" class="back-pill">&larr; Back to Home</a>
   </div>
 
-  <script src="/assets/hub-nav.js?v=d86d0bdd"></script>
-  <script src="/assets/brand-row.js?v=ea371f55"></script>
+  <div class="ann-shell" id="annShell">
+    <aside class="ann-sidebar">
+      <button type="button" class="ann-new-btn" id="annNewBtn">+ New announcement</button>
+      <div class="threads-search">
+        <span>🔍</span>
+        <input type="text" id="annSearch" placeholder="Search topic or message..." autocomplete="off" />
+      </div>
+      <div id="annList"></div>
+    </aside>
+    <main class="ann-main">
+      <div class="ann-form-card" id="annFormCard">
+        <div class="ann-empty-state" id="annEmptyState">Loading…</div>
+      </div>
+    </main>
+  </div>
+
+  <script src="/assets/toast.js?v=67c1e195"></script>
+  <script src="/assets/announcement-banner.js?v=4881665d"></script>
   <script>
     window.initThemeToggle();
     window.initClock();
-    window.HubNav.mount("hubNavMount", {});
-    window.BrandRow.mount("pageBrandRow");
+    window.AgentAuth.renderWhoami("agentWhoami");
 
     const ROLE_RANK = { agent: 0, senior: 1, admin: 2, superadmin: 3, owner: 4 };
-    const auth = window.AgentAuth.getAuth();
-    // Mirrors _shared/accounts.js's canSeeAdminSection/canEditAdminSection
-    // default-tier logic for the "announcements" section specifically
-    // (admin+ by default, overridable per account via Agent Profile) —
-    // this is UI convenience only, the server independently re-checks
-    // on every request.
-    function defaultSeesAnnouncements(rank) { return rank >= ROLE_RANK.admin; }
-    function defaultEditsAnnouncements(rank) { return rank >= ROLE_RANK.admin; }
-    function canSee() {
-      if (!auth) return false;
-      if (auth.role === "owner") return true;
-      if (auth.allowedAdminSections !== undefined) {
-        return auth.allowedAdminSections === "all" || (Array.isArray(auth.allowedAdminSections) && auth.allowedAdminSections.includes("announcements"));
-      }
-      return defaultSeesAnnouncements(ROLE_RANK[auth.role] ?? 0);
-    }
-    function canEdit() {
-      if (!auth) return false;
-      if (auth.role === "owner") return true;
-      if (!canSee()) return false;
-      if (auth.adminSectionEditAccess !== undefined) {
-        return auth.adminSectionEditAccess === "all" || (Array.isArray(auth.adminSectionEditAccess) && auth.adminSectionEditAccess.includes("announcements"));
-      }
-      return defaultEditsAnnouncements(ROLE_RANK[auth.role] ?? 0);
-    }
-    if (!canSee()) location.replace("/");
-    const canEditAnnouncements = canEdit();
-    document.getElementById("newBtn").style.display = canEditAnnouncements ? "" : "none";
+    const authInfo = window.AgentAuth.getAuth();
+    const myRank = ROLE_RANK[authInfo?.role] ?? ROLE_RANK.agent;
 
-    const authFetch = window.AgentAuth.authFetch;
+    // Mirrors _shared/accounts.js canAccessOwnerTopic(account,
+    // "announcements") — moved out of Account Management Access into the
+    // Agent Profile's "Topic access" list, 2026-08-10 (see
+    // OWNER_TOPIC_ITEMS in _shared/accounts.js). UI convenience only, the
+    // server independently re-checks on every request regardless of
+    // this. STRICTLY Owner-granted (ownerTopicAccess) — no "all"
+    // shortcut, no rank>=admin blanket bypass. Single tier: having this
+    // topic means both viewing and managing announcements (no separate
+    // view-only mode anymore).
+    const ANN_FLOOR = ROLE_RANK.admin;
+    function canSeeAnnouncements() {
+      if (!authInfo) return false;
+      if (authInfo.role === "owner") return true;
+      if (myRank < ANN_FLOOR) return false;
+      return Array.isArray(authInfo.ownerTopicAccess) && authInfo.ownerTopicAccess.includes("announcements");
+    }
+
+    const canEdit = canSeeAnnouncements();
+    let topics = [];
     let announcements = [];
-    let topics = ["Friendly reminder", "Game maintenance", "System maintenance", "Deposit / Withdraw Issues"]; // overwritten by the server's list once loaded — kept here just so the dropdown isn't empty for a split second
-    let selectedId = null; // null + mode "new" = creating; otherwise editing this id
-    let mode = canEditAnnouncements ? "new" : "list"; // "list" | "new" | "edit"
-    let searchQuery = "";
+    let selectedId = null; // null while on the blank "new" form
+    let isNewDraft = false;
+    let pollTimer = null;
 
     function esc(str) {
-      return String(str == null ? "" : str).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+      return String(str == null ? "" : str).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
     }
-    function fmtLocal(iso) {
-      if (!iso) return "—";
-      const d = new Date(iso);
-      return d.toLocaleString(undefined, { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" });
+
+    function isEffectivelyActive(a, now) {
+      if (!a.enabled) return false;
+      if (a.startAt && now < new Date(a.startAt).getTime()) return false;
+      if (a.endAt && now > new Date(a.endAt).getTime()) return false;
+      return true;
     }
-    // Full date + time (e.g. "8/2/2026, 9:54:23 PM") for the sidebar list items.
-    function fmtFullLocal(iso) {
-      if (!iso) return "—";
-      return new Date(iso).toLocaleString();
+    function statusOf(a) {
+      const now = Date.now();
+      if (!a.enabled) return "inactive";
+      if (a.startAt && now < new Date(a.startAt).getTime()) return "scheduled";
+      if (a.endAt && now > new Date(a.endAt).getTime()) return "expired";
+      return "active";
     }
-    // <input type="datetime-local"> wants "YYYY-MM-DDTHH:mm" in LOCAL time,
-    // not the ISO/UTC string the server stores.
-    function isoToLocalInput(iso) {
+    const STATUS_LABEL = { active: "Active", inactive: "Inactive", scheduled: "Scheduled", expired: "Expired" };
+
+    function toLocalInputValue(iso) {
       if (!iso) return "";
       const d = new Date(iso);
       const pad = (n) => String(n).padStart(2, "0");
       return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
     }
-    function localInputToIso(val) {
+    function fromLocalInputValue(val) {
       if (!val) return null;
-      const d = new Date(val); // parsed as local time
+      const d = new Date(val);
       return isNaN(d.getTime()) ? null : d.toISOString();
     }
 
-    function effectiveStatus(a) {
-      const now = Date.now();
-      if (!a.enabled) return { label: "Inactive", color: "#8890c0" };
-      if (a.startAt && now < new Date(a.startAt).getTime()) return { label: "Scheduled", color: "#8890c0" };
-      if (a.endAt && now > new Date(a.endAt).getTime()) return { label: "Expired", color: "#8890c0" };
-      return { label: "Active", color: "#1a9c6e" };
-    }
-
-    async function loadAnnouncements() {
-      const res = await authFetch("/api/admin/announcements");
-      const data = await res.json();
-      if (!data.ok) {
-        document.getElementById("formArea").innerHTML = `<p class="edit-modal-note err">${esc(data.error || "Failed to load.")}</p>`;
-        return;
-      }
-      announcements = data.announcements;
-      if (data.topics && data.topics.length) topics = data.topics;
-      if (!canEditAnnouncements && mode === "list" && announcements.length) { selectedId = announcements[0].id; mode = "edit"; }
-      render();
-    }
-
-    // Used by the 30s background poll — refreshes the sidebar list only.
-    // Never touches formArea: if the agent is mid-typing a new or edited
-    // announcement, a poll landing mid-keystroke would otherwise wipe out
-    // whatever they haven't saved yet (renderForm() rebuilds the textarea
-    // from server data). Save/Delete still call the full loadAnnouncements()
-    // above afterward, since at that point there's nothing unsaved to lose.
-    async function pollAnnouncements() {
-      try {
-        const res = await authFetch("/api/admin/announcements");
-        const data = await res.json();
-        if (!data.ok) return;
-        announcements = data.announcements;
-        renderList();
-      } catch {
-        // Non-fatal — list just stays as-is until the next poll.
-      }
-    }
-
-    function render() {
-      renderList();
-      renderForm();
-    }
-
+    // ---- Sidebar list — the 30s poll ONLY ever touches this function.
+    // A separate loadAnnouncements() (below) does the full re-render
+    // including the form, and is only ever called right after the
+    // agent's own Save/Delete — i.e. only when there's genuinely nothing
+    // unsaved to lose. If a poll landing mid-edit called the full-render
+    // function instead, it would wipe an in-progress draft.
     function renderList() {
-      const list = document.getElementById("announceList");
-      document.getElementById("announceCount").textContent = announcements.length;
-      const q = searchQuery.trim().toLowerCase();
-      const filtered = !q ? announcements : announcements.filter((a) =>
-        (a.topic || "").toLowerCase().includes(q) || (a.text || "").toLowerCase().includes(q)
+      const q = (document.getElementById("annSearch").value || "").toLowerCase();
+      const list = document.getElementById("annList");
+      const filtered = announcements.filter((a) =>
+        !q || (a.topic || "").toLowerCase().includes(q) || (a.text || "").toLowerCase().includes(q)
       );
-      if (!announcements.length) {
-        list.innerHTML = '<div class="threads-empty">No announcements yet.<br/>Click + New to create one.</div>';
-        return;
-      }
       if (!filtered.length) {
-        list.innerHTML = '<div class="threads-empty">No matches.</div>';
+        list.innerHTML = '<p class="threads-empty">No announcements yet.</p>';
         return;
       }
-      list.innerHTML = "";
-      filtered.forEach((a) => {
-        const status = effectiveStatus(a);
-        const breathing = status.label === "Active" ? " breathing" : "";
-        const el = document.createElement("div");
-        el.className = "thread-item announce-item" + (mode === "edit" && selectedId === a.id ? " selected" : "");
-        el.style.setProperty("--thread-accent", status.color);
-        el.innerHTML = `
-          <div class="meta">
-            <div class="t-title">${esc(a.topic || "(no topic)")}</div>
-            <div class="t-sub">${esc(a.updatedBy || a.createdBy || "")} · ${fmtFullLocal(a.updatedAt)}</div>
-          </div>
-          <span class="status-indicator">
-            <span class="status-dot${breathing}" style="background:${status.color};"></span>
-            <span class="status-text" style="color:${status.color};">${status.label}</span>
-          </span>
-        `;
-        el.addEventListener("click", () => { selectedId = a.id; mode = "edit"; render(); });
-        list.appendChild(el);
+      list.innerHTML = filtered.map((a) => {
+        const st = statusOf(a);
+        const when = a.updatedAt ? new Date(a.updatedAt).toLocaleString() : "";
+        return `
+          <div class="ann-list-item${a.id === selectedId ? " selected" : ""}" data-id="${esc(a.id)}">
+            <div class="ann-list-row">
+              <div class="ann-list-topic">${esc(a.topic || "REMINDER")}</div>
+              <div class="ann-list-status ${st}"><span class="dot"></span>${STATUS_LABEL[st]}</div>
+            </div>
+            <div class="ann-list-meta">${esc(a.updatedBy || a.createdBy || "")} · ${esc(when)}</div>
+          </div>`;
+      }).join("");
+      list.querySelectorAll(".ann-list-item").forEach((el) => {
+        el.addEventListener("click", () => selectAnnouncement(el.dataset.id));
       });
     }
 
     function renderForm() {
-      const area = document.getElementById("formArea");
-      area.classList.toggle("form-card", mode !== "list");
-      if (mode === "list") { area.innerHTML = ""; return; }
-      const a = mode === "edit" ? announcements.find((x) => x.id === selectedId) : null;
-      const ro = canEditAnnouncements ? "" : "disabled";
-      // The state Save will switch TO: for an existing announcement, the
-      // opposite of what it is now; for a brand new one, Active by default
-      // (nothing to toggle yet, so it just shows what creating it will do).
-      const nextEnabled = a ? !a.enabled : true;
-      area.style.display = "flex";
-      area.style.flexDirection = "column";
-      area.innerHTML = `
-        <div style="flex:1; overflow-y:auto; min-height:0;">
-          <p class="edit-modal-title" style="margin-bottom:18px;">${mode === "new" ? "New announcement" : "Edit announcement"}</p>
-          <div class="field">
-            <label>Issue topic<span class="required">*</span></label>
-            <select id="fTopic" ${ro}>
-              ${topics.map((t) => `<option value="${esc(t)}" ${a && a.topic === t ? "selected" : ""}>${esc(t)}</option>`).join("")}
-            </select>
-          </div>
-          <div class="field">
-            <label>Message<span class="required">*</span></label>
-            <textarea id="fText" rows="8" placeholder="Shown in the reminder banner on every page" ${ro}>${esc(a ? a.text : "")}</textarea>
-          </div>
-          <div style="display:flex; gap:16px;">
-            <div class="field" style="flex:1;">
-              <label>Starts (optional)</label>
-              <input type="datetime-local" id="fStart" value="${a ? isoToLocalInput(a.startAt) : ""}" ${ro} />
-            </div>
-            <div class="field" style="flex:1;">
-              <label>Ends (optional)</label>
-              <input type="datetime-local" id="fEnd" value="${a ? isoToLocalInput(a.endAt) : ""}" ${ro} />
-            </div>
-          </div>
-          ${canEditAnnouncements ? "" : '<p class="edit-modal-note">View only.</p>'}
-          <p class="edit-modal-note err" id="formErr"></p>
-        </div>
-        ${canEditAnnouncements ? `
-        <div style="display:flex; justify-content:flex-end; gap:10px; flex:none; margin-top:14px; padding-top:14px; border-top:1px solid var(--panel-border);">
-          ${a ? '<button type="button" class="announce-delete-btn" id="deleteBtn">🗑 Delete</button>' : ""}
-          <button type="button" class="announce-save-btn ${nextEnabled ? "state-active" : "state-inactive"}" id="saveBtn">${nextEnabled ? "Active" : "Inactive"}</button>
-        </div>` : ""}
-      `;
-      if (canEditAnnouncements) {
-        document.getElementById("saveBtn").addEventListener("click", () => save(nextEnabled));
-        if (a) document.getElementById("deleteBtn").addEventListener("click", () => remove(a.id));
-      }
-    }
+      const card = document.getElementById("annFormCard");
+      const a = isNewDraft ? null : announcements.find((x) => x.id === selectedId);
 
-    async function save(enabled) {
-      const text = document.getElementById("fText").value.trim();
-      const topic = document.getElementById("fTopic").value;
-      const errEl = document.getElementById("formErr");
-      errEl.textContent = "";
-      if (!text) { errEl.textContent = "Message can't be empty."; return; }
-      const startAt = localInputToIso(document.getElementById("fStart").value);
-      const endAt = localInputToIso(document.getElementById("fEnd").value);
-      if (startAt && endAt && new Date(startAt) >= new Date(endAt)) {
-        errEl.textContent = "End time must be after start time.";
+      if (!canEdit && !a) {
+        card.innerHTML = '<div class="ann-empty-state">No announcement selected.</div>';
         return;
       }
-      const id = mode === "edit" ? selectedId : null;
-      const res = await authFetch("/api/admin/announcements", {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "save", id, text, topic, enabled, startAt, endAt }),
+
+      const topicOptions = topics.map((t) => `<option value="${esc(t)}"${a && a.topic === t ? " selected" : ""}>${esc(t)}</option>`).join("");
+      const ro = canEdit ? "" : "disabled";
+      // Replaces the old Active checkbox — the save button itself doubles
+      // as the status toggle, labeled with the state clicking it WILL
+      // produce (not the raw `enabled` flag). Keyed off whether the
+      // announcement is EFFECTIVELY active right now (isEffectivelyActive
+      // — accounts for start/end dates too), not just the raw `enabled`
+      // flag, so:
+      //   - a brand-new draft (no record yet) is not effectively active
+      //     -> button reads "Active" (first save turns it on)
+      //   - an Expired announcement still has enabled:true under the
+      //     hood (that's what makes it "expired" instead of "inactive" —
+      //     see statusOf), but isEffectivelyActive is false for it (past
+      //     endAt) -> button reads "Active" (re-enable it), not
+      //     "Inactive" (which would be a no-op/confusing on something
+      //     that isn't currently showing to anyone anyway)
+      //   - a Scheduled announcement (future startAt) is the same case
+      //     -> "Active"
+      //   - only a currently, effectively Active announcement shows
+      //     "Inactive" (click to turn it off)
+      // BUG FIXED, 2026-08-10: this used to read `a.enabled` directly
+      // (defaulting a brand-new draft to `true`), which showed
+      // "Inactive" for a draft that had never been saved yet AND for
+      // Expired announcements — backwards in both cases.
+      const effectivelyActive = a ? isEffectivelyActive(a, Date.now()) : false;
+      const toggleLabel = effectivelyActive ? "Inactive" : "Active";
+
+      card.innerHTML = `
+        <div class="ann-form-scroll">
+          <div class="form-header"><span class="icon">📢</span><span>${a ? "Edit announcement" : "New announcement"}</span></div>
+          <div class="field">
+            <label>Topic <span class="required">*</span></label>
+            <select id="annTopic" ${ro}>${topicOptions}</select>
+          </div>
+          <div class="field">
+            <label>Message <span class="required">*</span></label>
+            <textarea id="annText" rows="8" placeholder="Message shown in the banner" ${ro}>${esc(a ? a.text : "")}</textarea>
+          </div>
+          <div class="ann-datetime-row">
+            <div class="field">
+              <label>Start (optional)</label>
+              <input type="datetime-local" id="annStart" value="${a ? toLocalInputValue(a.startAt) : ""}" ${ro} />
+            </div>
+            <div class="field">
+              <label>End (optional)</label>
+              <input type="datetime-local" id="annEnd" value="${a ? toLocalInputValue(a.endAt) : ""}" ${ro} />
+            </div>
+          </div>
+          <p class="edit-modal-note" id="annNote"></p>
+          ${canEdit ? "" : '<p class="edit-modal-note">View only.</p>'}
+        </div>
+        <div class="ann-form-footer">
+          ${canEdit && a ? '<button type="button" class="btn-danger" id="annDeleteBtn">Delete</button>' : ""}
+          ${canEdit ? `<button type="button" class="btn-submit" id="annSaveBtn" data-target-enabled="${effectivelyActive ? "false" : "true"}" style="width:auto;padding:9px 18px;">${toggleLabel}</button>` : ""}
+        </div>`;
+
+      const saveBtn = document.getElementById("annSaveBtn");
+      if (saveBtn) saveBtn.addEventListener("click", saveAnnouncement);
+      const delBtn = document.getElementById("annDeleteBtn");
+      if (delBtn) delBtn.addEventListener("click", deleteAnnouncement);
+    }
+
+    function setNote(msg, type) {
+      const el = document.getElementById("annNote");
+      // Final result (ok/err) shows via the unified toast popup only —
+      // no redundant inline copy of the same text. Transient messages
+      // ("Saving…") still show inline since there's no toast for those.
+      if (type === "ok" || type === "err") {
+        if (el) { el.textContent = ""; el.className = "edit-modal-note"; }
+        if (window.showToast) window.showToast(msg, type);
+        return;
+      }
+      if (el) { el.textContent = msg; el.className = "edit-modal-note"; }
+    }
+
+    function selectAnnouncement(id) {
+      selectedId = id;
+      isNewDraft = false;
+      renderList();
+      renderForm();
+    }
+    function selectNewDraft() {
+      selectedId = null;
+      isNewDraft = true;
+      renderList();
+      renderForm();
+    }
+
+    async function saveAnnouncement() {
+      const text = document.getElementById("annText").value.trim();
+      if (!text) { setNote("Message is required.", "err"); return; }
+      const body = {
+        action: "save",
+        id: isNewDraft ? undefined : selectedId,
+        topic: document.getElementById("annTopic").value,
+        text,
+        enabled: document.getElementById("annSaveBtn").dataset.targetEnabled === "true",
+        startAt: fromLocalInputValue(document.getElementById("annStart").value),
+        endAt: fromLocalInputValue(document.getElementById("annEnd").value),
+      };
+      setNote("Saving…");
+      const res = await window.AgentAuth.authFetch("/api/admin/announcements", {
+        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
       });
+      const data = await res.json();
+      // The Save button IS the Active/Inactive toggle (see toggleLabel in
+      // renderForm) — its real effect each click is "set enabled to
+      // true/false", so the result wording follows that, not a generic
+      // "Save", matching the Active/Inactive convention used everywhere
+      // else a control's whole job is flipping an enabled state.
+      if (!data.ok) { setNote(data.error || (body.enabled ? "Active failed." : "Inactive failed."), "err"); return; }
+      setNote(body.enabled ? "Active success." : "Inactive success.", "ok");
+      if (window.refreshAnnouncementBanner) window.refreshAnnouncementBanner();
+      await loadAnnouncements();
+      selectAnnouncement(data.announcement.id);
+    }
+
+    async function deleteAnnouncement() {
+      if (!selectedId) return;
+      if (!confirm("Delete this announcement?")) return;
+      const res = await window.AgentAuth.authFetch("/api/admin/announcements", {
+        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "delete", id: selectedId }),
+      });
+      const data = await res.json();
+      if (!data.ok) { setNote(data.error || "Delete failed.", "err"); return; }
+      setNote("Delete success.", "ok");
+      if (window.refreshAnnouncementBanner) window.refreshAnnouncementBanner();
+      await loadAnnouncements();
+      if (announcements.length) selectAnnouncement(announcements[0].id);
+      else selectNewDraft();
+    }
+
+    // Full re-render, including the form — only call this right after
+    // the agent's own Save/Delete, never from the background poll.
+    async function loadAnnouncements() {
+      const res = await window.AgentAuth.authFetch("/api/admin/announcements");
       const data = await res.json();
       if (!data.ok) {
-        const errText = data.error || "Save failed.";
-        errEl.textContent = errText;
-        showToast(errText, "err");
+        document.getElementById("annFormCard").innerHTML = `<div class="ann-empty-state">${esc(data.error || "Failed to load.")}</div>`;
         return;
       }
-      errEl.textContent = "";
-      // The save button doubles as an Active/Inactive toggle (same button,
-      // text flips with state) — the toast text has to be derived from
-      // `enabled`, the value actually being saved, not hard-coded, or a
-      // toggle to Inactive would still show a confusing "Active success."
-      showToast(enabled ? "Active success." : "Inactive success.", "ok");
-      selectedId = data.announcement.id;
-      mode = "edit";
-      await loadAnnouncements();
-      window.refreshAnnouncementBanner?.();
+      topics = data.topics || [];
+      announcements = data.announcements || [];
+      if (canEdit) {
+        if (!selectedId && !isNewDraft) selectNewDraft();
+        else { renderList(); renderForm(); }
+      } else {
+        if (announcements.length) selectAnnouncement(announcements[0].id);
+        else { renderList(); renderForm(); }
+      }
     }
 
-    async function remove(id) {
-      if (!confirm("Delete this announcement? This can't be undone.")) return;
-      const res = await authFetch("/api/admin/announcements", {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "delete", id }),
-      });
-      const data = await res.json();
-      if (!data.ok) { showToast(data.error || "Delete failed.", "err"); return; }
-      showToast("Delete success.", "ok");
-      selectedId = null;
-      mode = "new";
-      await loadAnnouncements();
-      window.refreshAnnouncementBanner?.();
+    // Poll — sidebar list only, never touches the form (see renderList()
+    // doc comment above).
+    async function pollAnnouncements() {
+      try {
+        const res = await window.AgentAuth.authFetch("/api/admin/announcements");
+        const data = await res.json();
+        if (!data.ok) return;
+        topics = data.topics || topics;
+        announcements = data.announcements || [];
+        renderList();
+      } catch {}
     }
 
-    document.getElementById("announceSearch").addEventListener("input", (e) => {
-      searchQuery = e.target.value;
-      renderList();
-    });
+    document.getElementById("annNewBtn").addEventListener("click", selectNewDraft);
+    document.getElementById("annSearch").addEventListener("input", renderList);
 
-    document.getElementById("newBtn").addEventListener("click", () => {
-      selectedId = null;
-      mode = "new";
-      render();
-    });
-
-    loadAnnouncements();
-    setInterval(pollAnnouncements, 30000);
+    if (!canSeeAnnouncements()) {
+      document.getElementById("annFormCard").innerHTML = '<div class="ann-empty-state">You don\'t have access to Announcements.</div>';
+      document.getElementById("annList").innerHTML = "";
+    } else {
+      loadAnnouncements();
+      pollTimer = setInterval(pollAnnouncements, 30000);
+    }
   </script>
 </body>
 </html>

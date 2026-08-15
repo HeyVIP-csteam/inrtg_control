@@ -16,7 +16,7 @@
  * once-already-flagged value without a fresh blur in between).
  *
  * Scoped to ONE brand only (whatever the form currently has selected) —
- * not a search across all 9 brands' sheets. TIDs are brand-specific
+ * not a search across all brands' sheets. TIDs are brand-specific
  * transaction identifiers; a match in a different brand's sheet
  * wouldn't mean anything here.
  *

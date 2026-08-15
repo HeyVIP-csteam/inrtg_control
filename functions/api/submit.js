@@ -1,10 +1,13 @@
 import { BRANDS, RECORD_TO_SHEET, MODULE_META, SHEET_LAYOUT, MESSAGE_TEMPLATE, SCREENSHOT_R2_ENABLED, PROMOTION_SHEET_CONFIG, PROMOTION_MESSAGE_TEMPLATE } from "../_shared/routing.js";
-import { appendRowToSheet, appendRowByColumns, writeRowForDate } from "../_shared/googleSheets.js";
+import {
+  resolveColumnValues, resolveSheetLayout, formatDateDDMMYYYY,
+  buildTicketMessage, buildTitleAndSummary,
+} from "../_shared/messageBuilders.js";
+import { appendRowToSheet, appendRowByColumns, writeRowForDate, getNextSequenceValue } from "../_shared/googleSheets.js";
 import { uploadAttachmentToR2, screenshotUrl } from "../_shared/r2.js";
 import { createThread } from "../_shared/threads.js";
 import { verifyRequest, canSeeBrand, canSeeModule } from "../_shared/accounts.js";
 import { getRouteOverride } from "../_shared/routes.js";
-import { resolveColumnValues, resolveSheetLayout, formatDateDDMMYYYY, buildTicketMessage, buildTitleAndSummary } from "../_shared/messageBuilders.js";
 import { compressImageForTelegram } from "../_shared/telegramImageCompress.js";
 
 const VALID_MODULES = Object.keys(MODULE_META);
@@ -19,6 +22,7 @@ export async function onRequestPost(context) {
   try {
     return await handleSubmit(context);
   } catch (e) {
+    console.error("submit.js: unexpected error", e && e.stack || e);
     return json({ ok: false, error: `Unexpected server error: ${String(e && e.message || e)}` }, 500);
   }
 }
@@ -43,12 +47,14 @@ async function handleSubmit({ request, env }) {
   if (!VALID_MODULES.includes(moduleId)) {
     return json({ ok: false, error: `Unknown module "${moduleId}".` }, 400);
   }
-  // Same real-server-side-enforcement reasoning as the canSeeBrand check
-  // just below — an agent scoped away from a Topic (account.allowedModules)
-  // can't submit to it even by calling this endpoint directly, regardless
-  // of what the sidebar/form on the client hid or let through.
+  // Real enforcement, not just hiding it from the sidebar — an agent
+  // scoped away from a topic (account.allowedModules, set in the Agent
+  // Personal Profile modal) can't submit to it even by calling this
+  // endpoint directly, bypassing the Home page and app.js's own checks
+  // entirely. Checked before the brand lookup below on purpose — no
+  // reason to even validate brandId for a module this account can't use.
   if (!canSeeModule(account, moduleId)) {
-    return json({ ok: false, error: `You don't have access to submit ${MODULE_META[moduleId]?.name || moduleId} tickets.` }, 403);
+    return json({ ok: false, error: `Your account doesn't have access to the ${MODULE_META[moduleId]?.name || moduleId} topic.` }, 403);
   }
   const brand = BRANDS[brandId];
   if (!brand) {
@@ -66,32 +72,28 @@ async function handleSubmit({ request, env }) {
     return json({ ok: false, error: "Missing reporter or fields." }, 400);
   }
 
-  // Duplicate-submission guard — protects against the SAME click ending up
-  // as two Telegram messages / two Sheet rows / two thread records, no
-  // matter what actually caused the second POST (flaky mobile network
-  // silently retransmitting, a stray double-tap the button-disable in
-  // app.js's submit handler didn't quite catch in time, a Cloudflare edge
-  // retry, etc). `idempotencyKey` is a random ID app.js generates fresh
-  // for each individual submit attempt (see public/assets/app.js) — NOT
-  // tied to the form's contents, so re-submitting the exact same fields
-  // after a genuine failure still gets a fresh key and goes through.
-  //
-  // Best-effort, not a hard distributed lock: two requests landing on
-  // different edge colos in the same instant could both pass the get()
-  // below before either put() finishes. Given app.js already disables the
-  // button synchronously on click, the realistic remaining race window is
-  // extremely small — this closes the actual failure mode you were
-  // hitting, not a theoretical one.
+  // Idempotency check — same submit CLICK occasionally reaches the server
+  // twice for real (flaky mobile network retrying the request, a double-
+  // tap, an edge node retry), which used to mean a duplicate Telegram
+  // message, a duplicate thread record, and sometimes a Sheet row
+  // conflict from two near-simultaneous writes. idempotencyKey (see
+  // app.js) is a fresh random ID per click, not tied to the form's
+  // content, so retrying after a genuine failure still submits normally.
   if (idempotencyKey && env.THREADS_KV) {
     const dedupeKey = `submit_dedupe:${idempotencyKey}`;
     const already = await env.THREADS_KV.get(dedupeKey);
     if (already) {
+      // Already processed (or currently mid-processing) — hand back the
+      // exact same result instead of doing everything a second time.
       return new Response(already, { status: 200, headers: { "Content-Type": "application/json" } });
     }
-    // Placeholder written immediately so a near-simultaneous duplicate
-    // sees SOMETHING rather than racing straight through too — overwritten
-    // with the real response (see the `return` at the very end of this
-    // function) once the actual Telegram/Sheet/thread work is done.
+    // Placeholder first, 30s TTL — so a near-simultaneous duplicate
+    // request (arriving before the real processing below has finished)
+    // still gets caught immediately instead of racing past this check too.
+    // Cloudflare KV enforces a hard minimum of 60s for expirationTtl —
+    // passing 30 here (as originally written) makes EVERY put() call
+    // fail with a 400, which breaks EVERY submission, not just duplicate
+    // ones (this dedupe check runs on every request, not just repeats).
     await env.THREADS_KV.put(dedupeKey, JSON.stringify({ ok: true, duplicate: true, note: "Original submission was still processing — this is not a second ticket." }), { expirationTtl: 60 });
   }
 
@@ -109,6 +111,41 @@ async function handleSubmit({ request, env }) {
   const route = routeOverride || brand.telegram[moduleId] || brand.telegram.default;
   const timestamp = new Date().toISOString().replace("T", " ").slice(0, 19) + " UTC";
   const fieldMap = Object.fromEntries(fields.map((f) => [f.key, f.value]));
+
+  // Promotion Request's TID gets shown to the agent via the "Generate"
+  // button (see app.js) BEFORE they submit — often minutes before, while
+  // they're still filling out the rest of the form. That preview is a
+  // point-in-time READ of "what's the next TID after the last row in the
+  // sheet right now"; if a second submission (a different agent, or the
+  // same one double-clicking Generate) reads that same "last row" before
+  // THIS one has actually been written, both end up with the identical
+  // previewed TID — nothing enforces it's still free by the time Submit
+  // is actually clicked. Close that gap here, right before the real
+  // write: re-check what the CURRENT next TID actually is; if it no
+  // longer matches what the agent's form is holding (someone else's
+  // submission landed in the meantime), silently swap in the fresh one
+  // instead of writing a duplicate. Shrinks the real race window from
+  // "however long the agent takes to fill out the form" down to the
+  // handful of milliseconds between this check and the write below —
+  // not a mathematical guarantee under true simultaneous submissions,
+  // but closes the actual gap that was causing real duplicates.
+  if (moduleId === "promotion_request" && fieldMap.tid) {
+    const freshConfig = PROMOTION_SHEET_CONFIG[`${brandId}|${fieldMap.promotion}`];
+    if (freshConfig) {
+      try {
+        const fresh = await getNextSequenceValue(env, freshConfig.sheetId, freshConfig.tab, freshConfig.tidColumn || freshConfig.startColumn);
+        if (fresh.next && fresh.next !== fieldMap.tid) {
+          fieldMap.tid = fresh.next;
+          const tidField = fields.find((f) => f.key === "tid");
+          if (tidField) tidField.value = fresh.next;
+        }
+      } catch {
+        // Best-effort — if this re-check itself fails (Sheets hiccup),
+        // fall through and submit with whatever TID the agent's form
+        // already had rather than blocking the whole submission over it.
+      }
+    }
+  }
 
   // 1. Upload attachments to R2 first (if configured) so the message text
   //    can include a real, directly-openable screenshot link.
@@ -128,16 +165,8 @@ async function handleSubmit({ request, env }) {
   const screenshotLink = r2Links.join(", ");
 
   const text = buildTicketMessage({
-    moduleId,
-    brandId,
-    meta,
-    brand,
-    fieldMap,
-    fields,
-    reporter,
-    screenshotLink,
-    messageTemplate: MESSAGE_TEMPLATE,
-    promotionMessageTemplate: PROMOTION_MESSAGE_TEMPLATE,
+    moduleId, brandId, meta, brand, fieldMap, fields, reporter, screenshotLink,
+    messageTemplate: MESSAGE_TEMPLATE, promotionMessageTemplate: PROMOTION_MESSAGE_TEMPLATE,
   });
 
   // 2. Send to Telegram — photo(s)/document(s) with the info as the caption,
@@ -149,28 +178,22 @@ async function handleSubmit({ request, env }) {
   } catch (e) {
     // Fall back to a plain text message so the ticket isn't lost even if
     // the attachment send fails (e.g. caption too long, bad file, etc).
-    // Logged (not just swallowed into attachmentErrors) so a Cloudflare
-    // Pages log tail actually shows WHY a ticket fell back to text-only —
-    // this was a real gap during the "整组消失" investigation (no server
-    // logs meant reconstructing everything from R2 file sizes instead).
-    console.error(`[submit.js] Attachment send failed, falling back to text-only message: ${String(e.message || e)}`);
     attachmentErrors.push(String(e.message || e));
     const fallback = await sendTelegramMessage({ botToken, route, text });
     if (!fallback.ok) {
       return json({ ok: false, error: `Telegram send failed: ${fallback.error}` }, 502);
     }
-    tgResult = { messageId: fallback.messageId, messageIds: [fallback.messageId], attachmentLinks: [], attachmentFileIds: [] };
+    tgResult = { messageId: fallback.messageId, messageIds: [fallback.messageId], attachmentLinks: [], attachmentFileIds: [], attachmentNames: [] };
   }
   const attachmentLinks = tgResult.attachmentLinks;
 
-  // 2b. Optionally log to the brand's Google Sheet — moved BEFORE
-  //     createThread() below (used to run after it) so that, when this
-  //     write lands on a real trackable row, that exact row gets captured
-  //     into `sheetRef` and stored on the thread record. That's what lets
-  //     the dashboard's "📊 Sync to Sheet" edit action (see
-  //     functions/api/threads/[id].js) overwrite THIS row later instead
-  //     of appending a duplicate one. Doesn't fail the whole request if
-  //     the sheet write fails — Telegram already has the ticket.
+  // 2. Optionally log to the brand's Google Sheet (fire-and-await, but don't
+  //    fail the whole request if the sheet write fails — Telegram already has it).
+  // Runs BEFORE the thread record below on purpose: if this writes a real
+  // row, we want its {sheetId, tab, startColumn, columns, row} saved on
+  // the thread as `sheetRef`, so a later edit (functions/api/threads/[id].js
+  // editDetails) knows exactly which Sheet cell range to overwrite instead
+  // of appending a duplicate row.
   let sheetLogged = false;
   let sheetError = null;
   let sheetRef = null;
@@ -191,19 +214,22 @@ async function handleSubmit({ request, env }) {
           const dateValue = formatDateDDMMYYYY(fieldMap.reportDate || fieldMap.date);
           const shiftValue = fieldMap[layoutEntry.selectorField];
           const activeSide = shiftValue === layoutEntry.rightBlock.shiftValue ? "right" : "left";
-          await writeRowForDate(env, brand.sheetId, layoutEntry.tab, {
+          const activeBlock = activeSide === "right" ? layoutEntry.rightBlock : layoutEntry.leftBlock;
+          const { row } = await writeRowForDate(env, brand.sheetId, layoutEntry.tab, {
             leftBlock: layoutEntry.leftBlock,
             rightBlock: layoutEntry.rightBlock,
             activeSide,
             dateValue,
             values,
           });
-          // writeRowForDate() re-finds the matching-date row by scanning
-          // instead of returning a fixed row number (see its comment in
-          // googleSheets.js) — so Daily Report intentionally gets no
-          // sheetRef. Its 📊 edit action can still sync the Telegram
-          // message, just not this Sheet row (sheetHasRef comes back
-          // false for it — see threads/[id].js's editDetails action).
+          // `row` is the ACTUAL Sheets row this shift's data landed on —
+          // same row a same-date submission from the OTHER shift would
+          // also resolve to (see writeRowForDate()'s scan logic), but
+          // that's fine: sheetRef is stored per-THREAD, not shared, and
+          // `startColumn` is fixed to THIS shift's own block, so a later
+          // editDetails() on this specific ticket only ever touches this
+          // shift's own columns — never the other shift's half of the row.
+          if (row) sheetRef = { sheetId: brand.sheetId, tab: layoutEntry.tab, startColumn: activeBlock.startColumn, columns: layoutEntry.columns, row };
         } else {
           const layout = resolveSheetLayout(layoutEntry, fieldMap);
           if (layout) {
@@ -228,7 +254,7 @@ async function handleSubmit({ request, env }) {
     }
   }
 
-  // 2c. Create a TG Reply Threads record so agent replies to this exact
+  // 2b. Create a TG Reply Threads record so agent replies to this exact
   //     Telegram message can be tracked in the dashboard. Optional feature —
   //     skipped silently until THREADS_KV is bound (see wrangler.toml).
   let threadId = null;
@@ -251,6 +277,7 @@ async function handleSubmit({ request, env }) {
         rootText: text,
         hasMedia: Array.isArray(attachments) && attachments.length > 0,
         attachmentFileIds: tgResult.attachmentFileIds || [],
+        attachmentNames: tgResult.attachmentNames || [],
         summary,
         fieldMap,
         screenshotLink,
@@ -273,13 +300,12 @@ async function handleSubmit({ request, env }) {
     attachmentErrors: attachmentErrors.length ? attachmentErrors : undefined,
     r2Errors: r2Errors.length ? r2Errors : undefined,
   };
-  // Overwrite the placeholder from the duplicate-submission guard above
-  // with the REAL result, so a duplicate request arriving even a moment
-  // late still gets back this exact ticket's info (not "still processing")
-  // instead of silently creating a second one. Longer TTL than the
-  // placeholder's 60s — 10 minutes is generous enough to cover any
-  // realistically-delayed retransmit while not lingering in KV forever.
   if (idempotencyKey && env.THREADS_KV) {
+    // Overwrite the 30s placeholder from the check above with the real
+    // result, now that processing actually finished — and extend the
+    // TTL to 10 minutes, long enough to catch a slow retry (e.g. a
+    // mobile network that took a while to give up and resend) without
+    // keeping every submission's dedupe key around indefinitely.
     await env.THREADS_KV.put(`submit_dedupe:${idempotencyKey}`, JSON.stringify(finalResponse), { expirationTtl: 600 });
   }
   return json(finalResponse);
@@ -322,12 +348,27 @@ async function sendTelegramWithAttachments({ botToken, route, text, attachments 
   if (!attachments.length) {
     const r = await sendTelegramMessage({ botToken, route, text });
     if (!r.ok) throw new Error(r.error);
-    return { messageId: r.messageId, messageIds: [r.messageId], attachmentLinks: [], attachmentFileIds: [] };
+    return { messageId: r.messageId, messageIds: [r.messageId], attachmentLinks: [], attachmentFileIds: [], attachmentNames: [] };
   }
 
   if (attachments.length === 1) {
     const { messageId, fileId } = await sendSingleWithCaption({ botToken, route, text, attachment: attachments[0] });
-    return { messageId, messageIds: [messageId], attachmentLinks: [buildMessageLink(route, messageId)], attachmentFileIds: fileId ? [fileId] : [] };
+    return {
+      messageId,
+      messageIds: [messageId],
+      attachmentLinks: [buildMessageLink(route, messageId)],
+      attachmentFileIds: fileId ? [fileId] : [],
+      // Real original filename, kept 1:1 aligned with attachmentFileIds
+      // (only pushed when fileId itself was non-null, same filter as
+      // above) — this is what lets threads.html correctly detect "this
+      // is an image" for the ORIGINAL ticket's own attachments (not just
+      // reply attachments, which already had this) via a real file
+      // extension, instead of a generic placeholder name with no
+      // extension defaulting to "unknown file, show a download link"
+      // even for actual photos. See /api/attachment/[fileId].js's
+      // ?name= priority ordering.
+      attachmentNames: fileId ? [attachments[0].name] : [],
+    };
   }
 
   const allImages = attachments.every((a) => looksLikeImage(a.type, a.name));
@@ -335,14 +376,18 @@ async function sendTelegramWithAttachments({ botToken, route, text, attachments 
     const sent = await sendMediaGroup({ botToken, route, text, attachments });
     return {
       messageId: sent[0].messageId,
-      // EVERY message_id in the album, not just the first — a media
-      // group is one message_id per photo, and anything that later
-      // needs to act on "the whole original ticket message" (most
-      // importantly recallRoot() in functions/api/threads/[id].js)
-      // needs all of them, not just the captioned first one.
+      // EVERY message_id in the album — a multi-photo submission lands
+      // in Telegram as one message_id PER photo, only the first
+      // carrying the caption. Used to only ever keep the first one
+      // (as the single messageId above), which meant Recall
+      // (functions/api/threads/[id].js) could only ever delete that
+      // one, silently leaving the rest of the photos behind in the
+      // group forever. See createThread()'s rootMessageIds in
+      // _shared/threads.js for where this gets stored.
       messageIds: sent.map((s) => s.messageId),
       attachmentLinks: sent.map((s) => buildMessageLink(route, s.messageId)),
       attachmentFileIds: sent.map((s) => s.fileId).filter(Boolean),
+      attachmentNames: sent.filter((s) => s.fileId).map((s) => s.name),
     };
   }
 
@@ -359,26 +404,26 @@ async function sendTelegramWithAttachments({ botToken, route, text, attachments 
     messageIds: sent.map((s) => s.messageId),
     attachmentLinks: sent.map((s) => buildMessageLink(route, s.messageId)),
     attachmentFileIds: sent.map((s) => s.fileId).filter(Boolean),
+    attachmentNames: sent.filter((s) => s.fileId).map((s) => s.name),
   };
 }
 
 async function sendSingleWithCaption({ botToken, route, text, attachment }) {
-  let { name, type, dataUrl } = attachment;
+  const { name, type, dataUrl } = attachment;
   let bytes = base64ToBytes(dataUrlToBase64(dataUrl));
+  let sendType = type;
 
   const isImage = looksLikeImage(type, name);
-  // Compress BEFORE handing bytes to Telegram, not after Telegram already
-  // rejected them — see _shared/telegramImageCompress.js. No-op if the
-  // image is already under the target size or not an image at all (this
-  // path's sendDocument branch goes up to 50MB, so documents are left
-  // alone).
+  // Only photos can hit Telegram's 10MB sendPhoto limit in the first
+  // place — sendDocument has a much higher cap, so documents are never
+  // routed through this (see compressImageForTelegram's own threshold
+  // check too, which is a no-op for anything already under it).
   if (isImage) {
-    const compressed = await compressImageForTelegram(bytes, { type, name });
-    bytes = compressed.bytes;
-    type = compressed.type;
-    name = compressed.name;
+    const result = await compressImageForTelegram(bytes, type);
+    bytes = result.bytes;
+    sendType = result.type;
   }
-  const blob = new Blob([bytes], { type: type || "application/octet-stream" });
+  const blob = new Blob([bytes], { type: sendType || "application/octet-stream" });
 
   const method = isImage ? "sendPhoto" : "sendDocument";
   const field = isImage ? "photo" : "document";
@@ -398,7 +443,7 @@ async function sendSingleWithCaption({ botToken, route, text, attachment }) {
   const fileId = isImage
     ? data.result.photo?.[data.result.photo.length - 1]?.file_id || null
     : data.result.document?.file_id || null;
-  return { messageId: data.result.message_id, fileId };
+  return { messageId: data.result.message_id, fileId, name };
 }
 
 async function sendMediaGroup({ botToken, route, text, attachments }) {
@@ -416,28 +461,27 @@ async function sendMediaGroup({ botToken, route, text, attachments }) {
   });
   form.append("media", JSON.stringify(media));
 
-  // Compress every photo BEFORE building the multipart body. This is the
-  // path the "整组消失" bug came from: sendMediaGroup is all-or-nothing —
-  // ONE oversized photo makes Telegram reject the whole album (ok:false),
-  // silently dropping every image in it, not just the big one. See
-  // telegram-photo-limit-fix.md for the incident this fixes.
+  // This path is only ever reached when every attachment already
+  // "looksLikeImage" (see the allImages check at the call site), so every
+  // item here is a candidate for compression — no per-item isImage check
+  // needed, unlike sendSingleWithCaption above.
   for (let i = 0; i < attachments.length; i++) {
     const att = attachments[i];
-    const rawBytes = base64ToBytes(dataUrlToBase64(att.dataUrl));
-    const { bytes, type, name } = await compressImageForTelegram(rawBytes, { type: att.type, name: att.name });
+    const raw = base64ToBytes(dataUrlToBase64(att.dataUrl));
+    const { bytes, type } = await compressImageForTelegram(raw, att.type);
     const blob = new Blob([bytes], { type: type || "image/jpeg" });
-    form.append(`file${i}`, blob, name || `photo${i}`);
+    form.append(`file${i}`, blob, att.name || `photo${i}`);
   }
 
   const res = await fetch(`https://api.telegram.org/bot${botToken}/sendMediaGroup`, { method: "POST", body: form });
   const data = await res.json();
-  if (!data.ok) {
-    console.error(`[submit.js] sendMediaGroup rejected by Telegram (${attachments.length} attachment(s)): ${data.description || "unknown error"}`);
-    throw new Error(data.description || "unknown Telegram error");
-  }
-  return data.result.map((m) => ({
+  if (!data.ok) throw new Error(data.description || "unknown Telegram error");
+  // attachments[i] lines up positionally with data.result[i] — sendMediaGroup
+  // returns results in the same order the media items were submitted in.
+  return data.result.map((m, i) => ({
     messageId: m.message_id,
     fileId: m.photo?.[m.photo.length - 1]?.file_id || null,
+    name: attachments[i]?.name,
   }));
 }
 

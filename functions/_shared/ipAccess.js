@@ -1,222 +1,246 @@
 /**
- * functions/_shared/ipAccess.js
+ * IP Access — approval workflow layered ON TOP OF the existing office
+ * allowedIPs whitelist, not a replacement for it. The one line of code
+ * that actually decides "does this login pass" — officeIpCheckPasses()
+ * in accounts.js, `office.allowedIPs.includes(ip)` — is untouched by
+ * anything in this file. Every function here either just READS that
+ * data, or calls the existing saveOffice()/setAccountLocked() to change
+ * it. If something in this file has a bug, the actual login path is not
+ * at risk — worst case is a pending record doesn't get created, or an
+ * approve doesn't go through, not that login silently breaks.
  *
- * Backs the "IP Access" admin dashboard (public/index.html's Account
- * Management → IP Access, opened via openAcctModal("whitelist")). Layers
- * THREE new concepts on top of the existing Office/allowedIPs whitelist
- * (functions/_shared/accounts.js) without changing how a login is
- * actually gated:
- *
- *   - PENDING  — an office-bound account tried to log in with the right
- *     password from an IP NOT on its office's allowedIPs. That's
- *     already rejected today by officeIpCheckPasses() in accounts.js —
- *     this file doesn't touch that decision at all — but now, instead
- *     of that failure only living in a Telegram alert, it's ALSO parked
- *     here so an admin can see it and one-click Approve it straight onto
- *     the office's allowedIPs (or Reject it, which just clears the
- *     pending record — the account can still try again from a
- *     DIFFERENT IP, this only dismisses the one entry).
- *   - BLOCKED  — a NEW, separate rejection: a globally blocked IP is
- *     refused at login before the password is even checked, regardless
- *     of which account or office is involved. This is an ADDITION to
- *     the login flow (see functions/api/auth/login.js), not a
- *     replacement for officeIpCheckPasses().
- *   - RECORD   — one shared, capped audit log of every approve / reject
- *     / block / unblock / manual-add / remove action taken from this
- *     dashboard, newest first. Read-only — nothing else in the app
- *     writes to it.
- *
- * All three are single-key KV lists (same low-write-volume pattern as
- * _shared/threads.js's deletion log) — admin actions and real login
- * failures are nowhere near the write volume that made per-thread
- * "index" keys necessary elsewhere in this codebase.
- *
- * Per-IP "who added this and when" metadata rides on the Office record
- * itself as a new `ipMeta: { [ip]: { addedBy, addedAt, method } }` map
- * (see accounts.js's saveOffice(), which now preserves/merges this
- * field). Any IP with no ipMeta entry (every IP that existed before this
- * feature shipped) reads back as "Legacy entry" / "—", matching exactly
- * how the pre-existing PKR whitelist data should display.
- *
- * Every mutating function here takes `getOffice`/`saveOffice`/
- * `setAccountLocked` as PARAMETERS rather than importing them directly
- * from accounts.js — deliberate dependency injection, not an oversight,
- * so this module has zero import-time coupling to accounts.js (only
- * functions/api/admin/ip-access.js and functions/api/auth/login.js need
- * to wire the two together).
+ * KV key shapes:
+ *   ipreq:<officeId>:<ip>    -> pending approval record
+ *   ipblock:<ip>             -> global blocklist entry (not office-scoped
+ *                                — a blocked IP is blocked everywhere,
+ *                                regardless of which office/account it's
+ *                                trying to reach)
+ *   ipmeta:<officeId>:<ip>   -> provenance for an IP that's ALREADY in an
+ *                                office's allowedIPs (who/how it got
+ *                                there) — purely informational, never
+ *                                consulted by the login check itself
+ *   ipaccess-log             -> single shared audit-trail key, same
+ *                                pattern as threads.js's deletion-log
  */
+import { getOffice, saveOffice, setAccountLocked, listOffices } from "./accounts.js";
 
-const BLOCKED_KEY = "blocked-ips";
-const PENDING_KEY = "pending-ips";
-const LOG_KEY = "ip-access-log";
 const MAX_LOG_SIZE = 500;
-const MAX_PENDING_SIZE = 500;
-
-async function readList(env, key) {
-  const raw = await env.THREADS_KV.get(key);
-  return raw ? JSON.parse(raw) : [];
-}
-
-async function writeList(env, key, list) {
-  await env.THREADS_KV.put(key, JSON.stringify(list));
-}
+const LOG_KEY = "ipaccess-log";
 
 function newLogId() {
   return `ipa_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 }
 
-async function appendRecord(env, entry) {
-  const list = await readList(env, LOG_KEY);
-  list.unshift({ id: newLogId(), ts: new Date().toISOString(), ...entry });
-  await writeList(env, LOG_KEY, list.slice(0, MAX_LOG_SIZE));
+async function kvPutWithRetry(env, key, value, attempts = 3) {
+  let lastErr;
+  for (let i = 0; i < attempts; i++) {
+    try {
+      await env.THREADS_KV.put(key, value);
+      return;
+    } catch (e) {
+      lastErr = e;
+      if (i < attempts - 1) await new Promise((r) => setTimeout(r, 150 * (i + 1) + Math.floor(Math.random() * 100)));
+    }
+  }
+  throw lastErr;
 }
 
-// ---- blocked (checked from login.js on EVERY login attempt) ----
+export async function logIpAction(env, entry) {
+  const raw = await env.THREADS_KV.get(LOG_KEY);
+  const list = raw ? JSON.parse(raw) : [];
+  list.unshift({ id: newLogId(), ts: new Date().toISOString(), ...entry });
+  await kvPutWithRetry(env, LOG_KEY, JSON.stringify(list.slice(0, MAX_LOG_SIZE)));
+}
+
+export async function listIpAccessLog(env) {
+  const raw = await env.THREADS_KV.get(LOG_KEY);
+  return raw ? JSON.parse(raw) : [];
+}
+
+// ---- IP format validation ----
+//
+// Only ever called for HUMAN-TYPED input (manualAdd / block) — approve/
+// reject IPs come straight from a real pending record, which itself was
+// only ever created from requestIP(request) on a real HTTP request, so
+// it's already a well-formed address and doesn't need re-checking.
+// Exists because of a real bug seen on a reference project: someone
+// pasted a full URL ("https://203.189.67.234") into an IP field and it
+// got stored as-is, silently breaking that entry forever.
+const IPV4_RE = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/;
+const IPV6_RE = /^[0-9a-fA-F:]+:[0-9a-fA-F:]*$/;
+export function isValidIpFormat(ip) {
+  if (!ip || typeof ip !== "string") return false;
+  const m = ip.match(IPV4_RE);
+  if (m) return m.slice(1).every((octet) => Number(octet) <= 255);
+  return IPV6_RE.test(ip) && ip.includes(":");
+}
+
+// ---- blocklist ----
 
 export async function isIpBlocked(env, ip) {
   if (!ip) return false;
-  const list = await readList(env, BLOCKED_KEY);
-  return list.some((b) => b.ip === ip);
+  return !!(await env.THREADS_KV.get(`ipblock:${ip}`));
 }
 
 export async function blockIp(env, { ip, reason, by, byRole }) {
-  const list = await readList(env, BLOCKED_KEY);
-  if (list.some((b) => b.ip === ip)) throw new Error(`${ip} is already blocked.`);
-  list.unshift({ ip, reason: reason || "", by, byRole, blockedAt: new Date().toISOString() });
-  await writeList(env, BLOCKED_KEY, list);
-  await appendRecord(env, { ip, action: "Blocked", by, byRole, detail: reason || "—" });
+  await env.THREADS_KV.put(`ipblock:${ip}`, JSON.stringify({
+    ip, reason: reason || "", blockedBy: by, blockedByRole: byRole, blockedAt: new Date().toISOString(),
+  }));
+  await logIpAction(env, { action: "block", category: "blocked", ip, by, byRole, detail: reason || "" });
 }
 
 export async function unblockIp(env, { ip, by, byRole }) {
-  const list = await readList(env, BLOCKED_KEY);
-  const next = list.filter((b) => b.ip !== ip);
-  if (next.length === list.length) throw new Error(`${ip} isn't currently blocked.`);
-  await writeList(env, BLOCKED_KEY, next);
-  await appendRecord(env, { ip, action: "Unblocked", by, byRole, detail: "—" });
+  await env.THREADS_KV.delete(`ipblock:${ip}`);
+  await logIpAction(env, { action: "unblock", category: "blocked", ip, by, byRole });
 }
 
-// ---- pending ----
+// ---- pending (approval queue) ----
 
-// Called from login.js's existing officeIpCheckPasses()-failed branch —
-// fire-and-forget via waitUntil there, same as that branch's Telegram
-// alert, so this never adds latency to the rejection response. Dedupes
-// on (officeId, ip): a repeated attempt from the same unrecognized IP
-// just bumps attempts/lastAttemptAt instead of piling up duplicate rows.
-export async function recordPendingIpRequest(env, { officeId, officeName, ip, username }) {
-  if (!officeId || !ip) return;
-  const list = await readList(env, PENDING_KEY);
-  const now = new Date().toISOString();
-  const existing = list.find((p) => p.officeId === officeId && p.ip === ip);
-  if (existing) {
-    existing.lastAttemptAt = now;
+// Called on a real login failure caused SPECIFICALLY by the IP not being
+// on the office's allowedIPs — never for wrong-password or no-office
+// failures (those aren't "this IP, this office" situations at all).
+export async function recordPendingIpAttempt(env, { ip, officeId, officeName, username, userAgent, country, city }) {
+  if (!ip || !officeId) return;
+  if (await isIpBlocked(env, ip)) return; // already-blocked IPs don't get a pending queue entry
+  const key = `ipreq:${officeId}:${ip}`;
+  const raw = await env.THREADS_KV.get(key);
+  if (raw) {
+    // Same IP retrying — bump the counter, don't spam a new log line or
+    // create a second record for the same (office, ip) pair.
+    const existing = JSON.parse(raw);
     existing.attempts = (existing.attempts || 1) + 1;
-    existing.username = username || existing.username; // most recent account to hit this pair
-    existing.officeName = officeName || existing.officeName;
-  } else {
-    list.unshift({ officeId, officeName: officeName || null, ip, username: username || null, firstAttemptAt: now, lastAttemptAt: now, attempts: 1 });
+    existing.lastAttemptAt = new Date().toISOString();
+    if (username) existing.username = username; // most recent attempted username wins
+    await env.THREADS_KV.put(key, JSON.stringify(existing));
+    return;
   }
-  await writeList(env, PENDING_KEY, list.slice(0, MAX_PENDING_SIZE));
+  const record = {
+    ip, officeId, officeName: officeName || "", username: username || "",
+    userAgent: userAgent || "", country: country || "", city: city || "",
+    attempts: 1, firstAttemptAt: new Date().toISOString(), lastAttemptAt: new Date().toISOString(),
+  };
+  await env.THREADS_KV.put(key, JSON.stringify(record));
+  await logIpAction(env, { action: "pending-created", category: "pending", ip, officeId, officeName: officeName || "", detail: username || "" });
 }
 
-async function removePending(env, { officeId, ip }) {
-  const list = await readList(env, PENDING_KEY);
-  const match = list.find((p) => p.officeId === officeId && p.ip === ip) || null;
-  await writeList(env, PENDING_KEY, list.filter((p) => !(p.officeId === officeId && p.ip === ip)));
-  return match;
+export async function getPendingIpRequest(env, officeId, ip) {
+  const raw = await env.THREADS_KV.get(`ipreq:${officeId}:${ip}`);
+  return raw ? JSON.parse(raw) : null;
 }
 
-export async function approveIpRequest(env, { officeId, ip, by, byRole, getOffice, saveOffice, setAccountLocked }) {
+// Approve = add to the office's real allowedIPs (via the EXISTING
+// saveOffice(), same function the office picker uses) + record
+// provenance + clear the pending record + unlock the account that was
+// stuck behind this IP, if any + audit log. Four side effects, one call.
+export async function approveIpRequest(env, { officeId, ip, by, byRole }) {
+  const pending = await getPendingIpRequest(env, officeId, ip);
   const office = await getOffice(env, officeId);
   if (!office) throw new Error("Office not found.");
-  const currentIPs = office.allowedIPs || [];
-  const allowedIPs = currentIPs.includes(ip) ? currentIPs : [...currentIPs, ip];
-  const ipMeta = { ...(office.ipMeta || {}), [ip]: { addedBy: by, addedAt: new Date().toISOString(), method: "Approved" } };
-  const saved = await saveOffice(env, { id: officeId, name: office.name, allowedIPs, ipMeta });
-
-  const match = await removePending(env, { officeId, ip });
-
-  // Best-effort convenience, not a security decision: if the account that
-  // generated this exact pending request is currently auto-locked, clear
-  // that lock too — the missing whitelist entry is very likely WHY it
-  // kept failing (see login.js's combined 5-in-1-hour counter, which
-  // treats "unrecognized IP" the same as a wrong password). Narrow on
-  // purpose: only ever the ONE account this pending row named, never a
-  // blanket unlock of the whole office. Never allowed to fail the
-  // approval itself.
-  if (match?.username && setAccountLocked) {
-    try {
-      await setAccountLocked(env, match.username, false, null);
-    } catch {
-      // Account may already be unlocked, or may not exist anymore — fine either way.
-    }
+  if (!office.allowedIPs.includes(ip)) {
+    await saveOffice(env, { id: office.id, name: office.name, allowedIPs: [...office.allowedIPs, ip] });
   }
-
-  await appendRecord(env, { ip, action: "Approved", by, byRole, detail: office.name, officeId, officeName: office.name });
-  return { office: saved };
+  await env.THREADS_KV.put(`ipmeta:${officeId}:${ip}`, JSON.stringify({
+    source: "approved", addedBy: by, addedByRole: byRole, addedAt: new Date().toISOString(),
+  }));
+  await env.THREADS_KV.delete(`ipreq:${officeId}:${ip}`);
+  if (pending?.username) {
+    // Best-effort — an approve should still succeed even if the account
+    // was deleted/renamed in the meantime; unlocking is a bonus, not a
+    // precondition.
+    await setAccountLocked(env, pending.username, false).catch(() => {});
+  }
+  await logIpAction(env, { action: "approve", category: "approved", ip, officeId, officeName: office.name, by, byRole, detail: pending?.username || "" });
 }
 
 export async function rejectIpRequest(env, { officeId, ip, by, byRole }) {
-  const match = await removePending(env, { officeId, ip });
-  await appendRecord(env, { ip, action: "Rejected", by, byRole, detail: match?.officeName || "—", officeId, officeName: match?.officeName || null });
+  const office = await getOffice(env, officeId);
+  await env.THREADS_KV.delete(`ipreq:${officeId}:${ip}`);
+  await logIpAction(env, { action: "reject", category: "pending", ip, officeId, officeName: office?.name || "", by, byRole });
 }
 
-// ---- manual add / remove (admin typing an IP in directly, not via a pending request) ----
+// ---- manual add / remove (skips the pending queue entirely) ----
 
-export async function addManualIp(env, { officeId, ip, by, byRole, getOffice, saveOffice }) {
+export async function manualAddIp(env, { officeId, ip, by, byRole }) {
   const office = await getOffice(env, officeId);
   if (!office) throw new Error("Office not found.");
-  const currentIPs = office.allowedIPs || [];
-  if (currentIPs.includes(ip)) throw new Error(`${ip} is already approved for ${office.name}.`);
-  const allowedIPs = [...currentIPs, ip];
-  const ipMeta = { ...(office.ipMeta || {}), [ip]: { addedBy: by, addedAt: new Date().toISOString(), method: "Manual" } };
-  const saved = await saveOffice(env, { id: officeId, name: office.name, allowedIPs, ipMeta });
-  await appendRecord(env, { ip, action: "Manually Added", by, byRole, detail: office.name, officeId, officeName: office.name });
-  return saved;
-}
-
-export async function removeApprovedIp(env, { officeId, ip, by, byRole, getOffice, saveOffice }) {
-  const office = await getOffice(env, officeId);
-  if (!office) throw new Error("Office not found.");
-  const allowedIPs = (office.allowedIPs || []).filter((x) => x !== ip);
-  const ipMeta = { ...(office.ipMeta || {}) };
-  delete ipMeta[ip];
-  await saveOffice(env, { id: officeId, name: office.name, allowedIPs, ipMeta });
-  await appendRecord(env, { ip, action: "Removed", by, byRole, detail: office.name, officeId, officeName: office.name });
-}
-
-// ---- dashboard (GET /api/admin/ip-access) ----
-
-export async function getIpAccessDashboard(env, { listOffices }) {
-  const offices = await listOffices(env);
-  const approved = [];
-  for (const o of offices) {
-    for (const ip of o.allowedIPs || []) {
-      const meta = (o.ipMeta || {})[ip];
-      approved.push({
-        ip,
-        officeId: o.id,
-        officeName: o.name,
-        addedBy: meta?.addedBy || "Legacy entry",
-        addedAt: meta?.addedAt || null,
-      });
-    }
+  if (!office.allowedIPs.includes(ip)) {
+    await saveOffice(env, { id: office.id, name: office.name, allowedIPs: [...office.allowedIPs, ip] });
   }
-  const [blocked, pending, record] = await Promise.all([
-    readList(env, BLOCKED_KEY),
-    readList(env, PENDING_KEY),
-    readList(env, LOG_KEY),
+  await env.THREADS_KV.put(`ipmeta:${officeId}:${ip}`, JSON.stringify({
+    source: "manual", addedBy: by, addedByRole: byRole, addedAt: new Date().toISOString(),
+  }));
+  await env.THREADS_KV.delete(`ipreq:${officeId}:${ip}`); // in case it was also sitting in the pending queue
+  await logIpAction(env, { action: "manual-add", category: "approved", ip, officeId, officeName: office.name, by, byRole });
+}
+
+export async function removeIp(env, { officeId, ip, by, byRole }) {
+  const office = await getOffice(env, officeId);
+  if (!office) throw new Error("Office not found.");
+  await saveOffice(env, { id: office.id, name: office.name, allowedIPs: office.allowedIPs.filter((x) => x !== ip) });
+  await env.THREADS_KV.delete(`ipmeta:${officeId}:${ip}`);
+  await logIpAction(env, { action: "remove", category: "approved", ip, officeId, officeName: office.name, by, byRole });
+}
+
+// ---- dashboard read model ----
+//
+// Scans ipreq:*/ipblock:* with THREADS_KV.list() (same paginated-cursor
+// pattern threads.js uses for thread:*) — these are low-volume compared
+// to threads, so one bounded loop with a generous limit is plenty, no
+// caching layer needed the way threads.js's sidebar scan has one.
+async function listByPrefix(env, prefix) {
+  const out = [];
+  let cursor;
+  do {
+    const page = await env.THREADS_KV.list({ prefix, cursor, limit: 1000 });
+    out.push(...page.keys.map((k) => k.name));
+    cursor = page.list_complete ? undefined : page.cursor;
+  } while (cursor);
+  return out;
+}
+
+export async function getIpAccessDashboard(env) {
+  const [offices, pendingKeys, blockKeys] = await Promise.all([
+    listOffices(env),
+    listByPrefix(env, "ipreq:"),
+    listByPrefix(env, "ipblock:"),
   ]);
-  return {
-    stats: {
-      total: approved.length + blocked.length,
-      approved: approved.length,
-      pending: pending.length,
-      blocked: blocked.length,
-    },
-    approved,
-    blocked,
-    pending,
-    record,
-    offices: offices.map((o) => ({ id: o.id, name: o.name })),
+  const pending = (await Promise.all(pendingKeys.map((k) => env.THREADS_KV.get(k))))
+    .filter(Boolean).map((raw) => JSON.parse(raw));
+
+  const blocked = (await Promise.all(blockKeys.map((k) => env.THREADS_KV.get(k))))
+    .filter(Boolean).map((raw) => JSON.parse(raw));
+
+  // "Approved" isn't its own KV key — it's just every IP that's already
+  // sitting in some office's allowedIPs. Cross-referenced with ipmeta
+  // for the "Added by" column when available; falls back to "office
+  // whitelist" for IPs that predate this feature and never got a meta
+  // record written for them.
+  const metaKeys = [];
+  offices.forEach((o) => (o.allowedIPs || []).forEach((ip) => metaKeys.push(`ipmeta:${o.id}:${ip}`)));
+  const metaRaw = await Promise.all(metaKeys.map((k) => env.THREADS_KV.get(k)));
+  const metaByKey = {};
+  metaKeys.forEach((k, i) => { if (metaRaw[i]) metaByKey[k] = JSON.parse(metaRaw[i]); });
+
+  const approved = [];
+  offices.forEach((o) => {
+    (o.allowedIPs || []).forEach((ip) => {
+      const meta = metaByKey[`ipmeta:${o.id}:${ip}`];
+      approved.push({
+        ip, officeId: o.id, officeName: o.name,
+        source: meta?.source || "office whitelist",
+        addedBy: meta?.addedBy || "",
+        addedByRole: meta?.addedByRole || "",
+        addedAt: meta?.addedAt || "",
+      });
+    });
+  });
+
+  const stats = {
+    totalIPs: approved.length + blocked.length,
+    approved: approved.length,
+    pending: pending.length,
+    blocked: blocked.length,
   };
+
+  return { stats, pending, approved, blocked, offices: offices.map((o) => ({ id: o.id, name: o.name })) };
 }

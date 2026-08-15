@@ -1,15 +1,20 @@
 /**
- * /api/admin/announcements — the Announcement management page's API.
- * Admin rank and above only (rank check, not the per-section
- * Account-Management-Access mechanism other admin pages use — an
- * announcement isn't scoped to a "section" an owner can hand out
- * piecemeal, it's just an admin+ tool).
+ * /api/admin/announcements — management CRUD for the announcements.html page.
  *
- *   GET  -> { ok: true, announcements: [...] }  (every announcement, any effective state)
- *   POST { action: "save", id?, text, enabled, startAt, endAt } -> { ok: true, announcement }
- *   POST { action: "delete", id } -> { ok: true }
+ *   GET                                              -> { ok, announcements, topics }
+ *   POST { action:"save", id?, text, topic, enabled, startAt, endAt } -> { ok, announcement }
+ *   POST { action:"delete", id }                      -> { ok }
+ *
+ * Gated by canAccessOwnerTopic(account, "announcements") — moved out of
+ * Account Management Access into the Agent Profile's "Topic access"
+ * list, 2026-08-10 (see OWNER_TOPIC_ITEMS in _shared/accounts.js).
+ * STRICTLY the real Owner can grant/restrict this per account (no
+ * canGrantAdminAccess delegation). Single tier now — no separate view-
+ * vs-edit split like the old Account Management Access model had, since
+ * "Topic access" is a plain see-it-or-don't checkbox; anyone granted
+ * this topic can both view and manage announcements.
  */
-import { authenticateStaff, ROLE_RANK, canSeeAdminSection, canEditAdminSection } from "../../_shared/accounts.js";
+import { authenticateStaff, ROLE_RANK, canAccessOwnerTopic } from "../../_shared/accounts.js";
 import { listAllAnnouncements, saveAnnouncement, deleteAnnouncement, ANNOUNCEMENT_TOPICS } from "../../_shared/announcements.js";
 
 export async function onRequestGet(context) {
@@ -22,9 +27,9 @@ export async function onRequestGet(context) {
 
 async function handleGet({ request, env }) {
   if (!env.THREADS_KV) return json({ ok: false, error: "THREADS_KV is not bound yet." }, 500);
-  const auth = await authenticateStaff(request, env, ROLE_RANK.senior);
+  const auth = await authenticateStaff(request, env, ROLE_RANK.admin);
   if (!auth.ok) return json({ ok: false, error: "Not authorized." }, 401);
-  if (!canSeeAdminSection(auth.account, "announcements")) {
+  if (!canAccessOwnerTopic(auth.account, "announcements")) {
     return json({ ok: false, error: "You don't have access to Announcements." }, 403);
   }
 
@@ -42,10 +47,10 @@ export async function onRequestPost(context) {
 
 async function handlePost({ request, env }) {
   if (!env.THREADS_KV) return json({ ok: false, error: "THREADS_KV is not bound yet." }, 500);
-  const auth = await authenticateStaff(request, env, ROLE_RANK.senior);
+  const auth = await authenticateStaff(request, env, ROLE_RANK.admin);
   if (!auth.ok) return json({ ok: false, error: "Not authorized." }, 401);
-  if (!canEditAdminSection(auth.account, "announcements")) {
-    return json({ ok: false, error: "You don't have Can-Edit access to Announcements." }, 403);
+  if (!canAccessOwnerTopic(auth.account, "announcements")) {
+    return json({ ok: false, error: "You don't have access to Announcements." }, 403);
   }
 
   let body;
@@ -55,27 +60,27 @@ async function handlePost({ request, env }) {
     return json({ ok: false, error: "Invalid JSON body." }, 400);
   }
 
+  const actorUsername = auth.account ? auth.account.username : "bootstrap";
+
   if (body.action === "save") {
-    const text = (body.text || "").trim();
-    if (!text) return json({ ok: false, error: "Text can't be empty." }, 400);
-    if (body.startAt && body.endAt && new Date(body.startAt) >= new Date(body.endAt)) {
-      return json({ ok: false, error: "End time must be after start time." }, 400);
+    try {
+      const announcement = await saveAnnouncement(env, {
+        id: body.id,
+        text: body.text,
+        topic: body.topic,
+        enabled: body.enabled,
+        startAt: body.startAt,
+        endAt: body.endAt,
+      }, actorUsername);
+      return json({ ok: true, announcement });
+    } catch (e) {
+      return json({ ok: false, error: String(e.message || e) }, 400);
     }
-    const announcement = await saveAnnouncement(env, {
-      id: body.id || null,
-      text,
-      topic: body.topic,
-      enabled: !!body.enabled,
-      startAt: body.startAt || null,
-      endAt: body.endAt || null,
-    }, auth.account?.username || "bootstrap");
-    return json({ ok: true, announcement });
   }
 
   if (body.action === "delete") {
-    if (!body.id) return json({ ok: false, error: "Missing id." }, 400);
-    const removed = await deleteAnnouncement(env, body.id, auth.account?.username || "bootstrap");
-    if (!removed) return json({ ok: false, error: "Not found." }, 404);
+    if (!body.id) return json({ ok: false, error: "id is required." }, 400);
+    await deleteAnnouncement(env, body.id, actorUsername);
     return json({ ok: true });
   }
 
@@ -83,8 +88,5 @@ async function handlePost({ request, env }) {
 }
 
 function json(obj, status = 200) {
-  return new Response(JSON.stringify(obj), {
-    status,
-    headers: { "Content-Type": "application/json", "Cache-Control": "no-store" },
-  });
+  return new Response(JSON.stringify(obj), { status, headers: { "Content-Type": "application/json", "Cache-Control": "no-store" } });
 }

@@ -4,44 +4,50 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Promo Code Search</title>
-<script src="/assets/theme.js?v=c61fb537"></script>
 <style>
-/* Inline placeholder canvas background — first thing the browser parses
-   in <head>, so it paints before any network request (external CSS, the
-   photo itself) resolves. Values are hard-coded here (can't use var()
-   yet — style.css may not have loaded) but are kept in exact sync with
-   the "real" html{}/html[data-theme=light]{} rule in style.css, so the
-   moment that stylesheet finishes loading there is zero visible change.
-   Must stay inline and first — an external <link> here would leave a
-   blank gap for a network round trip before anything paints. Only sets
-   background on <html>, never <body>: <body> has its own
-   theme-toggle transition, and animating from this photo to some other
-   background would try to interpolate image -> gradient, which browsers
-   can't do and would just look like a broken flash. */
-html {
-  background-color: #090c1c;
-  background-image:
-    linear-gradient(180deg, rgba(3,4,13,0.35) 0%, rgba(3,4,13,0.55) 55%, rgba(3,4,13,0.75) 100%),
-    url('/assets/img/bg-space.jpg');
-  background-size: cover;
-  background-position: center;
-  background-repeat: no-repeat;
-  background-attachment: fixed;
-}
-html[data-theme="light"] {
-  background-color: #dbe7fb;
-  background-image:
-    radial-gradient(900px 500px at 90% 0%, #eaf1ff 0%, transparent 55%),
-    linear-gradient(160deg, #dbe7fb 0%, #d9cef4 45%, #cdbdf2 75%, #c4b2ee 100%);
-}
+  /* Space photo (dark-shaded, same overlay math as .sf-shade in
+     style.css) as the very first paint, before style.css/starfield.js
+     load — same reasoning as index.html's copy of this rule; see the
+     comment there for the full write-up. */
+  html {
+    background-color: #090c1c;
+    background-image:
+      linear-gradient(180deg, rgba(3,4,13,0.35) 0%, rgba(3,4,13,0.55) 55%, rgba(3,4,13,0.75) 100%),
+      url('/assets/img/bg-space.jpg');
+    background-size: cover;
+    background-position: center;
+    background-repeat: no-repeat;
+    background-attachment: fixed;
+  }
+
+  /* Light-theme override — theme.js (loaded right after this block, and
+     synchronous/non-deferred) sets data-theme on <html> before first
+     paint, so this genuinely applies from frame one rather than flashing
+     in late. The photo is nearly invisible under the light theme's own
+     heavy overlay anyway (see --sf-shade's 0.55-0.72 alpha for
+     [data-theme="light"] in style.css), so rather than fight CSS filter
+     limitations (filter can't be scoped to just a background-image on
+     <html> without also filtering all real content once it loads), this
+     just reuses the light theme's plain --page-bg gradient values
+     directly (kept in sync manually — see :root in style.css if that
+     gradient ever changes) with no photo layer at all. Visually
+     indistinguishable from the real thing once starfield.js mounts. */
+  html[data-theme="light"] {
+    background-color: #dbe7fb;
+    background-image:
+      radial-gradient(900px 500px at 90% 0%, #eaf1ff 0%, transparent 55%),
+      linear-gradient(160deg, #dbe7fb 0%, #d9cef4 45%, #cdbdf2 75%, #c4b2ee 100%);
+  }
 </style>
-<link rel="stylesheet" href="/assets/style.css?v=467b5a4c" />
-<link rel="stylesheet" href="/assets/toast.css?v=5779b14e" />
-<script src="/assets/toast.js?v=d9d84724"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;600&display=swap" onload="this.onload=null;this.rel='stylesheet'" />
+<noscript><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;600&display=swap" /></noscript>
+<link rel="stylesheet" href="/assets/style.css?v=63a5348a" />
+<script src="/assets/theme.js?v=5b27e630"></script>
 <script src="/assets/starfield.js?v=b6e92821" defer></script>
-<script src="/assets/authguard.js?v=19b1b251"></script>
-<script src="/assets/presence-heartbeat.js?v=a0820d9b"></script>
-<script src="/assets/announcement-banner.js?v=26c15118" defer></script>
+<script src="/assets/authguard.js?v=9dba9c0c"></script>
+<script src="/assets/presence-heartbeat.js?v=921f46cb"></script>
 <style>
   .promo-shell { max-width: 1500px; margin: 0 auto; padding: 0 24px 80px; }
 
@@ -152,11 +158,11 @@ html[data-theme="light"] {
   }
 </style>
 </head>
-<body class="subpage-fixed">
+<body>
   <header class="topbar">
     <div class="topbar-left">
       <img src="/assets/img/logo.webp" alt="HeyVIP" class="logo-img" />
-      <span class="wordmark">PKR CS TEAM - TBC</span>
+      <span class="wordmark">INR CS TEAM - TBC</span>
     </div>
     <div class="topbar-right">
       <span class="clock" id="liveClock"></span>
@@ -165,13 +171,11 @@ html[data-theme="light"] {
     </div>
   </header>
 
-  <div class="subpage-shell">
-    <aside class="sidebar" id="hubNavMount"></aside>
-    <div class="subpage-content-col">
-      <nav class="brand-row" id="pageBrandRow"><div class="brand-row-track"></div></nav>
-    <div class="subpage-right-col">
-      <div id="announcementBanner"></div>
-      <main class="subpage-main">
+  <div id="announcementBanner"></div>
+
+  <div class="threads-topline">
+    <a href="/" class="back-pill">&larr; Back to Home</a>
+  </div>
 
   <div class="promo-shell">
     <div class="promo-header-card">
@@ -197,20 +201,10 @@ html[data-theme="light"] {
     <div id="resultsArea"></div>
   </div>
 
-      </main>
-    </div>
-    </div>
-  </div>
-
-  <script src="/assets/schemas.js?v=189eea70"></script>
-  <script src="/assets/hub-nav.js?v=d86d0bdd"></script>
-  <script src="/assets/brand-row.js?v=ea371f55"></script>
   <script>
     window.initThemeToggle();
     window.initClock();
     window.AgentAuth.renderWhoami("agentWhoami");
-    window.HubNav.mount("hubNavMount", {});
-    window.BrandRow.mount("pageBrandRow");
 
     const input = document.getElementById("codesInput");
     const btn = document.getElementById("searchBtn");
@@ -333,5 +327,7 @@ html[data-theme="light"] {
     btn.addEventListener("click", runSearch);
     input.addEventListener("keydown", (e) => { if (e.key === "Enter") runSearch(); });
   </script>
+  <script src="/assets/toast.js?v=67c1e195"></script>
+  <script src="/assets/announcement-banner.js?v=4881665d"></script>
 </body>
 </html>

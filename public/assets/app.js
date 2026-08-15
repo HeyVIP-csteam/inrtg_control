@@ -18,16 +18,18 @@
     return;
   }
 
-  // Real enforcement, not just hiding it from the sidebar — an agent
-  // scoped away from this Topic (account.allowedModules, see
-  // authguard.js's filterAllowedModules) who directly types/pastes this
-  // module's URL still gets blocked here, before the form even renders.
-  // submit.js has the actual server-side check that matters (this is
-  // just a friendlier "Not available" message instead of a raw 403 after
-  // filling out the whole form).
+  // Topic Access — catches someone typing/bookmarking a form.html?module=...
+  // URL directly for a topic their account isn't allowed to use, since the
+  // Home page sidebar hiding it (see index.html) only stops the NORMAL
+  // click path, not a direct URL visit. This is still just the frontend
+  // half of the check — the real enforcement is server-side in
+  // functions/api/submit.js, which rejects the actual submission
+  // regardless of what this page does; this is purely so a blocked agent
+  // gets a clear message immediately instead of filling out a form only
+  // to have Submit fail at the very end.
   if (window.AgentAuth && window.AgentAuth.filterAllowedModules([module]).length === 0) {
     titleEl.textContent = "Not available";
-    hintEl.textContent = "You don't have access to this Topic. Contact a SuperAdmin if you think this is a mistake.";
+    hintEl.textContent = "Your account doesn't have access to this topic. Contact a SuperAdmin if you think this is wrong.";
     formCard.querySelector("form").style.display = "none";
     return;
   }
@@ -100,40 +102,36 @@
     if (f.required && !isGated) fieldEls[f.key].control.required = true;
   });
 
-  // ---- Withdraw Issue: duplicate-TID guard ----
-  // See functions/api/check-tid.js for the full write-up. Two check
-  // points: onBlur (early warning — see the listener below) and again
-  // right before actually submitting (final guard below, in the submit
-  // handler) — a fresh check right before submit covers the agent never
-  // blurring the field, or pasting a new value and hitting Submit
-  // without tabbing away first.
-  let tidDuplicateInfo = null; // { date, pic } while the CURRENT tid value is a known duplicate, else null
-  let checkTidNow = null; // set below only for the Withdraw Issue module; read by the submit handler further down
-  let tidCheckSeq = 0; // ignores a stale response if the agent kept typing/re-checking before an earlier check came back
+  // ---- Withdraw Issue only: duplicate-TID guard ----
+  // Checks the TID field against the brand's Google Sheet (the durable
+  // record — not KV thread data, which gets cleaned up over time) both
+  // onBlur (early warning) and right before Submit (final backstop, in
+  // case the field was never blurred). A found duplicate locks Submit
+  // until the agent changes the TID.
+  let tidDuplicateInfo = null; // { date, pic } when the current TID value is a duplicate, else null
+  let checkTidNow = null; // only set for the Withdraw Issue module; the submit handler reads this
+  let tidCheckSeq = 0; // guards against a stale in-flight response overwriting a newer one
+
   if (module.id === "withdraw_issue" && fieldEls.tid) {
     const tidLabel = fieldEls.tid.wrap.querySelector("label");
     const tidWarning = document.createElement("span");
     tidWarning.className = "tid-warning";
-    tidWarning.id = "tidWarning";
     tidLabel.appendChild(tidWarning);
-    const submitBtn = document.getElementById("submitBtn");
+    const submitBtnEl = document.getElementById("submitBtn");
 
-    // One place that sets ALL of: the warning text, the TID input's red
-    // border, and whether Submit is clickable — so these three things
-    // can never drift out of sync with each other (e.g. a red border
-    // left on-screen after the warning text was cleared).
+    // One function keeps warning text + red input border + Submit
+    // disabled state in lock-step — never end up with e.g. the text
+    // cleared but the border still red.
     function setTidState(state, text) {
       tidWarning.textContent = text || "";
       tidWarning.className = "tid-warning" + (state ? ` ${state}` : "");
       fieldEls.tid.control.classList.toggle("field-error", state === "found");
       if (state === "found") {
-        submitBtn.disabled = true;
-        submitBtn.title = "This TID was already submitted — change it before continuing.";
-      } else if (submitBtn.title) {
-        // Only clear OUR disabled-reason, never a disabled state some
-        // other part of the page set for its own reason (e.g. mid-submit).
-        submitBtn.disabled = false;
-        submitBtn.title = "";
+        submitBtnEl.disabled = true;
+        submitBtnEl.title = "This TID was already submitted — change it before continuing.";
+      } else if (submitBtnEl.title) {
+        submitBtnEl.disabled = false;
+        submitBtnEl.title = "";
       }
     }
 
@@ -145,8 +143,10 @@
         setTidState(null, "");
         return null;
       }
+
       const seq = ++tidCheckSeq;
       if (showChecking) setTidState("checking", "checking…");
+
       let data;
       try {
         const res = await window.AgentAuth.authFetch(`/api/check-tid?brand=${encodeURIComponent(brandId)}&tid=${encodeURIComponent(tid)}`);
@@ -154,11 +154,13 @@
       } catch {
         data = { ok: false };
       }
-      if (seq !== tidCheckSeq) return null; // a newer check superseded this one — ignore
+
+      if (seq !== tidCheckSeq) return null; // a newer check already replaced this result
       if (!data.ok) {
         setTidState(null, "");
         return null;
       }
+
       if (data.found) {
         tidDuplicateInfo = { date: data.date, pic: data.pic };
         const parts = [data.date, data.pic].filter(Boolean).join(" by ");
@@ -168,19 +170,14 @@
       }
       return tidDuplicateInfo;
     }
+
     checkTidNow = checkTid;
     fieldEls.tid.control.addEventListener("blur", () => checkTid(true));
-    // Typing again after a duplicate was flagged clears the red border/
-    // disabled Submit right away, rather than leaving them stuck until
-    // the NEXT blur — the agent shouldn't have to click away just to see
-    // that Submit is usable again after fixing the value.
+    // Reset instantly on edit — don't make the agent wait for another blur.
     fieldEls.tid.control.addEventListener("input", () => {
       if (tidDuplicateInfo) setTidState(null, "");
     });
-    // Brand changing invalidates whatever the TID field last checked
-    // against (it was checking the OLD brand's sheet) — clear it rather
-    // than leave a stale warning that no longer means anything until the
-    // agent touches the TID field again.
+    // A brand switch invalidates the previous check (it read a different sheet).
     brandSelect.addEventListener("change", () => setTidState(null, ""));
   }
 
@@ -430,12 +427,9 @@
     btn.textContent = "Submitting…";
 
     try {
-      // Withdraw Issue: final duplicate-TID guard, right before actually
-      // submitting — re-checks the CURRENT tid value even if the field
-      // was never blurred (pasted + hit Submit directly) or was changed
-      // back to a previously-flagged value without a fresh blur. See
-      // functions/api/check-tid.js for why this reads the Sheet, and the
-      // field-setup block above for the onBlur early-warning half of this.
+      // Withdraw Issue's final TID duplicate check — catches the case
+      // where the field was never blurred, or the last blur check
+      // predates a change back to an already-flagged value.
       if (checkTidNow) {
         await checkTidNow(true);
         if (tidDuplicateInfo) {
@@ -459,15 +453,12 @@
         reporter: formData.get("reporter"),
         fields,
         attachments,
-        // A fresh random ID per submit ATTEMPT (not per form/ticket) — lets
-        // the server (see submit.js) recognize "this exact click's request
-        // arrived twice" (flaky mobile network retransmit, a double-tap
-        // the button-disable below didn't quite catch, etc) and only ever
-        // create one Telegram message / Sheet row / thread record for it,
-        // instead of two identical tickets. crypto.randomUUID() isn't
-        // available on very old browsers/insecure contexts — falls back to
-        // Math.random() in that case, which is fine here since this only
-        // needs to be unique per click, not cryptographically unguessable.
+        // A fresh random ID per submit CLICK (not tied to the form's
+        // content, so a failed submission can just be retried normally)
+        // — lets the server recognize "this exact click's request, sent
+        // twice" (flaky network retry, double-tap on mobile, an edge
+        // node retrying) and only actually process it once. See
+        // submit.js's idempotencyKey handling.
         idempotencyKey: (crypto.randomUUID && crypto.randomUUID()) || `${Date.now()}-${Math.random().toString(36).slice(2)}`,
       };
 
@@ -479,34 +470,26 @@
       const data = await res.json();
       if (!res.ok || !data.ok) throw new Error(data.error || "Submission failed");
 
-      // Attachment send to Telegram can silently degrade to a text-only
-      // message server-side (see submit.js's sendTelegramWithAttachments
-      // catch block — caption too long, bad file, Telegram API rejection,
-      // etc). The ticket itself still goes through fine, so this was
-      // never surfaced here before, which meant the agent saw a plain
-      // green "Submitted" success message even when the screenshots they
-      // attached never actually made it into the Telegram group. Now
-      // checked explicitly so that case shows as a visible warning
-      // instead of a silent, misleading success.
-      const hadAttachments = Array.isArray(files) ? files.length > 0 : false; // captured before form.reset() below clears `files`
-      const attachmentFailed = hadAttachments && Array.isArray(data.attachmentErrors) && data.attachmentErrors.length > 0;
-
-      let sheetPart;
-      if (!data.sheetAttempted) {
-        sheetPart = "posted to Telegram.";
-      } else if (data.sheetLogged) {
-        sheetPart = "posted to Telegram and logged to sheet.";
-      } else {
-        sheetPart = `posted to Telegram, but sheet logging failed: ${data.sheetError || "unknown error"}`;
-      }
-
-      if (attachmentFailed) {
-        status.textContent = `Submitted, but your screenshot(s) did NOT reach Telegram (sent as text-only instead) — ${data.attachmentErrors.join("; ")}. The ticket itself was ${sheetPart} Please re-attach and resend the screenshot(s) separately, or notify the team.`;
-        status.className = "status-msg err";
-        window.showToast?.("Screenshots failed to send to Telegram — see the note below.", "err");
-      } else {
-        status.textContent = `Submitted — ${sheetPart}`;
-        status.className = data.sheetAttempted && !data.sheetLogged ? "status-msg err" : "status-msg ok";
+      // Final result (ok / partial-fail / fail) now shows via the unified
+      // toast only — this used to also write near-duplicate text into
+      // the inline #statusMsg at the same time, which is exactly the
+      // "two things say the same thing at once" bug the toast unification
+      // pass targeted (see feedback-toast-system-design.md §1, §4). The
+      // inline element is still used elsewhere on this page for the
+      // attachment-size warning (addFiles()) — that's an input-validation
+      // message, not an action result, so it deliberately stays inline-only.
+      status.textContent = "";
+      status.className = "status-msg";
+      const sheetFailed = data.sheetAttempted && !data.sheetLogged;
+      if (window.showToast) {
+        // Partial failure (Telegram post succeeded, sheet logging didn't)
+        // needs its specific reason readable, not just "something failed"
+        // — and since the err toast no longer auto-dismisses, that detail
+        // can live in the toast text itself instead of a second element.
+        window.showToast(
+          sheetFailed ? `Submit failed — posted to Telegram, but sheet logging failed: ${data.sheetError || "unknown error"}` : "Submit success.",
+          sheetFailed ? "err" : "ok"
+        );
       }
       form.reset();
       brandSelect.selectedIndex = 0;
@@ -514,16 +497,14 @@
       renderFileList();
       refreshConditionals();
     } catch (err) {
-      status.textContent = err.message || "Something went wrong. Try again.";
-      status.className = "status-msg err";
+      status.textContent = "";
+      status.className = "status-msg";
+      if (window.showToast) window.showToast(err.message || "Submit failed.", "err");
     } finally {
-      // Don't blindly re-enable — if the TID check above is still
-      // flagging a duplicate (the catch just above fired specifically
-      // because of that), setTidState() already put Submit into its own
-      // disabled state with its own reason; stepping on that here would
-      // make the button clickable again while the red border/warning
-      // are still showing, which is exactly the inconsistent state
-      // setTidState() exists to prevent.
+      // Only re-enable if the TID isn't still flagged as a duplicate —
+      // otherwise this would clear the "disabled" state that
+      // setTidState() just set, leaving the button clickable while the
+      // red border/warning are still showing.
       if (!tidDuplicateInfo) btn.disabled = false;
       document.getElementById("submitLabel").textContent = `Submit ${module.name}`;
     }

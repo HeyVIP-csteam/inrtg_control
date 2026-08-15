@@ -29,15 +29,16 @@
  *   - reply: sends `text` back into the Telegram thread as a reply to the
  *     original ticket message, and records it as a "self" message.
  *   - editRoot { text }: edits the original ticket message on Telegram.
+ *   - editDetails { fields, fieldMap }: field-level edit ("🔄 Sync to
+ *     Sheet") — regenerates the Telegram message AND (if this ticket
+ *     wrote a trackable Sheet row) overwrites that row, from a corrected
+ *     set of field values, using the exact same builder functions
+ *     submit.js used at creation time. Only available on tickets that
+ *     have a saved brandId/fieldMap (i.e. submitted after this feature
+ *     shipped) — older tickets fall back to the plain ✏️ text editor.
  *   - recallRoot: deletes the original ticket message from Telegram.
  *   - editReply { messageId, text }: edits one of our own past replies.
  *   - recallReply { messageId }: deletes one of our own past replies.
- *   - editDetails { fields, fieldMap }: field-level edit ("🔄 Sync to
- *     Sheet") — regenerates the Telegram message AND (if this ticket's
- *     submission wrote a trackable Sheet row — see submit.js's
- *     `sheetRef`) that Sheet row, from a corrected field-value map.
- *     Threads created before this feature existed (no brandId saved)
- *     reject this action; use editRoot instead for those.
  *
  *   Only messages our own bot sent (the root ticket + "self" replies) can
  *   be edited/recalled — Telegram doesn't let a bot edit or delete
@@ -80,6 +81,7 @@ export async function onRequestPost(context) {
   try {
     return await handleThreadAction(context);
   } catch (e) {
+    console.error("threads/[id].js: unexpected error", e && e.stack || e);
     return json({ ok: false, error: `Unexpected server error: ${String(e && e.message || e)}` }, 500);
   }
 }
@@ -158,7 +160,6 @@ async function handleThreadAction({ request, env, params }) {
         messageIds = [messageId];
       }
     } catch (e) {
-      console.error(`[threads/[id].js] Reply send failed for thread ${thread.id}: ${String(e.message || e)}`);
       return json({ ok: false, error: String(e.message || e) }, 502);
     }
 
@@ -168,10 +169,10 @@ async function handleThreadAction({ request, env, params }) {
     // plain, unclickable "📎 attachment" label forever). Deliberately NOT
     // storing a copy anywhere (business owner's call, to avoid using any
     // R2 storage for this) — instead, just remember Telegram's own
-    // `file_id` for the upload (returned by sendPhoto/sendDocument above,
-    // valid for as long as the file exists on Telegram's servers). The
-    // dashboard fetches the actual bytes live, on demand, only when
-    // someone actually clicks to view it — see
+    // `file_id`(s) for the upload(s) (returned by sendPhoto/sendDocument/
+    // sendMediaGroup above, valid for as long as the file exists on
+    // Telegram's servers). The dashboard fetches the actual bytes live,
+    // on demand, only when someone actually clicks to view it — see
     // functions/api/attachment/[fileId].js, which resolves that file_id
     // through Telegram's getFile + file download endpoints and proxies
     // the bytes back (never exposing TELEGRAM_BOT_TOKEN to the browser —
@@ -180,9 +181,9 @@ async function handleThreadAction({ request, env, params }) {
     // through /api/screenshot/<key> instead of a raw bucket URL).
     //
     // attachmentFileId/attachmentName (singular) are kept alongside the
-    // new attachmentFileIds/attachmentNames (arrays) — just [0] of the
-    // array — so nothing else in this project that might still read the
-    // singular fields breaks.
+    // new attachmentFileIds/attachmentNames arrays purely so older code
+    // paths (and this same dashboard's own single-attachment rendering)
+    // keep working unchanged — they're just [0] of the arrays.
     const updated = await appendMessage(env, id, {
       from: account.username,
       handle: null,
@@ -198,7 +199,7 @@ async function handleThreadAction({ request, env, params }) {
       messageId,
       messageIds,
       replyToMessageId: replyToMessageId || null,
-    });
+    }, thread.chatId);
     return json({ ok: true, thread: updated });
   }
 
@@ -291,16 +292,15 @@ async function handleThreadAction({ request, env, params }) {
     if (!env.TELEGRAM_BOT_TOKEN) return json({ ok: false, error: "Server is missing TELEGRAM_BOT_TOKEN." }, 500);
 
     const thread = existingThread;
-    // A ticket sent as a multi-photo Telegram album has one message_id
-    // PER PHOTO, only the first of which is `rootMessageId` — deleting
-    // just that one used to leave the rest of the album sitting in the
-    // group untouched. rootMessageIds (added alongside "Generate to
-    // another Topic") has every one of them; threads from before that
-    // existed fall back to the single rootMessageId, same as before.
-    // Deletes run in parallel and a FAILURE ON ANY ONE of them still
-    // fails the whole action (rather than silently reporting success
-    // while some photos remain) — an agent clicking Recall needs to
-    // know if it didn't fully work.
+    // A multi-photo submission/forward lands in Telegram as a media
+    // group — one message_id PER photo, only the first carrying the
+    // caption. This used to only ever remember/delete that first one
+    // (thread.rootMessageId), silently leaving every other photo in the
+    // group behind forever on Recall — not a bug specific to forwarding,
+    // just one that forwarding's own multi-photo testing happened to
+    // surface. rootMessageIds (see createThread() in _shared/threads.js)
+    // is the full array; falls back to the single id for older threads
+    // that predate this field.
     const idsToDelete = thread.rootMessageIds && thread.rootMessageIds.length ? thread.rootMessageIds : [thread.rootMessageId];
     const results = await Promise.all(idsToDelete.map((mid) => callTelegram(env, "deleteMessage", { chat_id: thread.chatId, message_id: mid })));
     const firstFailure = results.find((r) => !r.ok);
@@ -341,7 +341,9 @@ async function handleThreadAction({ request, env, params }) {
     // A multi-attachment reply went out as a Telegram album — one
     // message_id PER attachment, only the first (messageId) is what the
     // ↩️ button references. Delete every id in the group, not just the
-    // first, or the rest silently stay behind in the chat forever.
+    // first, or the rest silently stay behind in the chat forever (same
+    // class of bug rootMessageIds already fixed for the original ticket
+    // — see recallRoot above).
     const idsToDelete = recalledMsg?.messageIds && recalledMsg.messageIds.length ? recalledMsg.messageIds : [messageId];
     const results = await Promise.all(idsToDelete.map((mid) => callTelegram(env, "deleteMessage", { chat_id: thread.chatId, message_id: mid })));
     const firstFailure = results.find((r) => !r.ok);
@@ -425,11 +427,9 @@ function dataUrlToBytes(dataUrl) {
 
 // Top-level entry point for a reply that has 1+ attachments — mirrors the
 // three-way split submit.js's sendTelegramWithAttachments() already uses
-// for the original ticket (single item / media album / mixed-with-
-// documents), just with reply_to_message_id threaded through every
-// Telegram call so it lands as a reply instead of a fresh message.
-// "Media album" covers photos AND videos together — Telegram allows
-// mixing those two in one sendMediaGroup call, just not documents.
+// for the original ticket (single item / all-images album / mixed types),
+// just with reply_to_message_id threaded through every Telegram call so
+// it lands as a reply instead of a fresh message.
 async function sendTelegramReplyAttachments(env, thread, text, attachments, replyToMessageId) {
   const replyId = replyToMessageId || thread.rootMessageId;
 
@@ -448,6 +448,10 @@ async function sendTelegramReplyAttachments(env, thread, text, attachments, repl
   // nothing here need sendDocument", not "is everything a photo".
   const allMedia = attachments.every((a) => attachmentKind(a.type, a.name) !== "document");
   if (allMedia) {
+    // Telegram's sendMediaGroup returns one Message PER photo (album
+    // item), only the first of which carries the caption — same shape
+    // submit.js's own sendMediaGroup already returns, see that function
+    // for the reasoning behind keeping every id (not just the first).
     const sent = await sendReplyMediaGroup(env, thread, text, attachments, replyId);
     return {
       messageId: sent[0].messageId,
@@ -474,21 +478,19 @@ async function sendTelegramReplyAttachments(env, thread, text, attachments, repl
 }
 
 async function sendReplySingleWithCaption(env, thread, text, attachment, replyId) {
-  let { name, type, dataUrl } = attachment;
-  let bytes = dataUrlToBytes(dataUrl);
-
+  const { name, type, dataUrl } = attachment;
   const kind = attachmentKind(type, name);
-  // Same "compress before Telegram can reject it" fix as submit.js — see
-  // telegram-photo-limit-fix.md. Only photos hit Telegram's 10MB
-  // sendPhoto limit; sendVideo/sendDocument have their own separate
-  // (much higher) limits and are left untouched.
+  let bytes = dataUrlToBytes(dataUrl);
+  let sendType = type;
+  // Only "photo"-kind attachments can hit sendPhoto's 10MB cap — videos
+  // go through sendVideo (much higher limit) and documents through
+  // sendDocument (2GB via the Bot API), neither of which needs this.
   if (kind === "photo") {
-    const compressed = await compressImageForTelegram(bytes, { type, name });
-    bytes = compressed.bytes;
-    type = compressed.type;
-    name = compressed.name;
+    const result = await compressImageForTelegram(bytes, type);
+    bytes = result.bytes;
+    sendType = result.type;
   }
-  const blob = new Blob([bytes], { type: type || "application/octet-stream" });
+  const blob = new Blob([bytes], { type: sendType || "application/octet-stream" });
 
   const method = kind === "photo" ? "sendPhoto" : kind === "video" ? "sendVideo" : "sendDocument";
   const field = kind; // "photo" | "video" | "document" — same names as the FormData field Telegram expects
@@ -502,10 +504,7 @@ async function sendReplySingleWithCaption(env, thread, text, attachment, replyId
 
   const res = await fetch(`https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/${method}`, { method: "POST", body: form });
   const data = await res.json();
-  if (!data.ok) {
-    console.error(`[threads/[id].js] Reply attachment send failed (${method}): ${data.description || "unknown error"}`);
-    throw new Error(data.description || "Telegram send failed.");
-  }
+  if (!data.ok) throw new Error(data.description || "Telegram send failed.");
 
   // sendPhoto returns an ARRAY of sizes (Telegram auto-generates several
   // resolutions) — the last one is the largest/original-quality version,
@@ -540,33 +539,29 @@ async function sendReplyMediaGroup(env, thread, text, attachments, replyId) {
   });
   form.append("media", JSON.stringify(media));
 
-  // Compress every photo before building the multipart body — a reply
-  // album is just as all-or-nothing as a ticket album (see
-  // telegram-photo-limit-fix.md), one oversized photo would silently
-  // drop the whole reply. Videos pass through untouched (photon only
-  // handles still images; sendVideo/sendMediaGroup's video limit is
-  // separate and much higher anyway).
+  // Photos and videos can share one album, but only photos are
+  // candidates for compression (sendPhoto's limit, not sendVideo's) — so
+  // each item is only routed through compressImageForTelegram when its
+  // own kind is "photo", videos pass through untouched either way.
   for (let i = 0; i < attachments.length; i++) {
     const att = attachments[i];
-    const isPhoto = attachmentKind(att.type, att.name) === "photo";
-    const rawBytes = dataUrlToBytes(att.dataUrl);
-    const { bytes, type, name } = isPhoto
-      ? await compressImageForTelegram(rawBytes, { type: att.type, name: att.name })
-      : { bytes: rawBytes, type: att.type, name: att.name };
-    const blob = new Blob([bytes], { type: type || "application/octet-stream" });
-    form.append(`file${i}`, blob, name || `file${i}`);
+    let bytes = dataUrlToBytes(att.dataUrl);
+    let sendType = att.type;
+    if (attachmentKind(att.type, att.name) === "photo") {
+      const result = await compressImageForTelegram(bytes, att.type);
+      bytes = result.bytes;
+      sendType = result.type;
+    }
+    const blob = new Blob([bytes], { type: sendType || "application/octet-stream" });
+    form.append(`file${i}`, blob, att.name || `file${i}`);
   }
 
   const res = await fetch(`https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/sendMediaGroup`, { method: "POST", body: form });
   const data = await res.json();
-  if (!data.ok) {
-    console.error(`[threads/[id].js] Reply sendMediaGroup rejected by Telegram (${attachments.length} attachment(s)): ${data.description || "unknown error"}`);
-    throw new Error(data.description || "Telegram send failed.");
-  }
+  if (!data.ok) throw new Error(data.description || "Telegram send failed.");
   // attachments[i] lines up positionally with data.result[i] —
   // sendMediaGroup returns results in the same order the media items
-  // were submitted in (same assumption submit.js's own sendMediaGroup
-  // already relies on). Each result carries either a `photo` array or a
+  // were submitted in. Each result carries either a `photo` array or a
   // `video` object depending on which type that particular item was.
   return data.result.map((m, i) => ({
     messageId: m.message_id,
