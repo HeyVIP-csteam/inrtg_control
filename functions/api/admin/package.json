@@ -1,8 +1,0 @@
-{
-  "name": "inr-issue-hub",
-  "private": true,
-  "description": "Cloudflare Pages Functions dependencies for the INR issue hub. No frontend build step needed (public/ is served as-is) — this file exists purely so `npm install` pulls in @cf-wasm/photon before Cloudflare Pages bundles functions/. See README.md for the Build command this requires in the Pages dashboard.",
-  "dependencies": {
-    "@cf-wasm/photon": "^0.4.0"
-  }
-}
