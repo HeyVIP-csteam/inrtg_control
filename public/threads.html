@@ -162,10 +162,19 @@
       // over for no benefit, while still adding needless request volume.
       // 30s keeps the sidebar feeling reasonably live without that waste.
       pollTimer = setInterval(() => {
+        // Defensive: if this page's own DOM is gone (navigated away via
+        // spa-shell and, in some rare still-in-flight-navigation edge
+        // case, this timer wasn't cleaned up with it — see spa-shell.js's
+        // capturingFor comment), stop polling instead of throwing on a
+        // null element. Self-healing rather than relying solely on the
+        // shell to always catch every timer.
+        if (!document.getElementById("threadSearch")) { clearInterval(pollTimer); return; }
         refreshOpenThread();
       }, 6000);
       listPollTimer = setInterval(() => {
-        loadList(document.getElementById("threadSearch").value);
+        const searchEl = document.getElementById("threadSearch");
+        if (!searchEl) { clearInterval(listPollTimer); return; }
+        loadList(searchEl.value);
         if (isAdmin) loadRecallLog();
       }, 30000);
     }
@@ -2076,7 +2085,9 @@
     // checking itself is authguard.js's job, not this page's.)
     document.addEventListener("visibilitychange", () => {
       if (document.visibilityState === "visible") {
-        loadList(document.getElementById("threadSearch").value);
+        const searchEl = document.getElementById("threadSearch");
+        if (!searchEl) return; // not currently on this view (spa-shell) — nothing to refresh
+        loadList(searchEl.value);
         refreshOpenThread();
       }
     });

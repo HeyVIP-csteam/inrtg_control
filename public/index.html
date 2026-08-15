@@ -1767,11 +1767,25 @@
       // Owner is still free to check/uncheck anything here; saving always
       // writes an explicit list (or "all"), which from then on overrides
       // the role default for this specific account either way.
+      //
+      // Rendered as TWO separate collapsible groups now (2026-08-15) —
+      // "Account Management Access" and "Integration Portal Access" —
+      // mirroring the sidebar split (see acctMgmtGroup/integrationPortal
+      // Group above): tgRoutes/depositSheets/bettingLinks/webLinks moved
+      // out from under Account Management in the sidebar, so grouping
+      // them under a single "Account Management Access" header here would
+      // no longer match what the Owner actually sees when granting
+      // access. Both groups still write into the exact same
+      // allowedAdminSections/adminSectionEditAccess fields underneath —
+      // this is a display-only split, not a new permission model. See
+      // saveAgentProfileModal() below, which gathers checkboxes from
+      // BOTH groups (not scoped to a single container) for exactly this
+      // reason.
       const allSectionsSelected = a.allowedAdminSections === "all";
       const defaultSeenForTarget = ADMIN_SECTIONS_DEFAULT_SEEN[a.role] || [];
       const allEditSelected = a.adminSectionEditAccess === "all";
       const defaultEditForTarget = ADMIN_SECTIONS_DEFAULT_EDIT[a.role] || [];
-      const adminSectionChecks = ADMIN_SECTIONS_LIST.map((s) => {
+      const renderAdminSectionCheck = (s) => {
         const isChecked = allSectionsSelected
           || (Array.isArray(a.allowedAdminSections) ? a.allowedAdminSections.includes(s.id) : defaultSeenForTarget.includes(s.id));
         const checkboxHtml = `
@@ -1787,7 +1801,15 @@
           <label><input type="radio" name="apEditLevel_${acctEsc(s.id)}" value="view" ${isEditChecked ? "" : "checked"} /> View only</label>
           <label><input type="radio" name="apEditLevel_${acctEsc(s.id)}" value="edit" ${isEditChecked ? "checked" : ""} /> Can Edit</label>
         </div>`;
-      }).join("");
+      };
+      // Same 4 ids moved out of Account Management into Integration Portal
+      // in the sidebar (see the am-group/integrationPortalGroup markup
+      // above) — kept as a small local set here rather than a new
+      // ADMIN_SECTIONS_LIST field, since it's purely how this one modal
+      // groups the checkboxes for display.
+      const INTEGRATION_PORTAL_SECTION_IDS = ["tgRoutes", "depositSheets", "bettingLinks", "webLinks"];
+      const accountMgmtSectionChecks = ADMIN_SECTIONS_LIST.filter((s) => !INTEGRATION_PORTAL_SECTION_IDS.includes(s.id)).map(renderAdminSectionCheck).join("");
+      const integrationPortalSectionChecks = ADMIN_SECTIONS_LIST.filter((s) => INTEGRATION_PORTAL_SECTION_IDS.includes(s.id)).map(renderAdminSectionCheck).join("");
 
       overlay.innerHTML = `
         <div class="edit-details-modal">
@@ -1840,7 +1862,7 @@
                 <span class="arrow">&rarr;</span>
               </p>
               <div class="agent-profile-collapsible-body" style="flex-direction:column;">
-                <div class="agent-profile-admin-section-list">${adminSectionChecks}</div>
+                <div class="agent-profile-admin-section-list">${accountMgmtSectionChecks}</div>
                 ${isRealOwner ? `
                 <div class="agent-profile-admin-delegate-row">
                   <label class="agent-profile-module-check">
@@ -1849,6 +1871,16 @@
                   </label>
                 </div>
                 ` : ""}
+              </div>
+            </div>
+            <div class="agent-profile-section-divider" style="margin-top:14px;"></div>
+            <div class="agent-profile-collapsible">
+              <p class="agent-profile-section-label agent-profile-collapsible-header">
+                <span>🔗 Integration Portal Access</span>
+                <span class="arrow">&rarr;</span>
+              </p>
+              <div class="agent-profile-collapsible-body" style="flex-direction:column;">
+                <div class="agent-profile-admin-section-list">${integrationPortalSectionChecks}</div>
               </div>
             </div>
             ` : ""}
@@ -1976,17 +2008,28 @@
       // of canManageAccess above (a manager might be viewing a target they
       // can't outrank-edit the profile of, but Account Management Access
       // has its own gate — and, server-side, its own outrank check).
-      const adminSectionList = document.querySelector(".agent-profile-admin-section-list");
-      if (adminSectionList) {
-        // NOT "input[type=checkbox]" — that would also catch anything else
-        // that might live in this modal later. Use the dedicated class.
-        const adminChecks = Array.from(adminSectionList.querySelectorAll(".ap-admin-section-checkbox"));
+      // Account Management Access + Integration Portal Access — TWO
+      // separate collapsible blocks now (see openAgentProfileModal above),
+      // each with its own .agent-profile-admin-section-list container, but
+      // both still write into the exact same allowedAdminSections /
+      // adminSectionEditAccess fields. Deliberately NOT scoped to a single
+      // container here (a `document.querySelector(".agent-profile-admin-
+      // section-list")` would silently only see the FIRST of the two
+      // blocks and drop the other's checkboxes on save) — gather every
+      // .ap-admin-section-checkbox in the whole modal instead. Rendered
+      // for the Owner OR a delegated account (canManageOthersAdminAccess),
+      // independent of canManageAccess above (a manager might be viewing a
+      // target they can't outrank-edit the profile of, but Account
+      // Management Access has its own gate — and, server-side, its own
+      // outrank check).
+      const adminChecks = Array.from(document.querySelectorAll(".ap-admin-section-checkbox"));
+      if (adminChecks.length) {
         const selectedSections = adminChecks.filter((c) => c.checked).map((c) => c.value);
         payload.allowedAdminSections = selectedSections.length === adminChecks.length ? "all" : selectedSections;
 
         const editSections = EDITABLE_ADMIN_SECTIONS.filter((id) => {
           if (!selectedSections.includes(id)) return false;
-          const radio = adminSectionList.querySelector(`input[name="apEditLevel_${id}"]:checked`);
+          const radio = document.querySelector(`input[name="apEditLevel_${id}"]:checked`);
           return radio && radio.value === "edit";
         });
         payload.adminSectionEditAccess = editSections.length === EDITABLE_ADMIN_SECTIONS.length ? "all" : editSections;

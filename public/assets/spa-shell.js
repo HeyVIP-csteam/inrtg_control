@@ -165,6 +165,14 @@
 
     if (view === "home" || !ROUTES[view]) {
       currentView = "home";
+      // Reset the interval-capturing bucket too — otherwise ANY interval
+      // created while sitting on Home (e.g. index.html's own
+      // loadThreadsSummary poll) could get wrongly attributed to
+      // whichever routed view was last mounted (capturingFor otherwise
+      // stays set — see the comment below on why it's no longer reset to
+      // null right after each view's synchronous script run) and then
+      // get killed off the next time THAT view is revisited.
+      capturingFor = null;
       mountEl.style.display = "none";
       mountEl.classList.remove("spa-mounted", "spa-fullbleed");
       mountEl.removeAttribute("data-view");
@@ -230,6 +238,28 @@
     // with the SAME identifiers already declared by a previous mount (or
     // by index.html's own inline script, in a couple of cases) in the
     // shared global/module scope a real re-inserted <script> tag runs in.
+    //
+    // BUG FIX 2026-08-15: capturingFor used to be reset to null in a
+    // `finally` block immediately after this synchronous forEach — but
+    // threads.html (and potentially others) don't actually call
+    // setInterval() synchronously here; they kick it off from INSIDE an
+    // async callback (an authFetch(...).then(() => bootDashboard())
+    // feature-status check), which only resumes and calls setInterval()
+    // well AFTER this synchronous block — and therefore after finally
+    // already nulled capturingFor out. Those intervals were silently
+    // never being recorded into viewIntervals[view] at all, so
+    // clearViewIntervals() could never clean them up on navigating away
+    // — a permanent, accumulating interval leak, one pair per Threads
+    // visit, each one eventually throwing once it tries to read a DOM
+    // node (e.g. #threadSearch) that navigating away already removed.
+    // Fix: leave capturingFor pointing at THIS view indefinitely, so any
+    // interval created later (sync OR async) still gets attributed to
+    // it, right up until the next mount() call points it somewhere else
+    // (or null, for Home — see above). Only a rapid, still-in-flight
+    // navigation away from THIS exact view before its async work
+    // resolves could still mis-attribute a stray interval to whatever's
+    // mounted by then — a much narrower, rarer window than "every single
+    // Threads visit, guaranteed".
     capturingFor = view;
     try {
       doc.querySelectorAll("script:not([src])").forEach((s) => {
@@ -252,8 +282,6 @@
       }
     } catch (err) {
       console.error(`[spa-shell] ${view} script error:`, err);
-    } finally {
-      capturingFor = null;
     }
   }
 
