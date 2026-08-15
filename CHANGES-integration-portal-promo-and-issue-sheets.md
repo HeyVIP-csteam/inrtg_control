@@ -2,41 +2,11 @@
 
 Adds two new rows to the existing Integration Portal sidebar dropdown,
 following the exact same "KV override + code default" pattern as Deposit
-Sheet Link / Web Link (see INTEGRATION-PORTAL-PATTERNS.md if you have it —
-this is a port of that architecture into INR-active-agents).
+Sheet Link / Web Link.
 
-## ⚠️ One manual step still required — `functions/_shared/accounts.js`
-
-This zip's `functions/_shared/` directory was received empty (no
-`accounts.js`, `routing.js`, etc.), so everything below was built by
-importing already-known export names from those files, never by editing
-their contents blind. Every file that genuinely needed changes and that I
-could see (submit.js, promo-search.js, index.html, deposit-sheets.js's
-sibling admin endpoints) has been edited or added.
-
-**The one exception is `functions/_shared/accounts.js` itself** — the two
-new admin-section ids below need to be registered there or
-`canSeeAdminSection()`/`canEditAdminSection()` will always return `false`
-for them (except for the literal Owner role, which always passes). Add,
-mirroring however `depositSheets`/`webLinks` are already registered there:
-
-```js
-// ADMIN_SECTIONS (or equivalent registry array)
-"promoCodeSheet", "issueSubmissionSheet",
-
-// EDITABLE_ADMIN_SECTIONS (both support Can-Edit)
-"promoCodeSheet", "issueSubmissionSheet",
-```
-
-If there's also a floor-rank concept there (this project's client-side
-mirror in `public/index.html` uses `ROLE_RANK.superadmin` for both, same
-as `depositSheets`/`webLinks`), use the same floor. Don't need to touch
-`ADMIN_SECTIONS_DEFAULT_SEEN`/`DEFAULT_EDIT` — leaving both new ids out of
-those maps means only the Owner sees them by default (matches how the
-whole Integration Portal group is already gated behind an Owner-granted
-`integrationPortal` topic, so this doesn't change anything for anyone
-until the Owner explicitly grants it per-account, same as shipping any
-other section here).
+This version is built on the complete project upload (the one with real
+`functions/_shared/*.js` content) — `accounts.js` is now fully wired, so
+there's no manual step left.
 
 ## What's new
 
@@ -81,13 +51,29 @@ write paths (Promotion Request, `pairByDate` shift sheets, plain
 and `columns` (the actual column layout) always stay the hardcoded
 routing.js default, same reasoning as Deposit Sheet Link.
 
+### `functions/_shared/accounts.js` (edited)
+- `ADMIN_SECTIONS_LIST`: two new entries, `promoCodeSheet` and
+  `issueSubmissionSheet`, both `floorRank: ROLE_RANK.superadmin` — same
+  tier as `depositSheets`/`webLinks`.
+- `ADMIN_SECTIONS_DEFAULT_SEEN.superadmin` / `ADMIN_SECTIONS_DEFAULT_EDIT.superadmin`:
+  both new ids added, matching the other Integration Portal items — a
+  SuperAdmin sees + can edit both by default (no Owner action needed
+  beyond what's already required for the group itself).
+- `EDITABLE_ADMIN_SECTIONS`: both new ids added (Can-Edit is a
+  meaningful distinct state for both, same as the other 4).
+- Note: this only affects the per-item Can-See/Can-Edit layer. The
+  sidebar group itself is STILL gated behind the separate
+  `integrationPortal` entry in `OWNER_TOPIC_ITEMS`, which defaults to
+  nobody (not even superadmins) until the Owner explicitly grants it per
+  account — unchanged, not modified here.
+
 ### `public/index.html` (edited)
 - Two new sidebar sub-items under the existing Integration Portal group
   (`subPromoCodeSheet`, `subIssueSubmissionSheet`), gated the same way as
   the other four.
 - `ADMIN_SECTIONS_LIST`/`EDITABLE_ADMIN_SECTIONS` (client-side mirror of
-  accounts.js) updated with the two new ids — **needs its server-side
-  counterpart, see the warning above.**
+  `accounts.js`) updated with the two new ids, kept in sync with the
+  server file above.
 - `INTEGRATION_PORTAL_SECTION_IDS` (Agent Profile modal's checkbox
   grouping) updated so the two new Can-See/Can-Edit checkboxes render
   under the "Integration Portal" header instead of "Account Management".
@@ -100,10 +86,6 @@ routing.js default, same reasoning as Deposit Sheet Link.
 
 ## Not touched
 
-- `functions/_shared/routing.js`, `accounts.js`, `googleSheets.js`, and
-  every other file that was already missing from this zip — none of them
-  needed their *contents* changed, only new files importing already-known
-  names from them (`BRANDS`, `MODULE_META`, `SHEET_LAYOUT`,
-  `PROMOTION_SHEET_CONFIG`, `authenticateStaff`, `canSeeAdminSection`,
-  etc.) — same interface every other admin endpoint in this project
-  already relies on.
+Every other file in the project — including `routing.js`, `googleSheets.js`,
+`threads.js`, `messageBuilders.js`, and the rest of `_shared/` — is
+untouched, content identical to what was uploaded. Nothing was deleted.
