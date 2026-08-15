@@ -254,6 +254,23 @@
       </a>
       <div id="sidebarList"></div>
 
+      <div class="am-group" id="integrationPortalGroup">
+        <div class="sidebar-item am-toggle expandable" id="integrationPortalToggle">
+          <div class="icon" style="background:#22d3ee33;">🔗</div>
+          <div class="text">
+            <div class="name">Integration Portal</div>
+            <div class="desc">TG routes, sheets &amp; external links</div>
+          </div>
+          <span class="arrow">&rarr;</span>
+        </div>
+        <div class="sidebar-subitems" id="integrationPortalSubitems">
+          <div class="sidebar-subitem" id="subTgRoutes" style="display:none;--sub-accent:#38bdf833;"><span class="sub-icon">📡</span> TG Group / Channel</div>
+          <div class="sidebar-subitem" id="subDepositSheets" style="display:none;--sub-accent:#2f6fed33;"><span class="sub-icon">🧾</span> Deposit Sheet Link</div>
+          <div class="sidebar-subitem" id="subBettingLinks" style="display:none;--sub-accent:#a78bfa33;"><span class="sub-icon">🔗</span> Betting Resources Links</div>
+          <div class="sidebar-subitem" id="subWebLinks" style="display:none;--sub-accent:#22d3ee33;"><span class="sub-icon">🔗</span> Web Link</div>
+        </div>
+      </div>
+
       <div class="am-group" id="acctMgmtGroup">
         <div class="sidebar-item am-toggle expandable" id="acctMgmtToggle">
           <div class="icon" style="background:#a78bfa33;">🛡️</div>
@@ -266,10 +283,6 @@
         <div class="sidebar-subitems" id="acctMgmtSubitems">
           <div class="sidebar-subitem" id="subCreateAccount" style="display:none;--sub-accent:#a78bfa33;"><span class="sub-icon">➕</span> Create Account</div>
           <div class="sidebar-subitem" id="subWhitelistIp" style="display:none;--sub-accent:#60a5fa33;"><span class="sub-icon">🌐</span> IP Access</div>
-          <div class="sidebar-subitem" id="subTgRoutes" style="display:none;--sub-accent:#38bdf833;"><span class="sub-icon">📡</span> TG Group / Channel</div>
-          <div class="sidebar-subitem" id="subDepositSheets" style="display:none;--sub-accent:#2f6fed33;"><span class="sub-icon">🧾</span> Deposit Sheet Link</div>
-          <div class="sidebar-subitem" id="subBettingLinks" style="display:none;--sub-accent:#a78bfa33;"><span class="sub-icon">🔗</span> Betting Resources Links</div>
-          <div class="sidebar-subitem" id="subWebLinks" style="display:none;--sub-accent:#22d3ee33;"><span class="sub-icon">🔗</span> Web Link</div>
           <div class="sidebar-subitem" id="subSettings" style="display:none;--sub-accent:#f59e0b33;"><span class="sub-icon">⚙️</span> Settings</div>
           <div class="sidebar-subitem" id="subResetPassword" style="--sub-accent:#f3c46333;"><span class="sub-icon">🔑</span> Reset Password</div>
           <div class="sidebar-subitem" id="subAgentProfile" style="display:none;--sub-accent:#34d39933;"><span class="sub-icon">🪪</span> Agent Profile</div>
@@ -686,6 +699,14 @@
     document.getElementById("subBettingLinks").style.display = canSeeAdminSection("bettingLinks") ? "flex" : "none";
     document.getElementById("subWebLinks").style.display = canSeeAdminSection("webLinks") ? "flex" : "none";
     document.getElementById("subSettings").style.display = canSeeAdminSection("settings") ? "flex" : "none";
+    // Integration Portal's own toggle/group — hidden entirely (not just
+    // expanded-to-empty) when this account can't see any of its 4
+    // subitems, same "don't show a dead-end dropdown" reasoning as
+    // everywhere else access-gates a sidebar row. Account Management's
+    // group never needs this because Reset Password inside it has no
+    // gate and is always visible.
+    const anyIntegrationPortalVisible = canSeeAdminSection("tgRoutes") || canSeeAdminSection("depositSheets") || canSeeAdminSection("bettingLinks") || canSeeAdminSection("webLinks");
+    document.getElementById("integrationPortalGroup").style.display = anyIntegrationPortalVisible ? "" : "none";
 
     // ---- Announcement tool card — same canSeeAdminSection gate as the
     // Account Management subitems above, just applied to a Home-page
@@ -758,6 +779,13 @@
     acctToggle.addEventListener("click", () => {
       acctToggle.classList.toggle("open");
       acctSubitems.classList.toggle("open");
+    });
+
+    const integrationPortalToggle = document.getElementById("integrationPortalToggle");
+    const integrationPortalSubitems = document.getElementById("integrationPortalSubitems");
+    integrationPortalToggle.addEventListener("click", () => {
+      integrationPortalToggle.classList.toggle("open");
+      integrationPortalSubitems.classList.toggle("open");
     });
 
     document.getElementById("subCreateAccount").addEventListener("click", () => openAcctModal("create"));

@@ -1330,8 +1330,17 @@ body.hub-page .topbar { flex-shrink: 0; }
 .thread-item .top-line { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
 .thread-item .t-title { font-size: 13px; font-weight: 700; color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .thread-item .t-time { font-size: 10.5px; color: var(--ink-soft); opacity: 0.75; flex-shrink: 0; }
-.thread-item .bottom-line { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 3px; }
-.thread-item .t-sub { font-size: 11px; color: var(--ink-soft); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.thread-item .bottom-line {
+  display: flex; align-items: center; gap: 8px; margin-top: 3px;
+}
+/* flex:1 + min-width:0 — the submitter/reply-count text absorbs all the
+   slack (and ellipsizes once it can't) so the unread badge + solved
+   checkmark always sit flush together at the row's right edge, instead
+   of "justify-content: space-between" scattering all 3 items across the
+   row with gaps proportional to leftover space — which is what made the
+   badge appear to float at a different spot on every row depending on
+   how long the submitter name was. Fixed 2026-08-15. */
+.thread-item .t-sub { flex: 1 1 auto; min-width: 0; font-size: 11px; color: var(--ink-soft); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .thread-item .t-sub .submitter { color: #38bdf8; font-weight: 600; }
 .thread-item .t-done { color: #34d399; font-size: 12px; flex-shrink: 0; }
 .badge-new {
