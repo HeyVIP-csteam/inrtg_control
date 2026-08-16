@@ -83,7 +83,7 @@
       <div class="threads-back-link" id="threadsBackLink">← Back to Active / Solved</div>
 
       <div class="threads-header" id="threadsHeader">
-        <div class="bubble-icon" id="threadsHeaderIcon">💬</div>
+        <div class="bubble-icon" id="threadsHeaderIcon"><img src="/assets/img/telegram-logo.png" alt="Telegram" class="tg-icon-img"/></div>
         <div class="text">
           <div class="title" id="threadsHeaderTitle">All Threads</div>
           <div class="subtitle" id="threadsHeaderSubtitle"></div>
@@ -697,7 +697,7 @@
 
     function renderTabs() {
       const tabs = [
-        { id: "active", label: "Active", count: activeThreads.length, dot: "💬" },
+        { id: "active", label: "Active", count: activeThreads.length, dot: "<img src=\"/assets/img/telegram-logo.png\" alt=\"Telegram\" class=\"tg-icon-img tg-icon-img-sm\"/>" },
         { id: "solved", label: "Solved", count: solvedThreads.length, dot: "✓" },
       ];
       // Recall only ever appears here when isAdmin is true — a non-admin's
@@ -735,7 +735,7 @@
         threadsBackLink.classList.add("open");
         return;
       }
-      threadsHeaderIcon.textContent = "💬";
+      threadsHeaderIcon.innerHTML = '<img src="/assets/img/telegram-logo.png" alt="Telegram" class="tg-icon-img"/>';
       threadsHeaderTitle.textContent = "All Threads";
       threadsSelectToggleBtn.style.display = "";
       threadsSearchBar.style.display = "";
