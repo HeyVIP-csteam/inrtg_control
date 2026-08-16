@@ -9,8 +9,9 @@
  * until `done` is true. Gated behind the "settings" Account Management
  * section, same as the maintenance-toggle panel it lives next to.
  */
-import { authenticateStaff, ROLE_RANK, canEditAdminSection } from "../../_shared/accounts.js";
+import { authenticateStaff, ROLE_RANK, canEditAdminSection, requestIP } from "../../_shared/accounts.js";
 import { backfillMentionRegistryPage } from "../../_shared/threads.js";
+import { logActivity } from "../../_shared/activityLog.js";
 
 export async function onRequestPost(context) {
   try {
@@ -20,7 +21,7 @@ export async function onRequestPost(context) {
   }
 }
 
-async function handlePost({ request, env }) {
+async function handlePost({ request, env, waitUntil }) {
   if (!env.THREADS_KV) return json({ ok: false, error: "THREADS_KV is not bound yet." }, 500);
   const auth = await authenticateStaff(request, env, ROLE_RANK.senior);
   if (!auth.ok) return json({ ok: false, error: "Not authorized." }, 401);
@@ -34,6 +35,14 @@ async function handlePost({ request, env }) {
   }
 
   const result = await backfillMentionRegistryPage(env, body.cursor || null);
+  // Logged once — only on the FINAL page of a (possibly multi-call)
+  // backfill run, not once per 100-thread page, so a large backfill
+  // doesn't spam the Activity Logs table with dozens of near-identical
+  // entries. Skipped on the intermediate pages entirely.
+  if (result.done) {
+    const p = logActivity(env, { category: "Config", action: "Mention Backfill Run", agent: auth.account ? auth.account.username : "bootstrap", ip: requestIP(request) || "unknown", detail: `Backfill completed — ${result.scanned ?? "?"} thread(s) scanned` });
+    if (waitUntil) waitUntil(p); else p.catch(() => {});
+  }
   return json({ ok: true, ...result });
 }
 

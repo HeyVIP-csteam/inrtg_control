@@ -286,6 +286,7 @@
           <div class="sidebar-subitem" id="subSettings" style="display:none;--sub-accent:#f59e0b33;"><span class="sub-icon">⚙️</span> Settings</div>
           <div class="sidebar-subitem" id="subResetPassword" style="--sub-accent:#f3c46333;"><span class="sub-icon">🔑</span> Reset Password</div>
           <div class="sidebar-subitem" id="subAgentProfile" style="display:none;--sub-accent:#34d39933;"><span class="sub-icon">🪪</span> Agent Profile</div>
+          <div class="sidebar-subitem" id="subActivityLogs" data-route="activityLogs" style="display:none;--sub-accent:#f43f5e33;"><span class="sub-icon">🔎</span> Activity Logs</div>
         </div>
       </div>
     </aside>
@@ -432,8 +433,14 @@
       backdrop.addEventListener("click", closeDrawer);
       // Picking anything in the sidebar should close the drawer right
       // away — otherwise it's still covering half the screen after the
-      // person already made their choice (whether that's a data-route
-      // SPA view or a real navigation like Create Account).
+      // person already made their choice. This listener only ever
+      // actually fires for plain navigations/modal-opening subitems
+      // (Create Account, Whitelist IP, etc, none of which carry
+      // [data-route]) — a [data-route] item's click never reaches this
+      // far: spa-shell.js's own document-capture listener intercepts it
+      // first and calls stopImmediatePropagation(), so THAT listener
+      // closes the drawer itself instead (see spa-shell.js's click
+      // handler for [data-route] elements).
       sidebar.addEventListener("click", (e) => {
         if (e.target.closest("a, .sidebar-item, .sidebar-subitem")) closeDrawer();
       });
@@ -662,6 +669,11 @@
       // sidebar group needs this on top of its existing Account
       // Management Access checkboxes.
       { id: "integrationPortal", name: "Integration Portal", icon: "🔗" },
+      // Added 2026-08-16 — see the matching entry + comment in
+      // functions/_shared/accounts.js. View-only (no separate edit
+      // action), Owner-only to grant, no rank floor — same shape as
+      // every other item in this list.
+      { id: "activityLogs", name: "Activity Logs", icon: "🔎" },
     ];
     function canAccessOwnerTopic(topicId) {
       if (!authInfo) return false;
@@ -704,6 +716,14 @@
     document.getElementById("subPromoCodeSheet").style.display = canSeeAdminSection("promoCodeSheet") ? "flex" : "none";
     document.getElementById("subIssueSubmissionSheet").style.display = canSeeAdminSection("issueSubmissionSheet") ? "flex" : "none";
     document.getElementById("subSettings").style.display = canSeeAdminSection("settings") ? "flex" : "none";
+    // Activity Logs — an Owner Topic (canAccessOwnerTopic), not an
+    // Account Management Access section, so it's gated differently from
+    // every other subitem in this same group: no rank floor at all, and
+    // "seeing this subitem" IS "having access" (a route, not a modal —
+    // see spa-shell.js's activityLogs route + the server-side gate in
+    // functions/api/admin/activity-logs.js, which is the REAL boundary;
+    // this is just whether the link is shown).
+    document.getElementById("subActivityLogs").style.display = canAccessOwnerTopic("activityLogs") ? "flex" : "none";
     // Integration Portal's own toggle/group — hidden entirely (not just
     // expanded-to-empty) when this account can't see any of its 4
     // subitems, same "don't show a dead-end dropdown" reasoning as

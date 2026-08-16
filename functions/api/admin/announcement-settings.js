@@ -11,8 +11,9 @@
  * the banner behaves" are different concerns. This is a global
  * display-behavior setting, not per-announcement content.
  */
-import { authenticateStaff, ROLE_RANK, canSeeAdminSection, canEditAdminSection } from "../../_shared/accounts.js";
+import { authenticateStaff, ROLE_RANK, canSeeAdminSection, canEditAdminSection, requestIP } from "../../_shared/accounts.js";
 import { getAnnouncementSettings, saveAnnouncementSettings } from "../../_shared/announcements.js";
+import { logActivity } from "../../_shared/activityLog.js";
 
 export async function onRequestGet(context) {
   try {
@@ -41,7 +42,7 @@ export async function onRequestPost(context) {
   }
 }
 
-async function handlePost({ request, env }) {
+async function handlePost({ request, env, waitUntil }) {
   if (!env.THREADS_KV) return json({ ok: false, error: "THREADS_KV is not bound yet." }, 500);
   const auth = await authenticateStaff(request, env, ROLE_RANK.admin);
   if (!auth.ok) return json({ ok: false, error: "Not authorized." }, 401);
@@ -61,6 +62,8 @@ async function handlePost({ request, env }) {
 
   try {
     const settings = await saveAnnouncementSettings(env, { rotateIntervalMs: body.rotateIntervalMs });
+    const p = logActivity(env, { category: "Config", action: "Announcement Rotation Speed Changed", agent: auth.account ? auth.account.username : "bootstrap", ip: requestIP(request) || "unknown", detail: `rotateIntervalMs = ${settings.rotateIntervalMs}` });
+    if (waitUntil) waitUntil(p); else p.catch(() => {});
     return json({ ok: true, ...settings });
   } catch (e) {
     return json({ ok: false, error: String(e.message || e) }, 400);

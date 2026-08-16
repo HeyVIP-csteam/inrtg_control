@@ -15,11 +15,12 @@
  * grant separately. See _shared/ipAccess.js for the actual logic — this
  * file is just auth + request parsing + dispatch.
  */
-import { authenticateStaff, ROLE_RANK, canSeeAdminSection, canEditAdminSection } from "../../_shared/accounts.js";
+import { authenticateStaff, ROLE_RANK, canSeeAdminSection, canEditAdminSection, requestIP } from "../../_shared/accounts.js";
 import {
   getIpAccessDashboard, listIpAccessLog, isValidIpFormat,
   approveIpRequest, rejectIpRequest, blockIp, unblockIp, manualAddIp, removeIp,
 } from "../../_shared/ipAccess.js";
+import { logActivity } from "../../_shared/activityLog.js";
 
 export async function onRequestGet(context) {
   try {
@@ -47,7 +48,7 @@ export async function onRequestPost(context) {
   }
 }
 
-async function handlePost({ request, env }) {
+async function handlePost({ request, env, waitUntil }) {
   if (!env.THREADS_KV) return json({ ok: false, error: "THREADS_KV is not bound yet." }, 500);
   const auth = await authenticateStaff(request, env, ROLE_RANK.admin);
   if (!auth.ok) return json({ ok: false, error: "Not authorized." }, 401);
@@ -65,17 +66,24 @@ async function handlePost({ request, env }) {
   const by = auth.account?.username || "bootstrap";
   const byRole = auth.account?.role || "bootstrap";
   const ip = (body.ip || "").trim();
+  const requestIp = requestIP(request) || "unknown";
+  const log = (entry) => {
+    const p = logActivity(env, { category: "Config", agent: by, ip: requestIp, ...entry });
+    if (waitUntil) waitUntil(p); else p.catch(() => {});
+  };
 
   try {
     if (body.action === "approve") {
       if (!body.officeId || !ip) return json({ ok: false, error: "Missing officeId or ip." }, 400);
       await approveIpRequest(env, { officeId: body.officeId, ip, by, byRole });
+      log({ action: "IP Approved", detail: `${ip} approved for office "${body.officeId}"` });
       return json({ ok: true });
     }
 
     if (body.action === "reject") {
       if (!body.officeId || !ip) return json({ ok: false, error: "Missing officeId or ip." }, 400);
       await rejectIpRequest(env, { officeId: body.officeId, ip, by, byRole });
+      log({ action: "IP Rejected", detail: `${ip} rejected for office "${body.officeId}"` });
       return json({ ok: true });
     }
 
@@ -83,12 +91,14 @@ async function handlePost({ request, env }) {
       if (!ip) return json({ ok: false, error: "Missing ip." }, 400);
       if (!isValidIpFormat(ip)) return json({ ok: false, error: `"${ip}" doesn't look like a valid IPv4 or IPv6 address.` }, 400);
       await blockIp(env, { ip, reason: body.reason || "", by, byRole });
+      log({ action: "IP Blocked", detail: `${ip}${body.reason ? ` — ${body.reason}` : ""}` });
       return json({ ok: true });
     }
 
     if (body.action === "unblock") {
       if (!ip) return json({ ok: false, error: "Missing ip." }, 400);
       await unblockIp(env, { ip, by, byRole });
+      log({ action: "IP Unblocked", detail: ip });
       return json({ ok: true });
     }
 
@@ -96,12 +106,14 @@ async function handlePost({ request, env }) {
       if (!body.officeId || !ip) return json({ ok: false, error: "Missing officeId or ip." }, 400);
       if (!isValidIpFormat(ip)) return json({ ok: false, error: `"${ip}" doesn't look like a valid IPv4 or IPv6 address.` }, 400);
       await manualAddIp(env, { officeId: body.officeId, ip, by, byRole });
+      log({ action: "IP Added", detail: `${ip} manually added to office "${body.officeId}"` });
       return json({ ok: true });
     }
 
     if (body.action === "remove") {
       if (!body.officeId || !ip) return json({ ok: false, error: "Missing officeId or ip." }, 400);
       await removeIp(env, { officeId: body.officeId, ip, by, byRole });
+      log({ action: "IP Removed", detail: `${ip} removed from office "${body.officeId}"` });
       return json({ ok: true });
     }
   } catch (e) {

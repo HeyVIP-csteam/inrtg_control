@@ -35,7 +35,8 @@
  * pages (deposit-issue.html / deposit-backup.html's brand dropdown and
  * "All Brands" mode) until someone removes it from that list.
  */
-import { authenticateStaff, ROLE_RANK, canSeeAdminSection, canEditAdminSection } from "../../_shared/accounts.js";
+import { authenticateStaff, ROLE_RANK, canSeeAdminSection, canEditAdminSection, requestIP } from "../../_shared/accounts.js";
+import { logActivity } from "../../_shared/activityLog.js";
 import { BRANDS } from "../../_shared/routing.js";
 import {
   getAllDepositSheetOverrides,
@@ -101,13 +102,17 @@ export async function onRequestPost(context) {
   }
 }
 
-async function handlePost({ request, env }) {
+async function handlePost({ request, env, waitUntil }) {
   if (!env.THREADS_KV) return json({ ok: false, error: "THREADS_KV is not bound yet." }, 500);
   const auth = await authenticateStaff(request, env, ROLE_RANK.senior);
   if (!auth.ok) return json({ ok: false, error: "Not authorized." }, 401);
   if (!canEditAdminSection(auth.account, "depositSheets")) {
     return json({ ok: false, error: "You don't have Can-Edit access to Deposit Sheet Link." }, 403);
   }
+  const log = (entry) => {
+    const p = logActivity(env, { category: "Config", agent: auth.account ? auth.account.username : "bootstrap-setup", ip: requestIP(request) || "unknown", ...entry });
+    if (waitUntil) waitUntil(p); else p.catch(() => {});
+  };
 
   let body;
   try {
@@ -122,6 +127,7 @@ async function handlePost({ request, env }) {
   if (body.action === "save") {
     try {
       const saved = await saveDepositSheetOverride(env, MODULE_SLOT, brandId, { sheetUrlOrId: body.sheetUrlOrId, tabNames: body.tabNames });
+      log({ action: "Gsheet Route Changed", detail: `${brandId}: deposit sheet link updated` });
       return json({ ok: true, brandId, sheet: { ...saved, isOverride: true } });
     } catch (e) {
       return json({ ok: false, error: String((e && e.message) || e) }, 400);
@@ -130,12 +136,14 @@ async function handlePost({ request, env }) {
 
   if (body.action === "reset") {
     await deleteDepositSheetOverride(env, MODULE_SLOT, brandId);
+    log({ action: "Gsheet Route Reset", detail: `${brandId}: deposit sheet link reverted to default` });
     return json({ ok: true, brandId, sheet: { ...defaultFor(), isOverride: false } });
   }
 
   if (body.action === "saveBackupThisMonth") {
     try {
       const updated = await saveDepositBackupThisMonth(env, brandId, { sheetUrlOrId: body.sheetUrlOrId, tabNames: body.tabNames });
+      log({ action: "Gsheet Backup Route Changed", detail: `${brandId}: this-month backup sheet link updated` });
       return json({ ok: true, brandId, backup: updated });
     } catch (e) {
       return json({ ok: false, error: String((e && e.message) || e) }, 400);
@@ -143,6 +151,7 @@ async function handlePost({ request, env }) {
   }
   if (body.action === "clearBackupThisMonth") {
     const updated = await clearDepositBackupThisMonth(env, brandId);
+    log({ action: "Gsheet Backup Route Reset", detail: `${brandId}: this-month backup sheet link cleared` });
     return json({ ok: true, brandId, backup: updated });
   }
 

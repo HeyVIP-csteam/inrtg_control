@@ -14,8 +14,9 @@
  * "Topic access" is a plain see-it-or-don't checkbox; anyone granted
  * this topic can both view and manage announcements.
  */
-import { authenticateStaff, ROLE_RANK, canAccessOwnerTopic } from "../../_shared/accounts.js";
+import { authenticateStaff, ROLE_RANK, canAccessOwnerTopic, requestIP } from "../../_shared/accounts.js";
 import { listAllAnnouncements, saveAnnouncement, deleteAnnouncement, ANNOUNCEMENT_TOPICS } from "../../_shared/announcements.js";
+import { logActivity } from "../../_shared/activityLog.js";
 
 export async function onRequestGet(context) {
   try {
@@ -45,7 +46,7 @@ export async function onRequestPost(context) {
   }
 }
 
-async function handlePost({ request, env }) {
+async function handlePost({ request, env, waitUntil }) {
   if (!env.THREADS_KV) return json({ ok: false, error: "THREADS_KV is not bound yet." }, 500);
   const auth = await authenticateStaff(request, env, ROLE_RANK.admin);
   if (!auth.ok) return json({ ok: false, error: "Not authorized." }, 401);
@@ -61,6 +62,10 @@ async function handlePost({ request, env }) {
   }
 
   const actorUsername = auth.account ? auth.account.username : "bootstrap";
+  const log = (entry) => {
+    const p = logActivity(env, { category: "Config", agent: actorUsername, ip: requestIP(request) || "unknown", ...entry });
+    if (waitUntil) waitUntil(p); else p.catch(() => {});
+  };
 
   if (body.action === "save") {
     try {
@@ -72,6 +77,7 @@ async function handlePost({ request, env }) {
         startAt: body.startAt,
         endAt: body.endAt,
       }, actorUsername);
+      log({ action: body.id ? "Announcement Updated" : "Announcement Created", detail: `[${announcement.topic}] ${clip(announcement.text)}` });
       return json({ ok: true, announcement });
     } catch (e) {
       return json({ ok: false, error: String(e.message || e) }, 400);
@@ -81,10 +87,16 @@ async function handlePost({ request, env }) {
   if (body.action === "delete") {
     if (!body.id) return json({ ok: false, error: "id is required." }, 400);
     await deleteAnnouncement(env, body.id, actorUsername);
+    log({ action: "Announcement Deleted", detail: `Announcement "${body.id}" deleted` });
     return json({ ok: true });
   }
 
   return json({ ok: false, error: `Unknown action "${body.action}".` }, 400);
+}
+
+function clip(str, max = 200) {
+  const s = String(str || "");
+  return s.length > max ? s.slice(0, max - 1) + "…" : s;
 }
 
 function json(obj, status = 200) {

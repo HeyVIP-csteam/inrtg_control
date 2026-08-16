@@ -217,6 +217,18 @@ export const OWNER_TOPIC_ITEMS = [
   // BOTH checked to actually see anything (see the sidebar visibility
   // check in public/index.html).
   { id: "integrationPortal", name: "Integration Portal", icon: "🔗" },
+  // Added 2026-08-16 — Activity Logs (site-wide audit trail, see
+  // functions/_shared/activityLog.js + functions/api/admin/
+  // activity-logs.js). Deliberately placed here rather than in
+  // ADMIN_SECTIONS_LIST above: the audit log is view-only (no separate
+  // "edit" action, so the view/edit split ADMIN_SECTIONS_LIST exists for
+  // doesn't apply), and the intended default is "nobody but the Owner
+  // sees it until the Owner explicitly opts an account in" with NO rank
+  // floor at all — an `agent`-rank account the Owner has deliberately
+  // granted this to gets it, same as OWNER_TOPIC_ITEMS' other entries —
+  // which is exactly this list's semantics, not ADMIN_SECTIONS_LIST's
+  // (which always requires clearing a floorRank first).
+  { id: "activityLogs", name: "Activity Logs", icon: "🔎" },
 ];
 
 export function canAccessOwnerTopic(account, topicId) {

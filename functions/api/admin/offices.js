@@ -14,7 +14,8 @@
  * canSeeAdminSection()/canEditAdminSection() for the Account Management
  * Access layer that replaced the old flat rank checks here.
  */
-import { listOffices, saveOffice, deleteOffice, authenticateStaff, ROLE_RANK, canSeeAdminSection, canEditAdminSection } from "../../_shared/accounts.js";
+import { listOffices, saveOffice, deleteOffice, authenticateStaff, ROLE_RANK, canSeeAdminSection, canEditAdminSection, requestIP } from "../../_shared/accounts.js";
+import { logActivity } from "../../_shared/activityLog.js";
 
 export async function onRequestGet(context) {
   try {
@@ -56,7 +57,7 @@ export async function onRequestPost(context) {
   }
 }
 
-async function handlePost({ request, env }) {
+async function handlePost({ request, env, waitUntil }) {
   if (!env.THREADS_KV) return json({ ok: false, error: "THREADS_KV is not bound yet." }, 500);
   // Editing IPs requires Can-Edit access to Whitelist IP — owner-controlled
   // per account now, not a flat SuperAdmin-only rule. The bootstrap
@@ -69,6 +70,10 @@ async function handlePost({ request, env }) {
   if (!canEditAdminSection(auth.account, "whitelistIp")) {
     return json({ ok: false, error: "You don't have Can-Edit access to Whitelist IP." }, 403);
   }
+  const log = (entry) => {
+    const p = logActivity(env, { category: "Config", agent: auth.account ? auth.account.username : "bootstrap-setup", ip: requestIP(request) || "unknown", ...entry });
+    if (waitUntil) waitUntil(p); else p.catch(() => {});
+  };
 
   let body;
   try {
@@ -80,12 +85,14 @@ async function handlePost({ request, env }) {
   if (body.action === "save") {
     if (!body.name) return json({ ok: false, error: "Office name is required." }, 400);
     const office = await saveOffice(env, { id: body.id, name: body.name, allowedIPs: body.allowedIPs || [] });
+    log({ action: body.id ? "Office Updated" : "Office Created", detail: `"${office.name}" — ${(office.allowedIPs || []).length} whitelisted IP(s)` });
     return json({ ok: true, office });
   }
 
   if (body.action === "delete") {
     if (!body.id) return json({ ok: false, error: "Missing office id." }, 400);
     await deleteOffice(env, body.id);
+    log({ action: "Office Deleted", detail: `Office "${body.id}" deleted` });
     return json({ ok: true });
   }
 

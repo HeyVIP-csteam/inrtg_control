@@ -6,8 +6,9 @@
  * ADMIN_SECTIONS_LIST in _shared/accounts.js — SuperAdmin/Owner by
  * default, same tier as TG Group / Channel).
  */
-import { authenticateStaff, ROLE_RANK, canSeeAdminSection, canEditAdminSection } from "../../_shared/accounts.js";
+import { authenticateStaff, ROLE_RANK, canSeeAdminSection, canEditAdminSection, requestIP } from "../../_shared/accounts.js";
 import { saveBettingResources } from "../../_shared/bettingResources.js";
+import { logActivity } from "../../_shared/activityLog.js";
 
 export async function onRequestPost(context) {
   try {
@@ -17,7 +18,7 @@ export async function onRequestPost(context) {
   }
 }
 
-async function handlePost({ request, env }) {
+async function handlePost({ request, env, waitUntil }) {
   if (!env.THREADS_KV) return json({ ok: false, error: "THREADS_KV is not bound yet." }, 500);
 
   const auth = await authenticateStaff(request, env, ROLE_RANK.senior);
@@ -38,6 +39,8 @@ async function handlePost({ request, env }) {
 
   const { rules, results } = body || {};
   const config = await saveBettingResources(env, { rules, results, updatedBy: auth.account.username });
+  const p = logActivity(env, { category: "Config", action: "Betting Resources Links Changed", agent: auth.account.username, ip: requestIP(request) || "unknown", detail: `${(results || []).length} result link(s) + rules link updated` });
+  if (waitUntil) waitUntil(p); else p.catch(() => {});
   return json({ ok: true, data: config });
 }
 

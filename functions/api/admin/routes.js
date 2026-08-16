@@ -42,7 +42,8 @@
  * functions/api/submit.js for where the override is actually consulted
  * at submission time.
  */
-import { authenticateStaff, ROLE_RANK, canSeeAdminSection, canEditAdminSection } from "../../_shared/accounts.js";
+import { authenticateStaff, ROLE_RANK, canSeeAdminSection, canEditAdminSection, requestIP } from "../../_shared/accounts.js";
+import { logActivity } from "../../_shared/activityLog.js";
 import { getAllRouteOverrides, saveRouteOverride, deleteRouteOverride, getRouteOverride } from "../../_shared/routes.js";
 import { BRANDS, MODULE_META } from "../../_shared/routing.js";
 
@@ -102,13 +103,17 @@ export async function onRequestPost(context) {
   }
 }
 
-async function handlePost({ request, env }) {
+async function handlePost({ request, env, waitUntil }) {
   if (!env.THREADS_KV) return json({ ok: false, error: "THREADS_KV is not bound yet." }, 500);
   const auth = await authenticateStaff(request, env, ROLE_RANK.senior);
   if (!auth.ok) return json({ ok: false, error: "Not authorized." }, 401);
   if (!canEditAdminSection(auth.account, "tgRoutes")) {
     return json({ ok: false, error: "You don't have Can-Edit access to TG Group / Channel." }, 403);
   }
+  const log = (entry) => {
+    const p = logActivity(env, { category: "Config", agent: auth.account ? auth.account.username : "bootstrap-setup", ip: requestIP(request) || "unknown", ...entry });
+    if (waitUntil) waitUntil(p); else p.catch(() => {});
+  };
 
   let body;
   try {
@@ -127,6 +132,7 @@ async function handlePost({ request, env }) {
   if (body.action === "save") {
     try {
       const saved = await saveRouteOverride(env, brandId, moduleId, { chatId: body.chatId, topicId: body.topicId });
+      log({ action: "TG Route Changed", detail: `${brandId}/${moduleId}: chat=${body.chatId || ""}${body.topicId ? `, topic=${body.topicId}` : ""}` });
       return json({ ok: true, route: { ...saved, isOverride: true } });
     } catch (e) {
       return json({ ok: false, error: String(e.message || e) }, 400);
@@ -135,6 +141,7 @@ async function handlePost({ request, env }) {
 
   if (body.action === "reset") {
     await deleteRouteOverride(env, brandId, moduleId);
+    log({ action: "TG Route Reset", detail: `${brandId}/${moduleId}: reverted to default routing` });
     if (isSecurityRow) {
       return json({ ok: true, route: { chatId: env.SECURITY_ALERTS_CHAT_ID || "", topicId: env.SECURITY_ALERTS_TOPIC_ID || null, isOverride: false } });
     }

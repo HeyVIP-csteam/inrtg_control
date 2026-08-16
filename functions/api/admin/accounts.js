@@ -43,7 +43,8 @@
  *     by anyone — see the early rejection below and saveAccount()'s own
  *     independent enforcement in _shared/accounts.js.
  */
-import { listAccounts, saveAccount, deleteAccount, getAccount, authenticateStaff, anySuperAdminExists, setAccountLocked, ROLE_RANK, rankOf, canSeeAdminSection, canEditAdminSection, canManageOthersAdminAccess } from "../../_shared/accounts.js";
+import { listAccounts, saveAccount, deleteAccount, getAccount, authenticateStaff, anySuperAdminExists, setAccountLocked, ROLE_RANK, rankOf, canSeeAdminSection, canEditAdminSection, canManageOthersAdminAccess, requestIP } from "../../_shared/accounts.js";
+import { logActivity } from "../../_shared/activityLog.js";
 
 // actor can only manage a target STRICTLY ranked below itself — same
 // rank can't manage same rank (a SuperAdmin can't touch another
@@ -88,10 +89,17 @@ export async function onRequestPost(context) {
   }
 }
 
-async function handlePost({ request, env }) {
+async function handlePost({ request, env, waitUntil }) {
   if (!env.THREADS_KV) return json({ ok: false, error: "THREADS_KV is not bound yet." }, 500);
   const auth = await authenticateStaff(request, env, ROLE_RANK.senior);
   if (!auth.ok) return json({ ok: false, error: "Not authorized." }, 401);
+
+  const ip = requestIP(request) || "unknown";
+  const actorLabel = auth.account ? auth.account.username : "bootstrap-setup";
+  const log = (entry) => {
+    const p = logActivity(env, { agent: actorLabel, ip, ...entry });
+    if (waitUntil) waitUntil(p); else p.catch(() => {});
+  };
 
   let body;
   try {
@@ -239,6 +247,48 @@ async function handlePost({ request, env }) {
         fullName: body.fullName !== undefined ? body.fullName : undefined,
         pid: body.pid !== undefined ? body.pid : undefined,
       });
+
+      // Activity log — one entry per meaningful change, not one giant
+      // "account saved" blob, so the Activity Logs table reads like a
+      // real audit trail instead of an opaque diff dump.
+      if (!existingTarget) {
+        log({ category: "Account", action: "Account Created", detail: `Created "${account.username}" (role: ${account.role})` });
+      } else {
+        if (body.role !== undefined && body.role !== existingTarget.role) {
+          log({ category: "Account", action: "Role Changed", detail: `${account.username}: "${existingTarget.role}" → "${account.role}"` });
+        }
+        if (body.password) {
+          log({ category: "Account", action: "Password Reset", detail: `Password reset for "${account.username}"${actorUsername === account.username ? " (self)" : ` by ${actorLabel}`}` });
+        }
+        if (body.officeId !== undefined && (body.officeId || null) !== (existingTarget.officeId || null)) {
+          log({ category: "Account", action: "Office Changed", detail: `${account.username}: office changed` });
+        }
+        if (body.allowedBrands !== undefined && JSON.stringify(body.allowedBrands) !== JSON.stringify(existingTarget.allowedBrands ?? [])) {
+          log({ category: "Account", action: "Brand Access Changed", detail: `${account.username}: brand access updated` });
+        }
+        if (body.allowedModules !== undefined && JSON.stringify(body.allowedModules) !== JSON.stringify(existingTarget.allowedModules ?? "all")) {
+          log({ category: "Account", action: "Module Access Changed", detail: `${account.username}: module access updated` });
+        }
+        if (body.allowedAdminSections !== undefined && JSON.stringify(body.allowedAdminSections) !== JSON.stringify(existingTarget.allowedAdminSections ?? null)) {
+          log({ category: "Account", action: "Admin Access Changed", detail: `${account.username}: Account Management Access updated` });
+        }
+        if (body.adminSectionEditAccess !== undefined && JSON.stringify(body.adminSectionEditAccess) !== JSON.stringify(existingTarget.adminSectionEditAccess ?? null)) {
+          log({ category: "Account", action: "Admin Edit Access Changed", detail: `${account.username}: Can-Edit access updated` });
+        }
+        if (body.ownerTopicAccess !== undefined && JSON.stringify(body.ownerTopicAccess) !== JSON.stringify(existingTarget.ownerTopicAccess ?? [])) {
+          log({ category: "Account", action: "Topic Access Changed", detail: `${account.username}: Topic access updated` });
+        }
+        if (body.canGrantAdminAccess !== undefined && !!body.canGrantAdminAccess !== !!existingTarget.canGrantAdminAccess) {
+          log({ category: "Account", action: "Delegation Changed", detail: `${account.username}: "Can manage Account Management Access" ${body.canGrantAdminAccess ? "granted" : "revoked"}` });
+        }
+        if (body.fullName !== undefined && body.fullName !== (existingTarget.fullName || "")) {
+          log({ category: "Account", action: "Profile Updated", detail: `${account.username}: full name updated` });
+        }
+        if (body.pid !== undefined && body.pid !== (existingTarget.pid || "")) {
+          log({ category: "Account", action: "Profile Updated", detail: `${account.username}: PID updated` });
+        }
+      }
+
       return json({ ok: true, account });
     } catch (e) {
       return json({ ok: false, error: String(e.message || e) }, 400);
@@ -255,6 +305,7 @@ async function handlePost({ request, env }) {
       return json({ ok: false, error: "You can only delete accounts ranked below your own." }, 403);
     }
     await deleteAccount(env, body.username);
+    log({ category: "Account", action: "Account Deleted", detail: `Deleted "${body.username}"${target ? ` (role: ${target.role})` : ""}` });
     return json({ ok: true });
   }
 
@@ -277,6 +328,7 @@ async function handlePost({ request, env }) {
     // touches an existing account. See ACCOUNT_MGMT_VIEW_EDIT_LEVEL_SETUP.md.)
     const locked = body.action === "lock";
     const account = await setAccountLocked(env, body.username, locked, locked ? (body.reason || `Manually locked by ${actorUsername}`) : null);
+    log({ category: "Account", action: locked ? "Account Locked" : "Account Unlocked", detail: `${body.username}${locked && body.reason ? ` — ${body.reason}` : ""}` });
     return json({ ok: true, account });
   }
 

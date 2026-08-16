@@ -31,9 +31,10 @@
  *     no separate "override vs default" state to revert to here, unlike
  *     Deposit Sheet Link/TG Group-Channel — "reset" just means "clear it".
  */
-import { authenticateStaff, ROLE_RANK, canSeeAdminSection, canEditAdminSection } from "../../_shared/accounts.js";
+import { authenticateStaff, ROLE_RANK, canSeeAdminSection, canEditAdminSection, requestIP } from "../../_shared/accounts.js";
 import { BRANDS } from "../../_shared/routing.js";
 import { readConfig, saveLink } from "../brand-config.js";
+import { logActivity } from "../../_shared/activityLog.js";
 
 export async function onRequestGet(context) {
   try {
@@ -70,7 +71,7 @@ export async function onRequestPost(context) {
   }
 }
 
-async function handlePost({ request, env }) {
+async function handlePost({ request, env, waitUntil }) {
   const auth = await authenticateStaff(request, env, ROLE_RANK.senior);
   if (!auth.ok) return json({ ok: false, error: "Not authorized." }, 401);
   if (!canEditAdminSection(auth.account, "webLinks")) {
@@ -86,10 +87,15 @@ async function handlePost({ request, env }) {
 
   const brandId = body.brandId;
   if (!BRANDS[brandId]) return json({ ok: false, error: `Unknown brand "${brandId}".` }, 400);
+  const log = (entry) => {
+    const p = logActivity(env, { category: "Config", agent: auth.account ? auth.account.username : "bootstrap", ip: requestIP(request) || "unknown", ...entry });
+    if (waitUntil) waitUntil(p); else p.catch(() => {});
+  };
 
   if (body.action === "save") {
     try {
       await saveLink(env, brandId, body.link || "");
+      log({ action: "Web Link Changed", detail: `${brandId}: link set to ${body.link || "(empty)"}` });
       return json({ ok: true, brandId, link: body.link || "" });
     } catch (e) {
       return json({ ok: false, error: String((e && e.message) || e) }, 400);
@@ -98,6 +104,7 @@ async function handlePost({ request, env }) {
 
   if (body.action === "reset") {
     await saveLink(env, brandId, "");
+    log({ action: "Web Link Reset", detail: `${brandId}: link cleared` });
     return json({ ok: true, brandId, link: "" });
   }
 

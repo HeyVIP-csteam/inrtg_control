@@ -68,6 +68,14 @@
       select: "#annShell",
       fullBleed: true,
     },
+    // Site-wide audit trail (see functions/_shared/activityLog.js +
+    // functions/api/admin/activity-logs.js). Same padded/centered
+    // card-column shape as promo/deposit-issue (NOT fullBleed) — it's
+    // three stacked cards, not a sidebar+panel app-shell.
+    activityLogs: {
+      url: "/activity-logs.html",
+      select: ".actlog-shell",
+    },
     // "form" is different from the other 5 — one file (form.html) shared
     // by every ISSUE SUBMISSION sidebar item, parameterized by a
     // `module` query param that form.html's OWN app.js reads via
@@ -320,6 +328,18 @@
     // still re-mount — this is exactly the module-switch case
     // paramScript exists for.
     if (view === currentView && module === currentModule) return;
+    // Mobile hamburger drawer (index.html's own #hubSidebar/#sidebarBackdrop,
+    // toggled via initSidebarDrawer()) — sidebar-level click listeners for
+    // "close the drawer after picking something" never actually fire for
+    // [data-route] elements: this capture-phase listener runs on `document`
+    // BEFORE the event can reach any listener further down (including a
+    // bubble-phase one on the sidebar itself), and stopImmediatePropagation()
+    // below halts it there for good. Closing it here, generically, is the
+    // fix — anything with a [data-route] inside the sidebar (the first case
+    // being the Activity Logs subitem) gets this for free without index.html
+    // needing its own no-op listener that would otherwise be dead code.
+    document.getElementById("hubSidebar")?.classList.remove("open");
+    document.getElementById("sidebarBackdrop")?.classList.remove("open");
     mount(view, { module }).catch((err) => console.error("[spa-shell] mount failed:", err));
   }, { capture: true });
 

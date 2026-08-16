@@ -32,7 +32,8 @@
  * owner) — small source image (60×60), upscaled to match the others;
  * looks fine at the 24px pill size this actually renders at.
  */
-import { authenticateStaff, ROLE_RANK, canEditAdminSection } from "../_shared/accounts.js";
+import { authenticateStaff, ROLE_RANK, canEditAdminSection, requestIP } from "../_shared/accounts.js";
+import { logActivity } from "../_shared/activityLog.js";
 
 const DEFAULT_LOGOS = {
   crickex: "/assets/img/brands/crickex.png",
@@ -60,7 +61,7 @@ export async function onRequestPost(context) {
   }
 }
 
-async function handlePost({ request, env }) {
+async function handlePost({ request, env, waitUntil }) {
   const bucket = env.SCREENSHOTS_BUCKET;
   if (!bucket) return json({ ok: false, error: "Server is missing the SCREENSHOTS_BUCKET R2 binding." }, 500);
 
@@ -81,6 +82,8 @@ async function handlePost({ request, env }) {
   if (!brand) return json({ ok: false, error: "Missing brand." }, 400);
 
   const config = await saveLink(env, brand, link);
+  const p = logActivity(env, { category: "Config", action: "Brand Link Edited", agent: auth.account ? auth.account.username : "bootstrap", ip: requestIP(request) || "unknown", detail: `${brand}: link set to ${link || "(empty)"}` });
+  if (waitUntil) waitUntil(p); else p.catch(() => {});
   return json({ ok: true, config });
 }
 
