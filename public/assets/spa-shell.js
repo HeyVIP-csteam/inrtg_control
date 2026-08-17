@@ -199,6 +199,21 @@
     if (document.activeElement && document.activeElement !== document.body) {
       document.activeElement.blur();
     }
+    // Same idea, for an in-progress TEXT SELECTION drag rather than a
+    // focused control: if a mousedown started (e.g. on a label or plain
+    // text inside the content about to be swapped) and the DOM gets
+    // ripped out from under it before the matching mouseup lands, the
+    // browser can be left thinking a selection/drag gesture is still
+    // "in progress" — visible afterwards as a stray highlighted word
+    // sitting somewhere on the page — and every subsequent mousedown
+    // gets swallowed into finishing that broken gesture instead of
+    // being treated as a fresh click, which is what actually produces
+    // the "nothing responds" freeze. Explicitly collapsing any active
+    // selection before the DOM changes clears that state cleanly.
+    if (window.getSelection) {
+      const sel = window.getSelection();
+      if (sel && sel.rangeCount) sel.removeAllRanges();
+    }
     clearViewIntervals(currentView);
     currentView = view;
     currentModule = module;
