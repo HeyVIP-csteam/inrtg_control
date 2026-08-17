@@ -120,12 +120,31 @@
     if (viewIntervals[view]) viewIntervals[view] = [];
   }
 
-  async function getDoc(view) {
+  function getDoc(view) {
+    // Cache the in-flight PROMISE itself, not just the resolved doc —
+    // otherwise rapid clicking between topics fires a brand new
+    // fetch("/form.html") (and, below, a new fetch for app.js) on every
+    // single click, because htmlCache.has(view) only becomes true once
+    // the FIRST request has already finished. Those duplicate requests
+    // still queue up behind the browser's per-host connection limit and
+    // are silently discarded once they land (the guard in mount() below
+    // throws away any response that's no longer current) — so fast
+    // topic-switching could pile up several wasted in-flight requests,
+    // with the most RECENT click's own request stuck at the back of
+    // that queue, making the UI look stuck on "Loading…" even though
+    // the click itself registered fine. Caching the promise means every
+    // click after the first, for the same `view`, reuses the one
+    // request already underway instead of starting a new one.
     if (htmlCache.has(view)) return htmlCache.get(view);
-    const res = await fetch(ROUTES[view].url);
-    const doc = new DOMParser().parseFromString(await res.text(), "text/html");
-    htmlCache.set(view, doc);
-    return doc;
+    const promise = fetch(ROUTES[view].url)
+      .then((res) => res.text())
+      .then((text) => new DOMParser().parseFromString(text, "text/html"))
+      .catch((err) => {
+        htmlCache.delete(view); // don't permanently cache a failed request — let the next click retry
+        throw err;
+      });
+    htmlCache.set(view, promise);
+    return promise;
   }
 
   function loadExternalScriptOnce(src) {
@@ -165,6 +184,21 @@
   }
 
   async function mount(view, { pushUrl = true, module = null } = {}) {
+    // Chromium input-lock guard: if the element the user was just
+    // interacting with (most commonly a <select> — e.g. Brand/Platform —
+    // with its native dropdown popup still open) lives inside the
+    // content we're about to tear down below, removing it from the DOM
+    // while that native OS-level popup is still open can leave the
+    // WHOLE PAGE unresponsive to clicks — no console error, no CPU
+    // spike, just dead — until something forces Chrome to reset its
+    // input/focus state (opening DevTools is the classic accidental
+    // workaround, which is why that "fixes" it while a plain resize
+    // doesn't). Blurring whatever's currently focused closes any open
+    // native popup cleanly BEFORE the DOM changes out from under it,
+    // rather than after.
+    if (document.activeElement && document.activeElement !== document.body) {
+      document.activeElement.blur();
+    }
     clearViewIntervals(currentView);
     currentView = view;
     currentModule = module;
@@ -298,14 +332,23 @@
   }
 
   const paramScriptCache = new Map();
-  async function getParamScriptText(doc, filename) {
+  function getParamScriptText(doc, filename) {
+    // Same fix as getDoc() above, same reason — cache the in-flight
+    // promise, not just the resolved text, so rapid module switches
+    // (QA -> Account Issue -> Withdraw Issue, all "form" view) reuse the
+    // one app.js fetch already underway instead of stacking up a fresh
+    // one per click.
     if (paramScriptCache.has(filename)) return paramScriptCache.get(filename);
     const scriptEl = Array.from(doc.querySelectorAll("script[src]")).find((s) => s.getAttribute("src").includes(`/${filename}`));
-    if (!scriptEl) return null;
-    const res = await fetch(scriptEl.getAttribute("src"));
-    const text = await res.text();
-    paramScriptCache.set(filename, text);
-    return text;
+    if (!scriptEl) return Promise.resolve(null);
+    const promise = fetch(scriptEl.getAttribute("src"))
+      .then((res) => res.text())
+      .catch((err) => {
+        paramScriptCache.delete(filename);
+        throw err;
+      });
+    paramScriptCache.set(filename, promise);
+    return promise;
   }
 
   // Pitfall #4: pageTransition.js's wireFadeLinks() already listens for
