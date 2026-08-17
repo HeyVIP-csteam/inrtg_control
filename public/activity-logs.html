@@ -176,8 +176,8 @@
         <div class="actlog-results-right">
           <label class="ipa-page-size" style="display:none;" id="actlogPageSizeWrap">
             <select id="actlogPageSize">
-              <option value="10">10/page</option>
-              <option value="20" selected>20/page</option>
+              <option value="10" selected>10/page</option>
+              <option value="20">20/page</option>
               <option value="30">30/page</option>
             </select>
           </label>
@@ -215,7 +215,7 @@
     (function () {
       let allEntries = [];
       let actlogPage = 1;
-      let actlogPageSize = 20;
+      let actlogPageSize = 10;
 
       const categorySelect = document.getElementById("actlogCategory");
       const agentInput = document.getElementById("actlogAgent");

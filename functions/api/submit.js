@@ -6,11 +6,10 @@ import {
 import { appendRowToSheet, appendRowByColumns, writeRowForDate, getNextSequenceValue } from "../_shared/googleSheets.js";
 import { uploadAttachmentToR2, screenshotUrl } from "../_shared/r2.js";
 import { createThread } from "../_shared/threads.js";
-import { verifyRequest, canSeeBrand, canSeeModule, requestIP } from "../_shared/accounts.js";
+import { verifyRequest, canSeeBrand, canSeeModule } from "../_shared/accounts.js";
 import { getRouteOverride } from "../_shared/routes.js";
 import { compressImageForTelegram } from "../_shared/telegramImageCompress.js";
 import { getIssueSheetOverride, resolveWriteTab, promotionModuleId } from "../_shared/issueSubmissionSheets.js";
-import { logActivity } from "../_shared/activityLog.js";
 
 const VALID_MODULES = Object.keys(MODULE_META);
 
@@ -325,13 +324,6 @@ async function handleSubmit({ request, env, waitUntil }) {
     attachmentErrors: attachmentErrors.length ? attachmentErrors : undefined,
     r2Errors: r2Errors.length ? r2Errors : undefined,
   };
-  {
-    const p = logActivity(env, {
-      category: "Thread", action: "Ticket Created", agent: account.username, ip: requestIP(request) || "unknown",
-      detail: `"${brand?.name || brandId}" / ${meta?.name || moduleId}${threadId ? "" : " (not tracked in TG Reply Threads)"}`,
-    });
-    if (waitUntil) waitUntil(p); else p.catch(() => {});
-  }
   if (idempotencyKey && env.THREADS_KV) {
     // Overwrite the 30s placeholder from the check above with the real
     // result, now that processing actually finished — and extend the

@@ -209,7 +209,6 @@ async function handleThreadAction({ request, env, params, waitUntil }) {
       messageIds,
       replyToMessageId: replyToMessageId || null,
     }, thread.chatId);
-    log({ category: "Thread", action: "Reply Sent", detail: `"${thread.title || id}": ${clipForLog(text || `[${attachments.length} attachment(s)]`)}` });
     return json({ ok: true, thread: updated });
   }
 
