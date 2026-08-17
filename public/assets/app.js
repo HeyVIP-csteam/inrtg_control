@@ -399,23 +399,11 @@
   );
   dropzone.addEventListener("drop", (e) => addFiles(e.dataTransfer.files));
 
-  // This whole file is re-run from scratch (via `new Function(...)`) every
-  // time the "form" view mounts OR the module switches — see spa-shell.js's
-  // paramScript handling. A plain window.addEventListener("paste", ...)
-  // here would never get cleaned up (window itself never goes away), so
-  // every topic switch piled another duplicate paste listener onto
-  // window, each one still holding a closure over that visit's now-detached
-  // `files`/`fileListEl`. Tracking the previous handler on `window` and
-  // removing it before adding the new one keeps exactly one alive at a time.
-  if (window.__issueFormPasteHandler) {
-    window.removeEventListener("paste", window.__issueFormPasteHandler);
-  }
-  window.__issueFormPasteHandler = (e) => {
+  window.addEventListener("paste", (e) => {
     const items = Array.from(e.clipboardData.items).filter((i) => i.kind === "file");
     if (!items.length) return;
     addFiles(items.map((i) => i.getAsFile()).filter(Boolean));
-  };
-  window.addEventListener("paste", window.__issueFormPasteHandler);
+  });
 
   function fileToDataUrl(file) {
     return new Promise((resolve, reject) => {

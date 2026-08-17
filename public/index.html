@@ -1970,18 +1970,64 @@
           <input type="checkbox" class="ap-real-module-checkbox" value="${acctEsc(m.id)}" ${allModulesSelected || (Array.isArray(a.allowedModules) && a.allowedModules.includes(m.id)) ? "checked" : ""} ${canManageAccess ? "" : "disabled"} />
           ${m.icon || ""} ${acctEsc(m.name)}
         </label>`).join("");
-      // Owner Topics (Announcements / Active Agents) — rendered inline
-      // with the real module checkboxes above (same "Topic access"
-      // list), but backed by `ownerTopicAccess`, not `allowedModules` —
-      // no "all" shortcut, and STRICTLY Owner-editable regardless of
-      // canManageAccess (a SuperAdmin who can edit everything else in
-      // this modal still can't touch these two — only isRealOwner can).
-      // See OWNER_TOPIC_ITEMS above for why this is a separate field.
-      const ownerTopicChecks = OWNER_TOPIC_ITEMS.map((t) => `
+      // Owner Topics (Announcements / Active Agents / Integration Portal)
+      // — rendered inline with the real module checkboxes above (same
+      // "Topic access" list), but backed by `ownerTopicAccess`, not
+      // `allowedModules` — no "all" shortcut, and STRICTLY Owner-editable
+      // regardless of canManageAccess (a SuperAdmin who can edit
+      // everything else in this modal still can't touch these — only
+      // isRealOwner can). See OWNER_TOPIC_ITEMS above for why this is a
+      // separate field.
+      //
+      // hasOwnerTopicAccess() mirrors canAccessOwnerTopic() in
+      // functions/_shared/accounts.js exactly: an account whose OWN role
+      // is "owner" implicitly has every owner-topic grant (that
+      // function's `if (account.role === "owner") return true` early
+      // return) — it doesn't need "activityLogs" etc. literally present
+      // in its own ownerTopicAccess array. Using a raw
+      // `a.ownerTopicAccess.includes(...)` check here (as this modal did
+      // before) misses that case — an Owner-role target account would
+      // show every owner-topic checkbox as unchecked unless something
+      // had separately, redundantly written those ids into its own
+      // array, and (see activityLogsGranted below) would wrongly stay
+      // hidden from non-Owner viewers for the same reason.
+      const hasOwnerTopicAccess = (topicId) => a.role === "owner" || (Array.isArray(a.ownerTopicAccess) && a.ownerTopicAccess.includes(topicId));
+      //
+      // "activityLogs" is deliberately excluded from this list and
+      // rendered instead inside the "Account Management Access" section
+      // below (renderOwnerTopicCheck("activityLogs")) — it's still an
+      // OWNER_TOPIC_ITEMS entry with the exact same ownerTopicAccess/
+      // isRealOwner-only behavior, this is purely a display grouping
+      // change to match where "Activity Logs" actually lives in the
+      // sidebar (under Account Management, not as its own topic card —
+      // see acctMgmtGroup markup above), not a permission-model change.
+      const renderOwnerTopicCheck = (t) => `
         <label class="agent-profile-module-check">
-          <input type="checkbox" class="ap-owner-topic-checkbox" value="${acctEsc(t.id)}" ${Array.isArray(a.ownerTopicAccess) && a.ownerTopicAccess.includes(t.id) ? "checked" : ""} ${isRealOwner ? "" : "disabled"} />
+          <input type="checkbox" class="ap-owner-topic-checkbox" value="${acctEsc(t.id)}" ${hasOwnerTopicAccess(t.id) ? "checked" : ""} ${isRealOwner ? "" : "disabled"} />
           ${t.icon} ${acctEsc(t.name)}
-        </label>`).join("");
+        </label>`;
+      const ownerTopicChecks = OWNER_TOPIC_ITEMS.filter((t) => t.id !== "activityLogs").map(renderOwnerTopicCheck).join("");
+      // Visibility rule for this ONE row is different from every other
+      // owner-topic checkbox: it's not "always shown, disabled unless
+      // isRealOwner" — it's "hidden entirely for non-Owner viewers until
+      // this account has actually been granted it." The real Owner
+      // always sees it (has to, in order to grant it the first time);
+      // anyone else only sees the row once this account already has it
+      // — via hasOwnerTopicAccess(), so an Owner-role target account
+      // (implicitly granted, see above) is correctly treated as already
+      // having it too, not just accounts with a literal array entry —
+      // (and even then it's still disabled for them — only isRealOwner
+      // can toggle it, same as before). Before that grant exists, a
+      // non-Owner viewer sees nothing here at all, not a greyed-out
+      // unchecked box.
+      const activityLogsGranted = hasOwnerTopicAccess("activityLogs");
+      const activityLogsCheck = (() => {
+        const t = OWNER_TOPIC_ITEMS.find((t) => t.id === "activityLogs");
+        if (!t) return "";
+        if (!isRealOwner && !activityLogsGranted) return "";
+        return renderOwnerTopicCheck(t);
+      })();
+
 
       // Account Management Access — Owner-only. Unset allowedAdminSections
       // (never explicitly touched) now displays this target account's
@@ -2009,9 +2055,22 @@
       const defaultSeenForTarget = ADMIN_SECTIONS_DEFAULT_SEEN[a.role] || [];
       const allEditSelected = a.adminSectionEditAccess === "all";
       const defaultEditForTarget = ADMIN_SECTIONS_DEFAULT_EDIT[a.role] || [];
+      // Same visibility rule as activityLogsCheck above, applied per-row
+      // to every Account Management Access / Integration Portal Access
+      // item, not just Activity Logs: a viewer who can't manage this
+      // account's admin access (!canManageOthersAdminAccess) doesn't see
+      // a disabled checkbox for a section this account was never granted
+      // — the row is hidden entirely. Once the account already has a
+      // section granted (isChecked), that same non-privileged viewer CAN
+      // see the row — read-only (checkbox + edit-level radios both
+      // disabled), reflecting whatever view/edit state was actually
+      // granted. canManageOthersAdminAccess viewers still see and can
+      // edit every row regardless of grant state, same as before — this
+      // only changes what a non-privileged viewer sees.
       const renderAdminSectionCheck = (s) => {
         const isChecked = allSectionsSelected
           || (Array.isArray(a.allowedAdminSections) ? a.allowedAdminSections.includes(s.id) : defaultSeenForTarget.includes(s.id));
+        if (!canManageOthersAdminAccess && !isChecked) return ""; // not granted, viewer can't manage → hidden, not disabled
         const checkboxHtml = `
         <label class="agent-profile-module-check">
           <input type="checkbox" class="ap-admin-section-checkbox" value="${acctEsc(s.id)}" ${isChecked ? "checked" : ""} ${canManageOthersAdminAccess ? "" : "disabled"} />
@@ -2022,8 +2081,8 @@
           || (Array.isArray(a.adminSectionEditAccess) ? a.adminSectionEditAccess.includes(s.id) : defaultEditForTarget.includes(s.id));
         return checkboxHtml + `
         <div class="agent-profile-edit-level-row" data-for-section="${acctEsc(s.id)}" style="${isChecked ? "" : "display:none;"}">
-          <label><input type="radio" name="apEditLevel_${acctEsc(s.id)}" value="view" ${isEditChecked ? "" : "checked"} /> View only</label>
-          <label><input type="radio" name="apEditLevel_${acctEsc(s.id)}" value="edit" ${isEditChecked ? "checked" : ""} /> Can Edit</label>
+          <label><input type="radio" name="apEditLevel_${acctEsc(s.id)}" value="view" ${isEditChecked ? "" : "checked"} ${canManageOthersAdminAccess ? "" : "disabled"} /> View only</label>
+          <label><input type="radio" name="apEditLevel_${acctEsc(s.id)}" value="edit" ${isEditChecked ? "checked" : ""} ${canManageOthersAdminAccess ? "" : "disabled"} /> Can Edit</label>
         </div>`;
       };
       // Same 4 ids moved out of Account Management into Integration Portal
@@ -2078,7 +2137,7 @@
               <div class="agent-profile-module-list agent-profile-collapsible-body">${moduleChecks}${ownerTopicChecks}</div>
             </div>
 
-            ${canManageOthersAdminAccess ? `
+            ${(canManageOthersAdminAccess || activityLogsCheck || accountMgmtSectionChecks) ? `
             <div class="agent-profile-section-divider" style="margin-top:14px;"></div>
             <div class="agent-profile-collapsible">
               <p class="agent-profile-section-label agent-profile-collapsible-header">
@@ -2086,8 +2145,24 @@
                 <span class="arrow">&rarr;</span>
               </p>
               <div class="agent-profile-collapsible-body" style="flex-direction:column;">
-                <div class="agent-profile-admin-section-list">${accountMgmtSectionChecks}</div>
-                ${isRealOwner ? `
+                <!--
+                  Every row in this list (accountMgmtSectionChecks via
+                  renderAdminSectionCheck, plus activityLogsCheck) shares
+                  the same visibility rule: a viewer without
+                  canManageOthersAdminAccess sees a row ONLY if this
+                  account already has that item granted (hidden entirely
+                  otherwise, not shown disabled) — and even then, strictly
+                  read-only (checkbox + edit-level radios all disabled).
+                  A canManageOthersAdminAccess viewer still sees and can
+                  edit every row regardless of grant state, same as
+                  always. That's why the section's own outer gate above
+                  is "canManageOthersAdminAccess OR activityLogsCheck OR
+                  accountMgmtSectionChecks" — a viewer with none of the
+                  three sees no rows at all, so there's nothing to show a
+                  header for.
+                -->
+                <div class="agent-profile-admin-section-list">${accountMgmtSectionChecks}${activityLogsCheck}</div>
+                ${canManageOthersAdminAccess && isRealOwner ? `
                 <div class="agent-profile-admin-delegate-row">
                   <label class="agent-profile-module-check">
                     <input type="checkbox" id="ap_canGrantAdminAccess" ${a.canGrantAdminAccess ? "checked" : ""} />
@@ -2097,6 +2172,9 @@
                 ` : ""}
               </div>
             </div>
+            ` : ""}
+
+            ${(canManageOthersAdminAccess || integrationPortalSectionChecks) ? `
             <div class="agent-profile-section-divider" style="margin-top:14px;"></div>
             <div class="agent-profile-collapsible">
               <p class="agent-profile-section-label agent-profile-collapsible-header">
@@ -2246,17 +2324,40 @@
       // target they can't outrank-edit the profile of, but Account
       // Management Access has its own gate — and, server-side, its own
       // outrank check).
-      const adminChecks = Array.from(document.querySelectorAll(".ap-admin-section-checkbox"));
-      if (adminChecks.length) {
-        const selectedSections = adminChecks.filter((c) => c.checked).map((c) => c.value);
-        payload.allowedAdminSections = selectedSections.length === adminChecks.length ? "all" : selectedSections;
+      // Gated on canManageOthersAdminAccess EXPLICITLY, not on
+      // adminChecks.length — since renderAdminSectionCheck() now shows a
+      // row to non-privileged viewers whenever this account already has
+      // that section granted (see its own comment above), adminChecks
+      // for such a viewer is a PARTIAL list containing only
+      // already-checked rows. Every element in that partial list is
+      // checked=true by construction (ungranted rows aren't rendered at
+      // all for them), so `selectedSections.length === adminChecks.length`
+      // would ALWAYS be true — turning payload.allowedAdminSections into
+      // "all" any time a non-privileged viewer saves this modal for any
+      // other reason (e.g. just editing fullName). The server's own
+      // canManageOthersAdminAccess() check in functions/api/admin/
+      // accounts.js would reject that with a 403 rather than silently
+      // grant it (see the `if (body.allowedAdminSections !== undefined
+      // ...)` gate there) — so this was a "breaks legitimate saves for
+      // non-privileged viewers with any granted section visible" bug,
+      // not an actual privilege-escalation exploit, but explicitly
+      // requiring canManageOthersAdminAccess here (same pattern as the
+      // isRealOwner gate on ownerTopicAccess just above) is what avoids
+      // sending a field this viewer was never going to be allowed to
+      // change in the first place.
+      if (canManageOthersAdminAccess) {
+        const adminChecks = Array.from(document.querySelectorAll(".ap-admin-section-checkbox"));
+        if (adminChecks.length) {
+          const selectedSections = adminChecks.filter((c) => c.checked).map((c) => c.value);
+          payload.allowedAdminSections = selectedSections.length === adminChecks.length ? "all" : selectedSections;
 
-        const editSections = EDITABLE_ADMIN_SECTIONS.filter((id) => {
-          if (!selectedSections.includes(id)) return false;
-          const radio = document.querySelector(`input[name="apEditLevel_${id}"]:checked`);
-          return radio && radio.value === "edit";
-        });
-        payload.adminSectionEditAccess = editSections.length === EDITABLE_ADMIN_SECTIONS.length ? "all" : editSections;
+          const editSections = EDITABLE_ADMIN_SECTIONS.filter((id) => {
+            if (!selectedSections.includes(id)) return false;
+            const radio = document.querySelector(`input[name="apEditLevel_${id}"]:checked`);
+            return radio && radio.value === "edit";
+          });
+          payload.adminSectionEditAccess = editSections.length === EDITABLE_ADMIN_SECTIONS.length ? "all" : editSections;
+        }
       }
       // "Can manage Account Management Access for other accounts" — only
       // ever rendered for the real Owner (isRealOwner), so its presence in
