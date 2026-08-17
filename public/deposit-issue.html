@@ -72,13 +72,26 @@
   .dep-open-sheet.is-hidden { display: none; }
 
   .dep-dir-row {
-    display: flex; align-items: center; justify-content: space-between; gap: 12px;
+    /* flex-wrap + row-gap: this row's two halves (brand logo/name on
+       the left, the "Open Sheet" button on the right) used to have no
+       way to shrink — .dep-dir-left had no min-width:0 and the button
+       is intentionally white-space:nowrap. Once the Edit Record column
+       (fixed 320px) took enough width that this column dropped below
+       roughly ~280px, the button had nowhere to shrink to and simply
+       overflowed past the row's own right edge, spilling visually on
+       top of the Edit Record panel next to it — the "Open Sheet
+       overlapping Edit Record" bug. Wrapping the button onto its own
+       line below the name once things get tight fixes that at every
+       width, instead of only patching the specific breakpoint where it
+       was first spotted. */
+    display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap;
+    gap: 8px 12px;
     background: var(--card-bg); border: 1px solid var(--border); border-radius: 14px;
     padding: 12px 16px; margin-bottom: 10px; box-shadow: var(--shadow);
   }
-  .dep-dir-left { display: flex; align-items: center; gap: 10px; }
-  .dep-dir-logo { width: 30px; height: 30px; border-radius: 50%; object-fit: cover; border: 1.5px solid var(--pill-border); }
-  .dep-dir-name { font-size: 13.5px; font-weight: 700; color: var(--ink); }
+  .dep-dir-left { display: flex; align-items: center; gap: 10px; min-width: 0; }
+  .dep-dir-logo { width: 30px; height: 30px; border-radius: 50%; object-fit: cover; border: 1.5px solid var(--pill-border); flex-shrink: 0; }
+  .dep-dir-name { font-size: 13.5px; font-weight: 700; color: var(--ink); min-width: 0; overflow-wrap: break-word; }
   .dep-dir-unconfigured { font-size: 12px; color: var(--ink-soft); font-style: italic; }
 
   /* Brand dropdown */
@@ -144,7 +157,7 @@
 
   .dep-layout { display: flex; gap: 16px; align-items: flex-start; }
   .dep-res-col { flex: 1; min-width: 0; }
-  .dep-edit-col { width: 320px; flex-shrink: 0; }
+  .dep-edit-col { width: 320px; max-width: 100%; flex-shrink: 0; box-sizing: border-box; }
 
   .dep-results-label { font-size: 12px; font-weight: 700; letter-spacing: 0.04em; color: var(--ink-soft); margin: 4px 2px 10px; text-transform: uppercase; }
 
@@ -188,7 +201,22 @@
   }
   .dep-btn-ed:hover, .dep-btn-ed.active { background: var(--label-blue); color: #fff; }
 
-  .dep-epanel { background: var(--card-bg); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow); padding: 16px; position: sticky; top: 16px; }
+  /* Was `position: sticky; top: 16px;` — sticky elements inside this
+     nested SPA-mounted flex column (index.html's sidebar layout ->
+     .hub-main -> .dep-layout) can lose sync with the layout when the
+     window is resized or the browser is zoomed: Chromium/WebKit don't
+     always re-run sticky's offset+width calculation on a pure resize
+     event, only on the next scroll. The stale sticky box then keeps
+     its PREVIOUS width/position, which can visually spill outside its
+     320px column and over the "Open Sheet" buttons in the results
+     list next to it until something forces a reflow (e.g. a scroll or
+     hard refresh — exactly what the "Friendly Reminder" banner above
+     tells agents to do). The sticky behavior here was purely a nicety
+     (this panel's content is short, so there was rarely anything to
+     scroll past anyway) — switching to normal static flow removes the
+     whole class of bug since a static box always reflows correctly
+     with everything else on the page. */
+  .dep-epanel { background: var(--card-bg); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow); padding: 16px; box-sizing: border-box; max-width: 100%; }
   .dep-ep-title { font-size: 13px; font-weight: 700; color: var(--ink); margin-bottom: 12px; padding-bottom: 9px; border-bottom: 1px solid var(--border); }
   .dep-etid { font-size: 11px; color: var(--ink-soft); font-weight: 400; display: block; margin-top: 2px; }
   .dep-fg2 { margin-bottom: 10px; }
@@ -220,7 +248,16 @@
   .dep-state.err { color: #e0577a; }
 
   @media (max-width: 900px) {
-    .dep-layout { flex-direction: column; }
+    /* align-items: flex-start (set above for the side-by-side row
+       layout, so the two columns don't get force-stretched to equal
+       height) has a side effect once flex-direction flips to column:
+       the cross-axis is now horizontal, so flex-start there means
+       "shrink to content width" instead of "fill the row" — both
+       columns end up narrower than the container instead of stacking
+       full-width. Overriding to stretch here fixes that without
+       touching the row-layout behavior above 900px. */
+    .dep-layout { flex-direction: column; align-items: stretch; }
+    .dep-res-col { width: 100%; }
     .dep-edit-col { width: 100%; }
   }
   @media (max-width: 640px) {
