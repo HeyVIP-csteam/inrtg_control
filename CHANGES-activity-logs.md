@@ -92,7 +92,7 @@ rank floor"——这跟 `ADMIN_SECTIONS_LIST`（永远要求先过 floorRank 门
 | `functions/api/auth/login.js` | 登录成功/失败(3种)/自动锁号 |
 | `functions/api/account/change-password.js` | 自助改密 |
 | `functions/api/admin/accounts.js` | 创建/删除/改角色/改权限(6种)/锁号/解锁 |
-| `functions/api/threads/[id].js` | 工单 solve/unsolve/delete/reply/editRoot/editDetails/recallRoot/editReply/recallReply |
+| `functions/api/threads/[id].js` | 工单 delete/reply/editRoot/editDetails/recallRoot/editReply/recallReply（solve/unsolve 不打点，见下方追记） |
 | `functions/api/submit.js` | 新建工单（一次提交只打一条） |
 | `functions/api/admin/routes.js` | TG 路由改/重置 |
 | `functions/api/admin/deposit-sheets.js` | Gsheet 路由改/重置 + 本月备份表 |
@@ -106,3 +106,22 @@ rank floor"——这跟 `ADMIN_SECTIONS_LIST`（永远要求先过 floorRank 门
 | `public/activity-logs.html` | 新建：页面本体 |
 | `public/assets/spa-shell.js` | 加 `activityLogs` 路由 + 移动端抽屉修复 |
 | `public/index.html` | 侧边栏子项 + `OWNER_TOPIC_ITEMS` 客户端副本 + 可见性判断 |
+
+## 7. 追记：solve/unsolve 不再打点
+
+`Ticket Solved` / `Ticket Reopened` 从活动日志里去掉了 —— 这两个动作是
+每张工单都会触发一次的高频常规操作（解决一张工单就打一条),
+把日志列表刷成清一色的 "Ticket Solved",反而把真正需要盯的操作
+（edit / delete / recall）淹没掉了。现在 Thread 分类下只保留这几种打点:
+
+- `Ticket Deleted`
+- `Ticket Edited`（`editRoot`）/ `Ticket Details Synced`（`editDetails`，
+  本质也是编辑,所以保留)
+- `Ticket Recalled`（`recallRoot`）
+- `Reply Edited`（`editReply`）
+- `Reply Recalled`（`recallReply`）
+
+改动只在 `functions/api/threads/[id].js` 的 `solve`/`unsolve` 分支里删掉
+了 `log(...)` 那一行,其余逻辑(设置已解决状态、返回结果)不变。旧数据
+里已经写进 KV 的历史 `Ticket Solved`/`Ticket Reopened` 记录不会被清
+除,只是从这次改动往后不会再新增。
