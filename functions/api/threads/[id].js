@@ -118,7 +118,10 @@ async function handleThreadAction({ request, env, params, waitUntil }) {
   if (action === "solve" || action === "unsolve") {
     const thread = await setSolved(env, id, action === "solve");
     if (!thread) return json({ ok: false, error: "Not found." }, 404);
-    log({ category: "Thread", action: action === "solve" ? "Ticket Solved" : "Ticket Reopened", detail: `"${thread.title || id}" (${thread.brand || "unknown brand"})` });
+    // Not logged to the activity feed on purpose — solving/reopening a
+    // ticket is routine, high-volume agent activity (every ticket gets
+    // one), unlike edit/delete/recall which are the actions worth
+    // auditing. See CHANGES-activity-logs.md.
     return json({ ok: true, thread });
   }
 
