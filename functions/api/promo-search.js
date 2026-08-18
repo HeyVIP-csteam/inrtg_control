@@ -2,21 +2,24 @@
  * GET /api/promo-search?codes=CODE1,CODE2
  *
  * Search-only — never writes anything. Reads directly from the shared
- * Promo Code Google Sheet (one workbook, many team tabs) and returns
- * every match of the Promo Code column (contains/partial match, not
- * exact — e.g. searching "1500" matches "1500PKR"), grouped by tab, so
- * the dashboard can show "which team's sheet has this code" the same
- * way the reference screenshot did.
+ * Promo Code Google Sheet (one workbook, 11 team tabs, each hand-
+ * maintained by a different team) and returns every match of the Promo
+ * Code column (contains/partial match, not exact — e.g. searching "1500"
+ * matches "1500PKR"), grouped by tab, so the dashboard can show "which
+ * team's sheet has this code" the same way the reference screenshot did.
  *
  * Requires the sheet to be shared (Viewer is enough) with the service
  * account: reward-form-writer@fifth-trainer-500806-e7.iam.gserviceaccount.com
  *
- * Column layout (same across all tabs below, columns A-N, header in row 1,
- * data starts row 2):
- *   A Brand | B Bonus Code | C Promo Code | D Deposit Range | E Bonus % |
- *   F Per Spin Value | G Max Bonus | H Wager | I Max Withdraw |
- *   J Expired Day | K Products | L Excluded Products/GAMES |
- *   M Under Group/Affiliate/VIP Level | N Expired On
+ * Columns are located by HEADER TEXT, not by a hardcoded column index —
+ * see functions/_shared/dynamicSheetColumns.js and
+ * PROMO_CODE_LOGIC_NOTES.md. This sheet is edited by hand by several
+ * teams, and each of its 11 tabs has broken the "columns are always in
+ * the same order" assumption in a different way at one point or another
+ * (a missing column shifting everything after it, vertically-merged
+ * cells, a section-title row instead of a real header, the header row
+ * repeated mid-data, an inserted column) — matching by header text is
+ * what makes all of those non-issues instead of silent data corruption.
  *
  * "Start On" has no source column yet in this sheet — always returned as
  * "" until one exists; the frontend shows it as a dash.
@@ -24,8 +27,48 @@
 import { batchGetValues, getSheetTabTitles } from "../_shared/googleSheets.js";
 import { verifyRequest } from "../_shared/accounts.js";
 import { PROMO_CODE_SHEET_DEFAULT, getPromoCodeSheetOverride } from "../_shared/promoCodeSheetOverride.js";
+import { createColumnMapper } from "../_shared/dynamicSheetColumns.js";
 
-const RANGE = "A2:N1000";
+// Read range is intentionally wide (full A1:Z1000, header row included) —
+// a narrower range that "should be enough" is exactly what truncated the
+// last field on the tab whose columns had shifted right by one. A few
+// extra empty columns cost nothing; a truncated real column costs a
+// silently-wrong value. Header row is included (not skipped) because
+// the mapper scans for the real header itself — it isn't always row 1.
+const RANGE = "A1:Z1000";
+
+// Order matters here: for any single column, the FIRST field in this
+// list whose pattern matches wins that column. "excluded" is listed
+// before "products" so "Excluded Products/GAMES" is claimed by
+// `excluded`, not `products` — otherwise the real "Products" column
+// would end up empty and "Excluded Products/GAMES" would show up twice.
+const FIELDS = [
+  ["brand", /brand/],
+  ["bonusCode", /bonus\s*code/],
+  ["promoCode", /promo\s*code/],
+  ["depositRange", /deposit\s*range/],
+  ["bonusPercent", /bonus\s*%|bonus\s*percent/],
+  ["perSpinValue", /per\s*spin/],
+  ["excluded", /excluded/],
+  ["maxBonus", /max\s*bonus/],
+  ["wager", /wager/],
+  ["maxWithdraw", /max\s*withdraw/],
+  ["expiredDay", /expired\s*day/],
+  ["products", /products/],
+  ["groupVip", /group|affiliate|vip/],
+  ["expiredOn", /expired\s*on/],
+];
+
+// Brand / Bonus Code / Promo Code are what tell rows apart, so they must
+// never inherit a value from a merged cell above them (Welcome Call
+// Team's tab groups several brand rows under one shared value for the
+// other columns via vertical merge — the identity columns themselves
+// are never merged).
+const columnMapper = createColumnMapper({
+  fields: FIELDS,
+  requiredField: "promoCode",
+  identityFields: ["brand", "bonusCode", "promoCode"],
+});
 
 function sheetEditUrl(sheetId) {
   return `https://docs.google.com/spreadsheets/d/${sheetId}/edit`;
@@ -140,10 +183,15 @@ async function handleSearch({ request, env }) {
 
   const groups = [];
   tabsToQuery.forEach(({ real }, i) => {
-    const rows = (valueRanges[i] && valueRanges[i].values) || [];
+    const rawRows = (valueRanges[i] && valueRanges[i].values) || [];
+    const { colMap, dataRows } = columnMapper.prepare(rawRows);
+    const col = (field, row) => columnMapper.col(colMap, field, row);
+
     const matches = [];
-    for (const row of rows) {
-      const promoCode = (row[2] || "").trim();
+    for (const row of dataRows) {
+      const promoCode = col("promoCode", row);
+      // No identity field = not a real data row (blank row, stray
+      // formatting row, section divider, etc.) — skip it.
       if (!promoCode) continue;
       const upperCode = promoCode.toUpperCase();
       // Contains match, not exact — e.g. searching "1500" should surface
@@ -151,19 +199,19 @@ async function handleSearch({ request, env }) {
       // substring of the code counts as a hit.
       if (!needles.some((n) => upperCode.includes(n))) continue;
       matches.push({
-        brand: row[0] || "",
-        bonusCode: row[1] || "",
+        brand: col("brand", row),
+        bonusCode: col("bonusCode", row),
         promoCode,
-        depositRange: row[3] || "",
-        maxBonus: row[6] || "",
-        wager: row[7] || "",
-        maxWithdraw: row[8] || "",
-        expiredDay: row[9] || "",
-        products: row[10] || "",
-        excluded: row[11] || "",
-        groupVip: row[12] || "",
+        depositRange: col("depositRange", row),
+        maxBonus: col("maxBonus", row),
+        wager: col("wager", row),
+        maxWithdraw: col("maxWithdraw", row),
+        expiredDay: col("expiredDay", row),
+        products: col("products", row),
+        excluded: col("excluded", row),
+        groupVip: col("groupVip", row),
         startOn: "", // no source column yet — see file header
-        expiredOn: row[13] || "",
+        expiredOn: col("expiredOn", row),
       });
     }
     if (matches.length) groups.push({ tab: real, count: matches.length, matches });
