@@ -2470,6 +2470,15 @@
     function renderBettingLinks() {
       const canEdit = canEditBettingLinks();
       const roAttr = canEdit ? "" : "disabled";
+      // Declared at function scope (not inside the `else` block below)
+      // because it's read again further down, in the separate
+      // `if (acctBettingLinksSection === "results" && canEdit)` block that
+      // wires up the drag listeners — a `const` scoped only to the `else`
+      // block would throw "canReorder is not defined" there and silently
+      // break dragging (the exception happens after the icon/name/url
+      // input listeners are wired, so editing still worked, but every
+      // drag-handle event binding after it was skipped).
+      let canReorder = false;
 
       const sectionListHtml = `
         <div class="tgroute-brand${acctBettingLinksSection === "rules" ? " selected" : ""}" data-section="rules">HeyVIP Betting Resources</div>
@@ -2501,7 +2510,7 @@
         // Drag-to-reorder handle only makes sense once there's something to
         // reorder relative to (canEdit + 2 or more rows) — see
         // PATTERNS-drag-reorder.md "只有 2 条以上才需要手柄".
-        const canReorder = canEdit && acctBettingLinks.results.length > 1;
+        canReorder = canEdit && acctBettingLinks.results.length > 1;
         const resultRowsHtml = acctBettingLinks.results.map((l, i) => `
           <div class="link-edit-row${canReorder ? " has-handle" : ""}" data-idx="${i}">
             ${canReorder ? `<span class="drag-handle" draggable="true" title="Drag to reorder">⠿</span>` : ""}
