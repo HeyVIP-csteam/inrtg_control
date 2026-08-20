@@ -7,6 +7,7 @@ import { appendRowToSheet, appendRowByColumns, writeRowForDate, getNextSequenceV
 import { uploadAttachmentToR2, screenshotUrl } from "../_shared/r2.js";
 import { createThread } from "../_shared/threads.js";
 import { verifyRequest, canSeeBrand, canSeeModule } from "../_shared/accounts.js";
+import { logActivity } from "../_shared/activityLog.js";
 import { getRouteOverride } from "../_shared/routes.js";
 import { compressImageForTelegram } from "../_shared/telegramImageCompress.js";
 import { getIssueSheetOverride, resolveWriteTab, promotionModuleId } from "../_shared/issueSubmissionSheets.js";
@@ -308,9 +309,19 @@ async function handleSubmit({ request, env, waitUntil }) {
         sheetRef,
       });
       threadId = thread.id;
-    } catch {
+    } catch (e) {
       // Non-fatal — the Telegram message and sheet row are already the
       // source of truth; the reply-tracking record is a nice-to-have.
+      // Still logged (fire-and-forget, never throws — see activityLog.js)
+      // so a sustained/repeated failure here is discoverable in the
+      // Activity Log instead of silently vanishing, which is what made
+      // the "visible in sidebar, 404s on open" bug hard to notice before.
+      logActivity(env, {
+        category: "Thread",
+        action: "createThread failed",
+        agent: reporter || "unknown",
+        detail: `brand=${brand.name} module=${moduleId}: ${String(e && e.message || e)}`,
+      });
     }
   }
 

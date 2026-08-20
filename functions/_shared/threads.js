@@ -115,6 +115,33 @@ async function kvPutWithRetry(env, key, value, attempts = 3) {
   throw lastErr;
 }
 
+// Same retry shape as kvPutWithRetry above, for the D1 upsert in
+// saveThread(). D1 is the source of truth for a thread's full record (see
+// getThread()) — a transient failure here used to be silently swallowed by
+// submit.js's outer try/catch (createThread throwing was treated as
+// "reply-tracking is a nice-to-have"), which let a ticket end up listed in
+// the sidebar (KV metadata write succeeded) but 404 the instant an agent
+// opened it (D1 had no row). A few retries with jittered backoff clears
+// almost all of those transient blips before saveThread() ever has to
+// decide what to do about a real, sustained failure — see saveThread()
+// below for that decision.
+async function d1UpsertWithRetry(env, id, json, attempts = 3) {
+  let lastErr;
+  for (let i = 0; i < attempts; i++) {
+    try {
+      await env.THREADS_DB.prepare(
+        `INSERT INTO threads (id, data) VALUES (?1, ?2)
+         ON CONFLICT(id) DO UPDATE SET data = excluded.data`
+      ).bind(id, json).run();
+      return;
+    } catch (e) {
+      lastErr = e;
+      if (i < attempts - 1) await sleep(150 * (i + 1) + Math.floor(Math.random() * 100));
+    }
+  }
+  throw lastErr;
+}
+
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -162,30 +189,37 @@ function summarize(thread) {
   };
 }
 
-// Every write to a thread's own record goes through this. Two writes, in
-// parallel, to two different stores that now do two different jobs:
-//   - D1 gets the actual full JSON (source of truth for getThread() and
-//     anything that needs an up-to-the-second read of THIS thread).
-//   - KV gets only a placeholder value (there's nothing left that reads
-//     it) with the lightweight summary riding along as this key's
-//     *metadata* — that's still what the sidebar's list() scan reads, and
-//     that path is fine with being a little stale (see file header).
-// No shared hot key on either side, so two agents touching two different
-// tickets still never contend with each other.
+// Every write to a thread's own record goes through this. D1 and KV now do
+// two different jobs — D1 holds the actual full JSON (source of truth for
+// getThread() and anything that needs an up-to-the-second read of THIS
+// thread); KV holds only a placeholder value with the lightweight summary
+// riding along as this key's *metadata*, which is all listThreads()'s
+// list() scan reads for the sidebar.
+//
+// SEQUENCED ON PURPOSE (D1 first, retried, THEN KV) — this used to be a
+// Promise.all() firing both writes in parallel with no retry on either
+// side. That meant a transient D1 hiccup (timeout/rate-limit/etc, with no
+// retry to absorb it) could reject while the KV write next to it still
+// landed fine — nothing rolled the KV write back, so the ticket showed up
+// in the sidebar (that's all list() needs) but 404'd the moment an agent
+// opened it, because getThread() found no matching D1 row. Two changes fix
+// that:
+//   1. d1UpsertWithRetry() gives the D1 write a few chances to clear a
+//      transient failure before this function has to treat it as real.
+//   2. The KV write (the thing that makes a ticket *visible* in the
+//      sidebar) only happens after D1 (the thing that makes a ticket
+//      *openable*) has actually succeeded — so a still-failing D1 write
+//      now surfaces as "this ticket didn't get created/updated" (caller's
+//      catch block, same as before) instead of "half-created": visible in
+//      the list but broken to open. Never the other way around.
+// If THREADS_DB isn't bound at all (pre-D1 deployment), this falls back to
+// KV-only, matching the original pre-migration behavior.
 async function saveThread(env, thread) {
   const json = JSON.stringify(thread);
-  const writes = [
-    env.THREADS_KV.put(`thread:${thread.id}`, "1", { metadata: summarize(thread) }),
-  ];
   if (env.THREADS_DB) {
-    writes.push(
-      env.THREADS_DB.prepare(
-        `INSERT INTO threads (id, data) VALUES (?1, ?2)
-         ON CONFLICT(id) DO UPDATE SET data = excluded.data`
-      ).bind(thread.id, json).run()
-    );
+    await d1UpsertWithRetry(env, thread.id, json);
   }
-  await Promise.all(writes);
+  await env.THREADS_KV.put(`thread:${thread.id}`, "1", { metadata: summarize(thread) });
 }
 
 // Deletes a thread's KV record plus every msgid: pointer that leads to it
