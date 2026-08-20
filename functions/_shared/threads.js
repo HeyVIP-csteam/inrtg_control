@@ -450,6 +450,32 @@ export async function getThread(env, id) {
   return thread;
 }
 
+// A thread that's visible in the sidebar (its `thread:<id>` KV key/
+// metadata exists — that's all listThreads() needs) but comes back null
+// from getThread() above (no D1 row, and no legacy full-JSON KV fallback
+// either) is an orphan: the pre-fix version of saveThread() wrote the KV
+// summary and the D1 row in an unguarded Promise.all(), so a transient D1
+// failure could leave the KV half of that pair sitting on its own forever
+// — visible in the list, 404ing on every open/solve/delete because there
+// was never a real record to act on. (saveThread() no longer writes KV
+// until D1 has confirmed success — see that function — so this can't be
+// produced by new writes; this only cleans up ones that already exist
+// from before that fix.)
+//
+// There's nothing to repair here (chatId/rootMessageId/messages were
+// never captured anywhere), only to remove, so the GET/POST handlers in
+// functions/api/threads/[id].js call this the moment they see a genuine
+// getThread() miss, and it deletes the stray KV entry so the ticket stops
+// reappearing in the sidebar every poll. Returns true if it actually found
+// and removed a stray entry (worth telling the agent about), false if
+// there was nothing there at all (a genuinely-unknown/mistyped id).
+export async function purgeOrphanIfStray(env, id) {
+  const existing = await env.THREADS_KV.get(`thread:${id}`);
+  if (existing === null) return false; // no KV entry either — not an orphan, just doesn't exist
+  await env.THREADS_KV.delete(`thread:${id}`);
+  return true;
+}
+
 export async function findThreadIdByMessage(env, chatId, messageId) {
   if (env.THREADS_DB) {
     const row = await env.THREADS_DB.prepare(

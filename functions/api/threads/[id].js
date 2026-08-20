@@ -52,7 +52,7 @@
 import {
   getThread, setSolved, softDeleteThread, appendMessage,
   updateRootText, updateThreadDetails, markRootRecalled, editMessageInThread, removeMessageFromThread,
-  logDeletion,
+  logDeletion, purgeOrphanIfStray,
 } from "../../_shared/threads.js";
 import { verifyRequest, canSeeBrand, requestIP } from "../../_shared/accounts.js";
 import { BRANDS, MODULE_META, MESSAGE_TEMPLATE, PROMOTION_MESSAGE_TEMPLATE } from "../../_shared/routing.js";
@@ -66,8 +66,21 @@ export async function onRequestGet({ request, env, params }) {
   const account = await verifyRequest(request, env);
   if (!account) return json({ ok: false, error: "Login required." }, 401);
   const thread = await getThread(env, params.id);
-  if (!thread || thread.deleted || !canSeeBrand(account, thread.brand)) return json({ ok: false, error: "Not found." }, 404);
-  return json({ ok: true, thread });
+  if (thread && !thread.deleted && canSeeBrand(account, thread.brand)) {
+    return json({ ok: true, thread });
+  }
+  // thread === null means genuinely no record anywhere (not just a brand-
+  // visibility filter or a soft-delete, both of which legitimately leave
+  // `thread` non-null) — that's the one case worth checking for a stray
+  // orphaned sidebar entry left behind by the pre-fix saveThread() race.
+  // See purgeOrphanIfStray()'s comment in threads.js for the full story.
+  if (!thread) {
+    const wasOrphan = await purgeOrphanIfStray(env, params.id).catch(() => false);
+    if (wasOrphan) {
+      return json({ ok: false, error: "This ticket's record never finished saving and can't be recovered — it's been removed from your list." }, 404);
+    }
+  }
+  return json({ ok: false, error: "Not found." }, 404);
 }
 
 // Top-level safety net — same reasoning as submit.js: everything below
@@ -112,6 +125,15 @@ async function handleThreadAction({ request, env, params, waitUntil }) {
   // allowed to see — check once up front instead of in every branch.
   const existingThread = await getThread(env, id);
   if (!existingThread || existingThread.deleted || !canSeeBrand(account, existingThread.brand)) {
+    // Same orphan cleanup as the GET handler above — only fires when
+    // existingThread is genuinely null (no record anywhere), never for a
+    // thread that's merely soft-deleted or outside this account's brands.
+    if (!existingThread) {
+      const wasOrphan = await purgeOrphanIfStray(env, id).catch(() => false);
+      if (wasOrphan) {
+        return json({ ok: false, error: "This ticket's record never finished saving and can't be recovered — it's been removed from your list." }, 404);
+      }
+    }
     return json({ ok: false, error: "Not found." }, 404);
   }
 

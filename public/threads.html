@@ -683,7 +683,16 @@
         body: JSON.stringify({ action: makeSolved ? "solve" : "unsolve" }),
       });
       const data = await res.json();
-      if (!data.ok) return;
+      if (!data.ok) {
+        // A 404 here can mean the ticket's record never actually finished
+        // saving (see purgeOrphanIfStray() in threads.js) — the server
+        // already cleaned up the stray sidebar entry when that happens, so
+        // reload the list to make it disappear right away instead of
+        // leaving it sitting there looking clickable until the next poll.
+        if (window.showToast) window.showToast(data.error || "Couldn't update this ticket.", "err");
+        loadList(document.getElementById("threadSearch").value);
+        return;
+      }
       patchLocalThread(data.thread);
       if (selectedId === id) { selectedThread = data.thread; updateThreadContent(selectedThread, true); }
     }
@@ -901,7 +910,12 @@
         const res = await authFetch(`/api/threads/${id}`, { cache: "no-store" });
         const data = await res.json();
         if (!data.ok) {
-          main.innerHTML = `<div class="threads-placeholder">Couldn't load this thread.</div>`;
+          main.innerHTML = `<div class="threads-placeholder">${escapeHtml(data.error || "Couldn't load this thread.")}</div>`;
+          // Mirrors toggleThreadSolvedById's handling — if the server just
+          // purged a stray orphaned entry (see purgeOrphanIfStray() in
+          // threads.js), refresh the list so it actually disappears now
+          // instead of sitting there, still clickable, until the next poll.
+          loadList(document.getElementById("threadSearch").value);
           return;
         }
         selectedThread = data.thread;
