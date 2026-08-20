@@ -1,5 +1,15 @@
 # Betting Resources Links — 结果列表支持拖拽排序
 
+> **Bug 修复(上线前测试时发现)**:第一版把 `canReorder` 用 `const` 声明在
+> 生成行 HTML 那个 `else { ... }` 块里，但拖拽事件绑定那段代码在**另一个**
+> 独立的 `if (acctBettingLinksSection === "results" && canEdit) { ... }`
+> 块里引用它——块作用域已经结束，实际运行时会抛
+> `ReferenceError: canReorder is not defined`。这个异常发生在 icon/name/url
+> 输入框的监听器绑定完之后，所以编辑功能表面上正常，但异常之后所有拖拽
+> 相关的事件绑定全部被跳过——表现就是"手柄能看到，但怎么拖都不动"。
+> 修复方式：把 `canReorder` 提到 `renderBettingLinks()` 函数顶部用 `let`
+> 声明，下面两处都改成读写同一个函数作用域变量。
+
 给 Account Management → Betting Resources Links → "Results Finding
 Websites" 那一栏的链接列表加上拖拽排序，套用 `PATTERNS-drag-reorder.md`
 里沉淀的通用模式（该文档本身也已收进项目根目录，方便以后其他列表复用）。
