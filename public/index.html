@@ -74,7 +74,7 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
 <link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;600&display=swap" onload="this.onload=null;this.rel='stylesheet'" />
 <noscript><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;600&display=swap" /></noscript>
-<link rel="stylesheet" href="/assets/style.css?v=63a5348a" />
+<link rel="stylesheet" href="/assets/style.css?v=4eec5090" />
 <script src="/assets/theme.js?v=5b27e630"></script>
 <script src="/assets/toast.js?v=67c1e195" defer></script>
 <script src="/assets/starfield.js?v=b6e92821" defer></script>
@@ -402,7 +402,7 @@
     </div>
   </div>
 
-  <script src="/assets/schemas.js?v=b5c55f4a"></script>
+  <script src="/assets/schemas.js?v=008a8348"></script>
   <script src="/assets/announcement-banner.js?v=4881665d"></script>
   <script src="/assets/ip-access-panel.js?v=97ca84fa"></script>
   <script src="/assets/active-agents-panel.js?v=b057bd2e"></script>
@@ -2498,8 +2498,13 @@
             </div>
           </div>`;
       } else {
+        // Drag-to-reorder handle only makes sense once there's something to
+        // reorder relative to (canEdit + 2 or more rows) — see
+        // PATTERNS-drag-reorder.md "只有 2 条以上才需要手柄".
+        const canReorder = canEdit && acctBettingLinks.results.length > 1;
         const resultRowsHtml = acctBettingLinks.results.map((l, i) => `
-          <div class="link-edit-row" data-idx="${i}">
+          <div class="link-edit-row${canReorder ? " has-handle" : ""}" data-idx="${i}">
+            ${canReorder ? `<span class="drag-handle" draggable="true" title="Drag to reorder">⠿</span>` : ""}
             ${canEdit ? `<button type="button" class="remove-btn bl-remove" title="Remove">🗑</button>` : ""}
             <div class="edit-fields-row">
               <div class="edit-field icon-field">
@@ -2562,6 +2567,56 @@
           row.querySelector(".bl-name").addEventListener("input", (e) => { acctBettingLinks.results[idx].name = e.target.value; });
           row.querySelector(".bl-url").addEventListener("input", (e) => { acctBettingLinks.results[idx].url = e.target.value; });
         });
+
+        // ---- Drag-to-reorder (results list) ----
+        // General pattern: the array's own order *is* the display order
+        // (betting-resources.html just does results.map(...) with no
+        // separate sort field), so reordering here is the entire feature —
+        // splice the array, re-render, done. No syncFormFn step is needed
+        // before the splice (unlike the generic template) because every
+        // input above already writes straight into
+        // acctBettingLinks.results[idx] on every keystroke, so the array is
+        // always current even mid-edit. See PATTERNS-drag-reorder.md.
+        if (canReorder) {
+          let dragSrcIdx = null;
+          const rows = Array.from(acctBody.querySelectorAll("#bl_resultsList .link-edit-row"));
+          rows.forEach((row) => {
+            const handle = row.querySelector(".drag-handle");
+            if (!handle) return;
+
+            handle.addEventListener("dragstart", (e) => {
+              dragSrcIdx = Number(row.dataset.idx);
+              row.classList.add("dragging");
+              e.dataTransfer.effectAllowed = "move";
+              e.dataTransfer.setData("text/plain", String(dragSrcIdx));
+              // Drag the whole card, not just the tiny handle glyph.
+              if (e.dataTransfer.setDragImage) e.dataTransfer.setDragImage(row, 20, 20);
+            });
+            handle.addEventListener("dragend", () => {
+              row.classList.remove("dragging");
+              rows.forEach((r) => r.classList.remove("drag-over"));
+              dragSrcIdx = null;
+            });
+
+            row.addEventListener("dragover", (e) => {
+              if (dragSrcIdx === null) return;
+              e.preventDefault(); // required or "drop" never fires
+              e.dataTransfer.dropEffect = "move";
+              if (Number(row.dataset.idx) !== dragSrcIdx) row.classList.add("drag-over");
+            });
+            row.addEventListener("dragleave", () => row.classList.remove("drag-over"));
+            row.addEventListener("drop", (e) => {
+              e.preventDefault();
+              row.classList.remove("drag-over");
+              const targetIdx = Number(row.dataset.idx);
+              if (dragSrcIdx === null || targetIdx === dragSrcIdx) return;
+              const [moved] = acctBettingLinks.results.splice(dragSrcIdx, 1);
+              acctBettingLinks.results.splice(targetIdx, 0, moved);
+              dragSrcIdx = null;
+              renderBettingLinks(); // full re-render; results array order is the only source of truth
+            });
+          });
+        }
       }
     }
 
@@ -2743,6 +2798,6 @@
       setTimeout(closeAcctModal, 700);
     }
   </script>
-  <script src="/assets/spa-shell.js?v=ca675c86"></script>
+  <script src="/assets/spa-shell.js?v=54546fb8"></script>
 </body>
 </html>

@@ -1750,6 +1750,23 @@ h1 {
   border: 1px solid var(--border); background: var(--card-bg); color: var(--required); cursor: pointer;
   font-size: 12px; line-height: 1;
 }
+/* Drag-to-reorder handle — only rendered when there are 2+ rows and the
+   viewer can edit (see canReorder in renderBettingLinks()). Independent
+   of the row's own draggable state on purpose: only the handle glyph is
+   draggable="true", so dragging never fights with clicking into an
+   input or the remove button. General pattern write-up in
+   PATTERNS-drag-reorder.md. */
+.link-edit-row.has-handle { padding-left: 40px; }
+.link-edit-row .drag-handle {
+  position: absolute; top: 10px; left: 10px;
+  width: 26px; height: 26px; border-radius: 7px;
+  display: flex; align-items: center; justify-content: center;
+  border: 1px solid var(--border); background: var(--card-bg); color: var(--ink-soft);
+  cursor: grab; font-size: 14px; line-height: 1; user-select: none;
+}
+.link-edit-row .drag-handle:active { cursor: grabbing; }
+.link-edit-row.dragging { opacity: 0.4; }
+.link-edit-row.drag-over { border-color: var(--accent-gold); }
 @media (max-width: 480px) {
   .link-edit-row .edit-fields-row { flex-direction: column; }
 }
